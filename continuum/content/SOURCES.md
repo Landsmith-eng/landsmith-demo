@@ -53,8 +53,8 @@ and again by `scripts/verify-quotes.js`.
 | kant_ends_not_means | Groundwork, Second Section, Abbott | Verified (Gutenberg 5682) |
 | mill_ask_whether_you_are_happy | Autobiography ch. V | Verified (Gutenberg 10378) |
 | thoreau_live_deliberately | Walden, "Where I Lived" and "Higher Laws" | Verified (Gutenberg 205) |
-| douglass_learning_to_read | Narrative ch. VI | Verified (Gutenberg 23). Quotes Auld's speech as printed in 1845, slur included; the citation says so. Decide whether to keep it verbatim before testers see it |
-| tolstoy_a_confession | A Confession ch. IV, Maude | Verified (Wikisource). Stands in for The Death of Ivan Ilyich: no public-domain English translation is reachable. The 1921 World's Classics date is from memory |
+| douglass_learning_to_read | Narrative ch. VI | Verified (Gutenberg 23). Quotes Auld's speech as printed in 1845, slur included; the citation says so. Owner's decision: keep it verbatim |
+| tolstoy_a_confession | A Confession ch. IV, Maude | Verified (Wikisource). Stands in for The Death of Ivan Ilyich (no public-domain English translation is reachable); owner approved. The 1921 World's Classics date is from memory |
 
 Edge notes verified against texts in this batch: Nietzsche on Heraclitus (Twilight, Ecce Homo); Epicurus PD 34–35;
 Epicurus admired Pyrrho (D.L. IX.64); Montaigne on Pyrrho (Apology for Raymond Sebond); Pascal citing Augustine;
