@@ -32,7 +32,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
-| Gilgamesh | UC | | Y | A | Facing death, the oldest text on it: converges with Lucretius, Ecclesiastes; lands on death in view |
+| Gilgamesh | UC | branch | Y | — | Facing death, the oldest text on it: converges with Lucretius, Ecclesiastes; lands on death in view |
 | Homer | LH, SJC, DS, UC | | Y | B | Achilles' choice: short glorious life or long quiet one; links to Epicurus vs. Zeno |
 | Sappho | LH, DS | | Y | C | Love and longing; converges with the Buddha on craving |
 | Aeschylus / Sophocles | SJC, DS, UC | | Y | B | Antigone, conscience vs. law: extended by Thoreau, King |
@@ -58,9 +58,9 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Augustine | CC, SJC, DS, UC | branch | Y | — | "Our heart is restless until it rests in thee": converges with the Buddha and Schopenhauer on restless desire |
 | Boethius | *added* | branch | Y | — | Consolation of Philosophy, Fortune's wheel: extends the Stoics, written in prison awaiting execution |
 | Anselm | SJC | | Y | C | Ontological argument (puzzle node) |
-| Aquinas | SJC, DS | | Y | B | Natural law: extends Aristotle; refuted by Sartre |
-| Maimonides | SJC | | Y | A | Guide for the Perplexed, the middle path: converges with Aristotle's mean |
-| Al-Farabi, Avicenna, Averroes | DS ("medieval Arabic philosophers"), AH | branch (Avicenna) | Y | — | Avicenna's floating man: converges with Descartes; Averroes carried Aristotle back to Europe |
+| Aquinas | SJC, DS | branch | Y | — | Natural law: extends Aristotle; refuted by Sartre |
+| Maimonides | SJC | branch | Y | — | Guide for the Perplexed, the middle path: converges with Aristotle's mean |
+| Al-Farabi, Avicenna, Averroes | DS ("medieval Arabic philosophers"), AH | branch (Avicenna, Averroes) | Y | — | Avicenna's floating man: converges with Descartes; Averroes carried Aristotle back to Europe |
 | Al-Ghazali | AH (Islamic philosophy) | branch | Y | — | — |
 | Rumi / Attar | AH (Sufi poetry) | branch (Rumi) | Y | — | The reed flute's longing: converges with Augustine's restless heart |
 | Ibn Khaldun | *added* | | Y | B | Asabiyyah: rise and fall of group cohesion; measured by modern social science |
@@ -74,7 +74,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
 | Descartes, Pascal, Hume, Spinoza | CC, SJC, DS | branch / line | Y | — | — |
-| Hobbes | CC, SJC, DS | | Y | B | Life without society, "nasty, brutish, and short": refuted by Rousseau |
+| Hobbes | CC, SJC, DS | branch | Y | — | Life without society, "nasty, brutish, and short": refuted by Rousseau |
 | Locke | CC, DS | | Y | B | Mind as blank slate: refuted by modern psychology |
 | Berkeley | DS | | Y | C | Puzzle node: the tree falling in the forest |
 | Rousseau | CC, SJC, DS | | Y | B | Amour-propre (comparison): measured by social-comparison research |
@@ -90,7 +90,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
-| Hegel | DS (CC older) | | Y | C | Master–slave dialectic: extended by Marx, Douglass |
+| Hegel | DS (CC older) | branch | Y | — | Master–slave dialectic: extended by Marx, Douglass |
 | Schopenhauer, Nietzsche, Kierkegaard | CC, DS | line / branch | Y | — | — |
 | Marx | CC, DS | | Y | B | Alienated labor: lands on work that outlasts you; converges with Frankl on meaningful work |
 | John Stuart Mill | CC (older) | branch | Y | — | "Ask yourself whether you are happy, and you cease to be so": converges with Frankl; extends Epicurus |
@@ -101,27 +101,27 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Dostoevsky | *added* | | Y | B | Grand Inquisitor: freedom as a burden; extended by Sartre |
 | William James | PSY | | Y | A | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
 | Wundt / Pavlov | PSY | | Y | C | Birth of experimental psychology; conditioning |
-| Goethe / Wordsworth / Flaubert | SJC, DS | | Y | C | Faust's bargain: never be satisfied (refutes Epicurean contentment) |
+| Goethe / Wordsworth / Flaubert | SJC, DS | branch (Goethe) | Y | — | Faust's bargain: never be satisfied (refutes Epicurean contentment) |
 
 ## Twentieth century to now
 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
 | Freud | CC, PSY | branch | Y (pre-1929) | — | — |
-| W. E. B. Du Bois | CC | | Y (1903) | A | Double consciousness: converges with Douglass; extends Hegel's recognition |
+| W. E. B. Du Bois | CC | branch | Y (1903) | — | Double consciousness: converges with Douglass; extends Hegel's recognition |
 | Jung | PSY | | partly | B | The shadow: converges with Augustine's divided will |
 | Einstein, Bohr, Heisenberg, Schrödinger | HSCI | branch (2) | N | B | Uncertainty as a scientific limit on knowing: lands on hold beliefs loosely |
 | Virginia Woolf | CC, LH, DS | | Y (pre-1929 works) | B | A Room of One's Own: lands on work that outlasts you |
-| Gandhi | AH | | partly | A | Satyagraha: extends the Gita, Tolstoy and Thoreau; extended by King |
-| Martin Luther King Jr. | UC | | N | A | Letter from Birmingham Jail: extends Gandhi, Aquinas on unjust law, Socrates |
+| Gandhi | AH | branch | partly | — | Satyagraha: extends the Gita, Tolstoy and Thoreau; extended by King |
+| Martin Luther King Jr. | UC | branch | N | — | Letter from Birmingham Jail: extends Gandhi, Aquinas on unjust law, Socrates |
 | James Baldwin | SJC, UC | | N | B | The Fire Next Time: love as moral demand |
-| Hannah Arendt | DS | | N | A | Banality of evil: measured by Milgram's obedience experiments |
+| Hannah Arendt | DS | branch | N | — | Banality of evil: measured by Milgram's obedience experiments |
 | Simone de Beauvoir / Iris Murdoch | DS | | N | B | Beauvoir: one is not born a woman (refutes fixed essence). Murdoch: attention as moral practice, which converges with Simone Weil |
 | Sartre / Camus | *added* (owner request) | branch | N | — | — |
 | Wittgenstein | *added* | | partly | C | "Whereof one cannot speak": converges with Laozi's "the Tao that can be named" |
 | Thomas Kuhn | HSCI | | N | B | Paradigm shifts: lands on hold beliefs loosely |
 | Skinner / Rogers / Maslow | PSY | | N | B | Skinner refutes free will (converges with Spinoza). Rogers: unconditional positive regard. Maslow: needs pyramid, with Frankl's critique |
-| Kahneman / Seligman | *added* (contemporary) | | N | A | Kahneman measured Bentham. Seligman's learned helplessness was measured, and Beck and the Stoics were extended into positive psychology |
+| Kahneman / Seligman | *added* (contemporary) | branch (Kahneman) | N | — | Kahneman measured Bentham. Seligman's learned helplessness was measured, and Beck and the Stoics were extended into positive psychology |
 | Frankl, Beck, Nozick | *added* (concept doc) | line | N | — | — |
 
 ## Asia
@@ -130,12 +130,12 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 |---|---|---|---|---|---|
 | Upanishads, Bhagavad Gita | AH | branch | Y | — | — |
 | The Buddha (Dhammapada) | AH | line | Y | — | — |
-| Nagarjuna | WP (Buddhist unit), *added* by name | | partly | A | Emptiness: converges with Hume's bundle self |
+| Nagarjuna | WP (Buddhist unit), *added* by name | branch | partly | — | Emptiness: converges with Hume's bundle self |
 | Shankara (Advaita) | WP (Indian unit), *added* by name | | Y | B | Non-duality: extends the Upanishads; Schrödinger echoes it |
 | Kalidasa / Indian epics (Mahabharata) | AH | | Y | C | Yudhishthira's riddles (a puzzle node): "What is the greatest wonder?" |
 | Confucius, Zengzi | AH | branch | Y | — | — |
 | Mencius | AH | branch | Y | — | The child at the well: innate compassion; refuted by Xunzi, measured by infant-helping studies |
-| Xunzi | *added* | | Y | B | Human nature is bad and must be shaped: extended by Hobbes |
+| Xunzi | *added* | branch | Y | — | Human nature is bad and must be shaped: extended by Hobbes |
 | Laozi | AH | branch | Y | — | — |
 | Zhuangzi | AH | branch | Y | — | The butterfly dream (puzzle): converges with Descartes's dream doubt and al-Ghazali |
 | Mozi | *added* | | Y | C | Impartial care: converges with utilitarianism |
@@ -148,12 +148,12 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
 | Ptahhotep (Maxims, Egypt) | *added* | | Y | B | One of the oldest ethical texts; converges with Proverbs and Confucius |
-| Zera Yacob (Hatata, Ethiopia, 1667) | WP (African unit), *added* by name | | partly | A | Reasoned doubt about inherited religion, the same decade as Descartes: converges with Descartes and al-Ghazali |
-| Ubuntu ("a person is a person through other persons") | WP (African unit) | | N (oral; cite modern statements) | A | Converges with Aristotle on friendship and Confucian ren; lands on invest in people |
+| Zera Yacob (Hatata, Ethiopia, 1667) | WP (African unit), *added* by name | branch | partly | — | Reasoned doubt about inherited religion, the same decade as Descartes: converges with Descartes and al-Ghazali |
+| Ubuntu ("a person is a person through other persons") | WP (African unit) | branch | N (oral; cite modern statements) | — | Converges with Aristotle on friendship and Confucian ren; lands on invest in people |
 | Kwasi Wiredu | WP (African unit), *added* by name | | N | C | Conceptual decolonization |
 | Ohiyesa (Charles Eastman) | IND (era) | branch | Y | — | — |
 | Bartolomé de las Casas / Valladolid debate | IND | | Y | B | The Valladolid debate (1550), a dilemma node: do the conquered have the same rights? Extends Aquinas |
-| Haudenosaunee Great Law (Seventh Generation principle) | *added* | | partly | A | Decide for seven generations ahead: lands on work that outlasts you |
+| Haudenosaunee Great Law (Seventh Generation principle) | *added* | branch | partly | — | Decide for seven generations ahead: lands on work that outlasts you |
 | Vine Deloria Jr. | IND | | N | B | God Is Red: space vs. time traditions; refutes linear Western history |
 | V. F. Cordova | IND | | N | C | Native American worldview as philosophy |
 | Robin Wall Kimmerer | *added* | | N | B | Braiding Sweetgrass, reciprocity with land: converges with the Gita's offering and Ohiyesa |
@@ -162,9 +162,11 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 
 ## Batch 2 (done): Heraclitus, Plato's ring of Gyges, Pyrrho, Job, Augustine, Boethius, Avicenna, Rumi, Kant, Mill, Thoreau, Douglass, Tolstoy, Mencius, Zhuangzi.
 
-## Suggested batch 3
+## Batch 3 (done): Gilgamesh, Aquinas, Averroes, Maimonides, Zera Yacob, Ubuntu, the Seventh Generation principle, Nagarjuna, Xunzi, Gandhi, Hobbes, Hegel, Goethe, Du Bois, King, Arendt, Milgram, Kahneman.
 
-By links into the current map (see WIKIDATA.md) and the crossover column: Hegel, Goethe, Aquinas, Averroes, Maimonides, Gilgamesh, Zera Yacob, Ubuntu, the Seventh Generation principle, Gandhi → King, Arendt → Milgram, Kahneman, Xunzi and Hobbes (to argue with Mencius), Nagarjuna (to meet Hume), Du Bois.
+## Suggested batch 4
+
+From the remaining priority A and the Philosophy Map additions: Plato's cave or Phaedo, Plotinus, Marx, Rawls, Parfit, Śāntideva, Patañjali, William James, Jung, Wollstonecraft, Sor Juana, Beauvoir, Seligman, Kabat-Zinn's Zen roots (Dōgen), Wittgenstein ↔ Laozi.
 
 The batch-2 list was:
 
@@ -185,3 +187,28 @@ The batch-2 list was:
 15. **Zhuangzi** (butterfly dream)
 
 After these come Zera Yacob, Ubuntu, the Seventh Generation principle, Gandhi → King, Arendt → Milgram, and Kahneman.
+
+## From the Philosophy Map (thephilosophymap.com; see PHILOSOPHYMAP.md)
+
+Names on that map's 107 that are on neither our graph nor the tables above. Priorities are mine.
+
+| Name | Group | PD? | Priority | Crossover to build |
+|---|---|---|---|---|
+| Patañjali (Yoga Sutras) | Indian | Y | A | "Yoga is the stilling of the mind's fluctuations": converges with the Stoics; lands on care for the body |
+| Śāntideva (Bodhicaryāvatāra) | Indian | partly | A | "If it can be remedied, why be unhappy? If it cannot, what use is being unhappy?": converges with Epictetus almost word for word |
+| Dignāga / Dharmakīrti | Indian | N | C | Buddhist logic and perception |
+| Rāmānuja | Indian | partly | C | Qualified non-dualism: refutes Shankara |
+| Han Feizi | Chinese | partly | B | Legalism: extends Xunzi, converges with Hobbes and Machiavelli |
+| Leibniz | Western | Y | B | Best of all possible worlds: refuted by Voltaire's Candide; converges with the Stoics on providence |
+| Peirce / Russell / Popper | Western | partly | B | Fallibilism, falsification: lands on hold beliefs loosely; Popper extends Hume's problem of induction |
+| Husserl / Heidegger / Merleau-Ponty | Western | N | C | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
+| Adorno / Foucault / Derrida | Western | N | C | Later |
+| Rawls | Western | N | A | The veil of ignorance: a dilemma node; extends Kant, refuted by Nozick (already on the map) |
+| Parfit | Western | N | A | Reasons and Persons on personal identity: measured/extended Hume and Nāgārjuna's no-self (Parfit says so) |
+| Singer | Western | N | B | The drowning child: a dilemma node; extends Mill, converges with Mencius's child at the well |
+| Nussbaum / MacIntyre / Taylor / Nagel | Western | N | B | Nussbaum and MacIntyre revive Aristotle's virtue ethics; Nagel's "What is it like to be a bat?" is a puzzle node |
+| Judith Butler | Western | N | C | Extends Beauvoir |
+| Fanon / Senghor / Nkrumah | African | N | B | Fanon extends Hegel's recognition and refutes Sartre; converges with Du Bois |
+| Mariátegui / Octavio Paz | Latin American | N | C | Later |
+| Keiji Nishitani | Japanese | N | B | Kyoto School: Nāgārjuna's emptiness meets Nietzsche's nihilism, by someone who read both |
+| bell hooks | American | N | B | All About Love: extends King; lands on invest in people |

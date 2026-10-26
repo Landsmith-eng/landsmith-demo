@@ -21,6 +21,8 @@ idea ids are an error).
    - Every node must be able to reach a practice by walking.
 3. **Verify every quotation word for word** against a downloaded text. Public-domain translations only
    (Gutenberg, Wikisource, Perseus); cite translator and year; `source_url` = the page you checked against.
+   An original in another language may be quoted with our own rendering after it in a paragraph wrapped in
+   [square brackets]; the verifier skips bracketed paragraphs, and the citation must say whose rendering it is.
    In-copyright works get at most one short verified sentence, or a face that starts
    `Summary (work under copyright): …`. Never quote from memory; famous misattributions are common.
 4. **Run the gate:** `npm run check -- <batch>` must print `content OK`. Then
@@ -38,6 +40,7 @@ idea ids are an error).
 | 0 | `line_poc.js` | 14 + 4 practices | The daily line from the concept doc |
 | 1 | `traditions.js`, `science.js`, `modern.js` | 28 + 2 practices | First crossovers: world traditions, science & psychology, modern philosophy |
 | 2 | `ancient.js`, `east.js`, `modern2.js` | 15 + 1 practice | Roster priority A: Heraclitus → Zhuangzi. Graph: 62 nodes, 120 edges, all 7 practices |
+| 3 | `medieval2.js`, `global.js`, `modern3.js` | 18 | Gilgamesh to Kahneman; Africa, the Americas and India; the 20th century. Graph: 80 nodes, 177 edges |
 
 ## Not yet decided
 

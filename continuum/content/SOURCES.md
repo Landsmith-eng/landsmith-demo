@@ -67,6 +67,42 @@ Aristotle → Avicenna ("read the Metaphysics forty times", from Avicenna's auto
 (De Trinitate preface), Zengzi → Mencius (the traditional Zisi line). Job → Boethius is `converged` because the
 Consolation never quotes Job.
 
+### Batch 3 (medieval2.js, global.js, modern3.js), 2026-10-26
+
+18 nodes. Quotations matched word for word by the researcher and again by `scripts/verify-quotes.js`.
+
+| Node | Source | Status |
+|---|---|---|
+| gilgamesh_siduri_seize_the_day | Jastrow & Clay, Old Babylonian Gilgamesh (1920), Siduri's speech | Verified (Gutenberg 11000) |
+| aquinas_unjust_law_is_no_law | Summa I-II q.96 a.4, q.95 a.2, Dominican Fathers | Verified (Gutenberg 17897) |
+| averroes_decisive_treatise | Jamil-ur-Rehman 1921, Decisive Discourse | Verified (Gutenberg 65708) |
+| maimonides_middle_path | Guide for the Perplexed II.39, III.8, Friedländer | Verified (Gutenberg 73584). The Eight Chapters (Gorfinkle) were not reachable |
+| zera_yacob_hatata | Hatata (1667) | **Summary**: English translations (Sumner, Kiros) in copyright |
+| ubuntu_person_through_persons | Nguni proverb; Mbiti 1969 cited | **Summary**: Mbiti in copyright; no reliable fetchable source for the proverb |
+| haudenosaunee_seventh_generation | Parker, Constitution of the Five Nations (1916) §28 | **Summary, labelled "public-domain text not checked"**: archive.org download blocked; check the wording |
+| nagarjuna_emptiness | Suzuki, Outlines of Mahayana Buddhism (1908), MMK ch. 9 and the Eight No's | Verified (Gutenberg 75283) |
+| xunzi_human_nature_is_bad | Xunzi ch. 23 | **Summary**: Dubs 1928 not reachable; Hutton 2014 in copyright |
+| gandhi_satyagraha | Hind Swaraj ch. XVII, Gandhi's own English (1922 ed.) | Verified (Gutenberg 40461) |
+| hobbes_state_of_nature | Leviathan ch. XIII, 1651 spelling | Verified (Gutenberg 3207) |
+| hegel_master_and_slave | Phänomenologie des Geistes IV.A, German | Verified German (Gutenberg 6698); the bracketed English is our rendering, Baillie 1910 unreachable |
+| goethe_faust_striving | Faust I, Bayard Taylor 1870; German wager line | Verified (Gutenberg 14591, 2229) |
+| du_bois_double_consciousness | Souls of Black Folk ch. I | Verified (Gutenberg 408) |
+| king_letter_from_birmingham_jail | Letter from Birmingham Jail (1963) | **Summary**: in copyright; no sentence quoted |
+| arendt_banality_of_evil | Eichmann in Jerusalem (1963) | **Summary** |
+| milgram_obedience | Milgram 1963, JASP 67 | **Summary**; figures checked against the abstract via search only |
+| kahneman_peak_end | Redelmeier & Kahneman 1996, Pain 66 | **Summary**; sample size and interval deliberately omitted |
+
+Edge notes verified against texts: Aquinas quoting Augustine and "the Philosopher"; Aquinas on "his Commentator"
+and "Rabbi Moses"; Averroes naming al-Ghazali; Jastrow's own footnote on Ecclesiastes 9; Hobbes on Aristotle
+(Leviathan XV); Kierkegaard on Hegel (Fear and Trembling preface); Schopenhauer on Goethe's colours; Nietzsche on
+Goethe (Twilight §49); Du Bois naming Douglass; Hind Swaraj's appendix listing Tolstoy and Thoreau and its Gita mention.
+
+Batch 3 claims resting on memory: Hobbes → Spinoza (Letter 50); Hegel → Sartre (via Kojève); Socrates, Thoreau and
+Gandhi → King (the Letter was not fetchable); Socrates and Augustine → Arendt; Arendt → Milgram's "more than he
+expected"; Mencius → Xunzi (ch. 23 names Mencius); Aristotle → Maimonides on the mean; al-Ghazali's Incoherence of
+the Incoherence as Averroes's reply. Dropped as too loose: Plato's Gyges → Milgram `measured`, Seventh Generation ↔
+Kant `converged`.
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),
