@@ -1,0 +1,183 @@
+# Continuum master roster
+
+Who belongs on the map, drawn from real college curricula rather than one person's list.
+Use it to pick the next nodes to write. Each name still needs a node with two faces and a verified source,
+same rules as `content/SOURCES.md`.
+
+**How this was built (2026-10-26).** The direct pages were blocked from the build environment, so these lists come
+from web-search summaries of the official course pages and published syllabi. Course lists rotate by year and instructor.
+Treat a curriculum tag as "appears on a recent or standard list", not as "is on this year's syllabus".
+
+## Curriculum key
+
+| Tag | Source |
+|---|---|
+| **CC** | Columbia Contemporary Civilization: Bible, Qur'an, Plato, Aristotle, Augustine, Machiavelli, Descartes, Hobbes, Locke, Hume, Rousseau, Kant, Smith, Marx, Darwin, Nietzsche, Du Bois, Freud, Woolf (older years add Burke, Tocqueville, Mill, Hegel) |
+| **LH** | Columbia Literature Humanities: Homer, Sappho, Dante, Woolf among others; Iliad and Inferno never leave the list |
+| **AH** | Columbia Asian Humanities: East Asia = Confucius (Analects), Mencius, Laozi, Zhuangzi; Middle East & India = Qur'an, Islamic philosophy, Sufi poetry, Upanishads, Buddhist sutras, Bhagavad Gita, Indian epics, Gandhi's Autobiography |
+| **SJC** | St. John's College four-year program: Greeks (Homer, Aeschylus, Sophocles, Euripides, Herodotus, Aristophanes, Plato, Aristotle, Euclid, Lucretius, Plutarch); Roman/medieval/Renaissance (Tacitus, Epictetus, Ptolemy, Plotinus, Augustine, Anselm, Aquinas, Maimonides, Dante, Chaucer, Machiavelli, Montaigne); 17th–18th c. (Cervantes, Galileo, Descartes, Hobbes, Milton, Racine, Rousseau); 19th–20th c. (Goethe, Tolstoy, Baldwin, Plath, Stevens) |
+| **DS** | Yale Directed Studies: Philosophy = Plato, Aristotle, Scholastic and medieval Arabic philosophers, Descartes, Berkeley, Hume, Kant, Hegel, Frederick Douglass, Nietzsche, Simone de Beauvoir, Iris Murdoch; Political thought = Herodotus, Thucydides, Augustine, Aquinas, Machiavelli, Hobbes, Locke, Rousseau, Burke, Tocqueville, Emerson, Marx, Arendt; Literature = Homer, Aeschylus, Sophocles, Sappho, Virgil, Dante, Petrarch, Cervantes, Shakespeare, Milton, Wordsworth, Goethe, Flaubert, Tolstoy, Woolf, Walcott |
+| **UC** | Chicago "Human Being and Citizen": Gilgamesh, Homer, Genesis, Plato, Sophocles' Antigone, Aristotle's Ethics, Augustine's Confessions, Dante, Shakespeare's Tempest, Kant's Groundwork, Baldwin, King's "Letter from Birmingham Jail" |
+| **WP** | World-philosophies courses (Tufts World Philosophies, SOAS BA World Philosophies, APA inclusiveness syllabi): Indian, Chinese, Japanese, Buddhist, Islamic, African and Latin American units |
+| **IND** | Native American / Indigenous philosophy syllabi (Anne Waters; University of Oregon PHIL 451/551; APA "Indigenous Thought of the Americas"; Georgetown PHL 156): Valladolid debates through Vine Deloria Jr., V. F. Cordova |
+| **PSY** | History and systems of psychology syllabi: structuralism, functionalism, psychoanalysis, behaviorism, Gestalt, humanistic, cognitive |
+| **HSCI** | History of science surveys (Stanford World History of Science; Stanford Scientific Revolution; Minnesota Making Modern Science; Oklahoma HSCI 3023; Williams HSCI 224): Copernicus, Galileo, Kepler, Newton, Darwin, Einstein, Bohr, Heisenberg, Kuhn |
+| *added* | Not surfaced in the curricula searched, but standard in the field; my addition, flagged so you can cut it |
+
+Status: **line** = daily card; **branch** = walk-only node already written; blank = not yet in the graph.
+Priority: **A** = strong crossovers with what's already on the map, write next; **B** = good; **C** = later.
+**PD?** = can the source face quote a public-domain translation (Y), or must it be a short quote/summary (N)?
+
+## Ancient Mediterranean and Near East
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Gilgamesh | UC | | Y | A | Facing death, the oldest text on it: converges with Lucretius, Ecclesiastes; lands on death in view |
+| Homer | LH, SJC, DS, UC | | Y | B | Achilles' choice: short glorious life or long quiet one; links to Epicurus vs. Zeno |
+| Sappho | LH, DS | | Y | C | Love and longing; converges with the Buddha on craving |
+| Aeschylus / Sophocles | SJC, DS, UC | | Y | B | Antigone, conscience vs. law: extended by Thoreau, King |
+| Herodotus / Thucydides | SJC, DS | | Y | C | Solon's "call no man happy until he is dead": converges with Kahneman's peak-end |
+| Heraclitus | *added* | | Y | A | "No man steps in the same river twice": converges with the Buddha on impermanence |
+| Democritus | *added* | line | Y | — | — |
+| Socrates (via Plato) | CC, SJC, DS, UC | branch | Y | — | — |
+| Plato | CC, SJC, DS, UC | | Y | A | The cave, the ring of Gyges (a dilemma node), the tripartite soul: extended by Freud |
+| Aristotle | CC, SJC, DS, UC | branch | Y | A | Add the golden mean and habit (we become just by doing just acts): extended by William James |
+| Diogenes the Cynic | *added* | | Y | B | Radical simplicity: taught Crates, who taught Zeno |
+| Epicurus, Lucretius, Zeno, Epictetus, Seneca, Marcus | SJC (Lucretius, Epictetus) | line | Y | — | — |
+| Pyrrho / Sextus Empiricus | *added* | | Y | A | Suspending judgment brings calm: converges with the Buddha; lands on hold beliefs loosely |
+| Euclid | SJC | | Y | C | Proof as a way of knowing: extended by Descartes, Spinoza (Ethics in geometric order) |
+| Plutarch | SJC | | Y | C | Lives as moral examples |
+| Plotinus | SJC | | Y | B | The One: converges with the Upanishads; extended by Augustine |
+| Hebrew Bible (Genesis, Job, Ecclesiastes) | CC, UC | branch (Eccl.) | Y | A | Job: why do the good suffer? Converges with the Buddha, Boethius |
+| New Testament | CC, SJC | branch (Matt.) | Y | B | Sermon on the Mount, love of enemies: extended by Tolstoy, Gandhi, King |
+
+## Medieval and Renaissance (Christian, Jewish, Islamic)
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Augustine | CC, SJC, DS, UC | | Y | A | "Our heart is restless until it rests in thee": converges with the Buddha and Schopenhauer on restless desire |
+| Boethius | *added* | | Y | A | Consolation of Philosophy, Fortune's wheel: extends the Stoics, written in prison awaiting execution |
+| Anselm | SJC | | Y | C | Ontological argument (puzzle node) |
+| Aquinas | SJC, DS | | Y | B | Natural law: extends Aristotle; refuted by Sartre |
+| Maimonides | SJC | | Y | A | Guide for the Perplexed, the middle path: converges with Aristotle's mean |
+| Al-Farabi, Avicenna, Averroes | DS ("medieval Arabic philosophers"), AH | | Y | A | Avicenna's floating man: converges with Descartes; Averroes carried Aristotle back to Europe |
+| Al-Ghazali | AH (Islamic philosophy) | branch | Y | — | — |
+| Rumi / Attar | AH (Sufi poetry) | | Y | A | The reed flute's longing: converges with Augustine's restless heart |
+| Ibn Khaldun | *added* | | Y | B | Asabiyyah: rise and fall of group cohesion; measured by modern social science |
+| Dante | LH, SJC, DS, UC | | Y | B | "Midway in the journey of our life": a crisis node; lands on examine daily |
+| Chaucer, Petrarch | SJC, DS | | Y | C | Petrarch's Ascent of Mont Ventoux, reading Augustine on a mountain |
+| Machiavelli | CC, SJC, DS | | Y | B | Fortune vs. virtù: refutes the Stoic acceptance of fate |
+| Montaigne | SJC | branch | Y | — | — |
+
+## Early modern and Enlightenment
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Descartes, Pascal, Hume, Spinoza | CC, SJC, DS | branch / line | Y | — | — |
+| Hobbes | CC, SJC, DS | | Y | B | Life without society, "nasty, brutish, and short": refuted by Rousseau |
+| Locke | CC, DS | | Y | B | Mind as blank slate: refuted by modern psychology |
+| Berkeley | DS | | Y | C | Puzzle node: the tree falling in the forest |
+| Rousseau | CC, SJC, DS | | Y | B | Amour-propre (comparison): measured by social-comparison research |
+| Kant | CC, DS, UC | | Y | A | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
+| Adam Smith | CC | | Y | B | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
+| Burke / Tocqueville | DS (CC older) | | Y | C | Habits of the heart, associations: measured by the Harvard Study |
+| Mary Wollstonecraft | *added* | | Y | B | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
+| Galileo | SJC, HSCI | | Y | B | Letter to the Grand Duchess Christina: science and scripture |
+| Copernicus / Kepler / Newton | HSCI | | Y | B | Moving us from the center: a humbling that echoes Marcus's "view from above" |
+| Milton | SJC, DS | | Y | C | "The mind is its own place": converges with Epictetus and Marcus |
+
+## Nineteenth century
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Hegel | DS (CC older) | | Y | C | Master–slave dialectic: extended by Marx, Douglass |
+| Schopenhauer, Nietzsche, Kierkegaard | CC, DS | line / branch | Y | — | — |
+| Marx | CC, DS | | Y | B | Alienated labor: lands on work that outlasts you; converges with Frankl on meaningful work |
+| John Stuart Mill | CC (older) | | Y | A | "Ask yourself whether you are happy, and you cease to be so": converges with Frankl; extends Epicurus |
+| Emerson / Thoreau | DS (Emerson) | | Y | A | Walden, living deliberately: extends the Stoics and the Gita (Thoreau read it); lands on body / simplicity |
+| Frederick Douglass | DS | | Y | A | Learning to read as the path to freedom: converges with Epictetus, who also began as a slave |
+| Darwin | CC, HSCI | branch | Y | — | — |
+| Tolstoy | SJC, DS | | Y | A | The Death of Ivan Ilyich: lands on death in view; also his non-resistance, extended by Gandhi |
+| Dostoevsky | *added* | | Y | B | Grand Inquisitor: freedom as a burden; extended by Sartre |
+| William James | PSY | | Y | A | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
+| Wundt / Pavlov | PSY | | Y | C | Birth of experimental psychology; conditioning |
+| Goethe / Wordsworth / Flaubert | SJC, DS | | Y | C | Faust's bargain: never be satisfied (refutes Epicurean contentment) |
+
+## Twentieth century to now
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Freud | CC, PSY | branch | Y (pre-1929) | — | — |
+| W. E. B. Du Bois | CC | | Y (1903) | A | Double consciousness: converges with Douglass; extends Hegel's recognition |
+| Jung | PSY | | partly | B | The shadow: converges with Augustine's divided will |
+| Einstein, Bohr, Heisenberg, Schrödinger | HSCI | branch (2) | N | B | Uncertainty as a scientific limit on knowing: lands on hold beliefs loosely |
+| Virginia Woolf | CC, LH, DS | | Y (pre-1929 works) | B | A Room of One's Own: lands on work that outlasts you |
+| Gandhi | AH | | partly | A | Satyagraha: extends the Gita, Tolstoy and Thoreau; extended by King |
+| Martin Luther King Jr. | UC | | N | A | Letter from Birmingham Jail: extends Gandhi, Aquinas on unjust law, Socrates |
+| James Baldwin | SJC, UC | | N | B | The Fire Next Time: love as moral demand |
+| Hannah Arendt | DS | | N | A | Banality of evil: measured by Milgram's obedience experiments |
+| Simone de Beauvoir / Iris Murdoch | DS | | N | B | Beauvoir: one is not born a woman (refutes fixed essence). Murdoch: attention as moral practice, which converges with Simone Weil |
+| Sartre / Camus | *added* (owner request) | branch | N | — | — |
+| Wittgenstein | *added* | | partly | C | "Whereof one cannot speak": converges with Laozi's "the Tao that can be named" |
+| Thomas Kuhn | HSCI | | N | B | Paradigm shifts: lands on hold beliefs loosely |
+| Skinner / Rogers / Maslow | PSY | | N | B | Skinner refutes free will (converges with Spinoza). Rogers: unconditional positive regard. Maslow: needs pyramid, with Frankl's critique |
+| Kahneman / Seligman | *added* (contemporary) | | N | A | Kahneman measured Bentham. Seligman's learned helplessness was measured, and Beck and the Stoics were extended into positive psychology |
+| Frankl, Beck, Nozick | *added* (concept doc) | line | N | — | — |
+
+## Asia
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Upanishads, Bhagavad Gita | AH | branch | Y | — | — |
+| The Buddha (Dhammapada) | AH | line | Y | — | — |
+| Nagarjuna | WP (Buddhist unit), *added* by name | | partly | A | Emptiness: converges with Hume's bundle self |
+| Shankara (Advaita) | WP (Indian unit), *added* by name | | Y | B | Non-duality: extends the Upanishads; Schrödinger echoes it |
+| Kalidasa / Indian epics (Mahabharata) | AH | | Y | C | Yudhishthira's riddles (a puzzle node): "What is the greatest wonder?" |
+| Confucius, Zengzi | AH | branch | Y | — | — |
+| Mencius | AH | | Y | A | The child at the well: innate compassion; refuted by Xunzi, measured by infant-helping studies |
+| Xunzi | *added* | | Y | B | Human nature is bad and must be shaped: extended by Hobbes |
+| Laozi | AH | branch | Y | — | — |
+| Zhuangzi | AH | | Y | A | The butterfly dream (puzzle): converges with Descartes's dream doubt and al-Ghazali |
+| Mozi | *added* | | Y | C | Impartial care: converges with utilitarianism |
+| Dōgen / Zen (Linji, Hakuin) | WP (Japanese unit), *added* by name | | partly | B | Just sitting: secularized into mindfulness, alongside Kabat-Zinn |
+| Wang Yangming | *added* | | partly | C | Unity of knowing and acting: converges with William James's pragmatism |
+| Tagore / Gandhi | AH (Gandhi) | | partly | B | See Gandhi above |
+
+## Africa, the Americas, and Indigenous thought
+
+| Name | Curricula | Status | PD? | Priority | Crossover to build |
+|---|---|---|---|---|---|
+| Ptahhotep (Maxims, Egypt) | *added* | | Y | B | One of the oldest ethical texts; converges with Proverbs and Confucius |
+| Zera Yacob (Hatata, Ethiopia, 1667) | WP (African unit), *added* by name | | partly | A | Reasoned doubt about inherited religion, the same decade as Descartes: converges with Descartes and al-Ghazali |
+| Ubuntu ("a person is a person through other persons") | WP (African unit) | | N (oral; cite modern statements) | A | Converges with Aristotle on friendship and Confucian ren; lands on invest in people |
+| Kwasi Wiredu | WP (African unit), *added* by name | | N | C | Conceptual decolonization |
+| Ohiyesa (Charles Eastman) | IND (era) | branch | Y | — | — |
+| Bartolomé de las Casas / Valladolid debate | IND | | Y | B | The Valladolid debate (1550), a dilemma node: do the conquered have the same rights? Extends Aquinas |
+| Haudenosaunee Great Law (Seventh Generation principle) | *added* | | partly | A | Decide for seven generations ahead: lands on work that outlasts you |
+| Vine Deloria Jr. | IND | | N | B | God Is Red: space vs. time traditions; refutes linear Western history |
+| V. F. Cordova | IND | | N | C | Native American worldview as philosophy |
+| Robin Wall Kimmerer | *added* | | N | B | Braiding Sweetgrass, reciprocity with land: converges with the Gita's offering and Ohiyesa |
+| Sor Juana Inés de la Cruz | *added* (Latin America) | | Y | B | The Reply to Sor Filotea, the right to learn: converges with Wollstonecraft and Douglass |
+| José Martí / Paulo Freire | WP (Latin American unit), *added* by name | | partly | C | Freire: education as freedom; extends Douglass |
+
+## What this suggests for the next batch
+
+The next 15, chosen for the most new crossovers into nodes already on the map:
+
+1. **Heraclitus** (impermanence)
+2. **Plato's ring of Gyges** (dilemma)
+3. **Pyrrho** (suspending judgment)
+4. **Job** (suffering)
+5. **Augustine** (restless heart)
+6. **Boethius** (Fortune's wheel)
+7. **Avicenna** (floating man)
+8. **Rumi** (reed flute)
+9. **Kant** (ends not means)
+10. **Mill** (happiness ensues)
+11. **Thoreau** (living deliberately)
+12. **Douglass** (reading as freedom)
+13. **Tolstoy** (Ivan Ilyich)
+14. **Mencius** (child at the well)
+15. **Zhuangzi** (butterfly dream)
+
+After these come Zera Yacob, Ubuntu, the Seventh Generation principle, Gandhi → King, Arendt → Milgram, and Kahneman.
