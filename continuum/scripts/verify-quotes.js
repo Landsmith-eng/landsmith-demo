@@ -12,7 +12,7 @@ if (!root) { console.error('usage: node scripts/verify-quotes.js <texts-dir> [br
 const files = [];
 const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else files.push(p); } };
 walk(root);
-const norm = (t) => t.normalize('NFKC').replace(/<[^>]+>/g, ' ').replace(/'''?|\[\[|\]\]|\{\{[^}]*\}\}|_/g, '').replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/[—–]|--/g, '-').replace(/-\s*-/g,'-').replace(/\s+/g, ' ').toLowerCase();
+const norm = (t) => t.normalize('NFKC').replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/'''?|\[\[|\]\]|\{\{[^}]*\}\}|_/g, '').replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/[—–]|--/g, '-').replace(/-\s*-/g,'-').replace(/\s+/g, ' ').toLowerCase();
 const corpus = files.map((f) => norm(readFileSync(f, 'utf8'))).join(' \u0000 ');
 const { nodes } = await import(contentIndex);
 let bad = 0;

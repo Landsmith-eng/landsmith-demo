@@ -33,6 +33,40 @@ The only changes are dropped footnote markers and inline verse numbers.
 | science.js | Aristotle NE VIII (Chase), Darwin, Origin closing (1859), Freud, Beyond the Pleasure Principle (Hubback 1922) | Harvard Study of Adult Development, Brickman lottery study, Kabat-Zinn MBSR, Einstein, Schrödinger |
 | modern.js | Plato, Apology 38a (Jowett), Montaigne I.19 (Cotton/Hazlitt), Descartes, Discourse IV (Veitch), Pascal, Pensées 139, Hume, Treatise I.4.6, Kierkegaard, Fear and Trembling (Hollander 1923) | Sartre, Camus |
 
+### Batch 2 (ancient.js, east.js, modern2.js), 2026-10-26
+
+15 nodes plus the seventh practice (Care for the body). Every quotation matched word for word by the researcher
+and again by `scripts/verify-quotes.js`.
+
+| Node | Source | Status |
+|---|---|---|
+| heraclitus_same_river | Burnet, Early Greek Philosophy 2nd ed. 1908, frs. 41–42, 81 + his rendering of Cratylus 402a | Verified (Gutenberg 67097) |
+| plato_ring_of_gyges | Republic II 359d–360d, Jowett | Verified (Gutenberg 1497) |
+| pyrrho_suspend_judgment | Diogenes Laërtius IX.61, IX.107, Hicks | Verified (Wikisource Book IX) |
+| job_why_the_righteous_suffer | Job 1:21, 38:4, KJV | Verified (Gutenberg 10) |
+| augustine_restless_heart | Confessions I.1, VIII.7, Pusey | Verified (Gutenberg 3296). Pusey reads "chastity and continency, only not yet", not the popular "but not yet" |
+| boethius_wheel_of_fortune | Consolation II pr. 2 and 4, H. R. James 1897 | Verified (Gutenberg 14328) |
+| avicenna_floating_man | Kitab al-Shifa, al-Nafs I.1 | **Summary**: no public-domain English translation of the passage exists (Gutenberg 58186 lacks it) |
+| rumi_reed_flute | Mesnevi Book I proem, Redhouse 1881 | Verified (Gutenberg 61724) |
+| mencius_child_at_the_well | Mencius 2A.6, Legge | Verified (Wikisource, Chinese Classics vol. II) |
+| zhuangzi_butterfly_dream | Chuang Tzŭ ch. II, Giles 1889 | Verified (Gutenberg 59709) |
+| kant_ends_not_means | Groundwork, Second Section, Abbott | Verified (Gutenberg 5682) |
+| mill_ask_whether_you_are_happy | Autobiography ch. V | Verified (Gutenberg 10378) |
+| thoreau_live_deliberately | Walden, "Where I Lived" and "Higher Laws" | Verified (Gutenberg 205) |
+| douglass_learning_to_read | Narrative ch. VI | Verified (Gutenberg 23). Quotes Auld's speech as printed in 1845, slur included; the citation says so. Decide whether to keep it verbatim before testers see it |
+| tolstoy_a_confession | A Confession ch. IV, Maude | Verified (Wikisource). Stands in for The Death of Ivan Ilyich: no public-domain English translation is reachable. The 1921 World's Classics date is from memory |
+
+Edge notes verified against texts in this batch: Nietzsche on Heraclitus (Twilight, Ecce Homo); Epicurus PD 34–35;
+Epicurus admired Pyrrho (D.L. IX.64); Montaigne on Pyrrho (Apology for Raymond Sebond); Pascal citing Augustine;
+Schopenhauer quoting Augustine (WWI §24); Boethius naming Seneca; al-Ghazali naming Avicenna; Descartes's dream doubt;
+Kant's "dogmatic slumber" (Prolegomena); Nietzsche on Kant (Antichrist §11); Mill naming Epicurus (Utilitarianism ch. II);
+Thoreau on the "Bhagvat Geeta" (Walden); Tolstoy quoting Schopenhauer and telling the Buddha's story (A Confession ch. VI).
+
+Batch 2 claims resting on memory, not a fetched text: al-Ghazali → Rumi (standard schooling; relation kept `extended`),
+Aristotle → Avicenna ("read the Metaphysics forty times", from Avicenna's autobiography), Augustine → Boethius
+(De Trinitate preface), Zengzi → Mencius (the traditional Zisi line). Job → Boethius is `converged` because the
+Consolation never quotes Job.
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),

@@ -37,32 +37,32 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Sappho | LH, DS | | Y | C | Love and longing; converges with the Buddha on craving |
 | Aeschylus / Sophocles | SJC, DS, UC | | Y | B | Antigone, conscience vs. law: extended by Thoreau, King |
 | Herodotus / Thucydides | SJC, DS | | Y | C | Solon's "call no man happy until he is dead": converges with Kahneman's peak-end |
-| Heraclitus | *added* | | Y | A | "No man steps in the same river twice": converges with the Buddha on impermanence |
+| Heraclitus | *added* | branch | Y | — | "No man steps in the same river twice": converges with the Buddha on impermanence |
 | Democritus | *added* | line | Y | — | — |
 | Socrates (via Plato) | CC, SJC, DS, UC | branch | Y | — | — |
-| Plato | CC, SJC, DS, UC | | Y | A | The cave, the ring of Gyges (a dilemma node), the tripartite soul: extended by Freud |
+| Plato | CC, SJC, DS, UC | branch (Gyges) | Y | — | The cave, the ring of Gyges (a dilemma node), the tripartite soul: extended by Freud |
 | Aristotle | CC, SJC, DS, UC | branch | Y | A | Add the golden mean and habit (we become just by doing just acts): extended by William James |
 | Diogenes the Cynic | *added* | | Y | B | Radical simplicity: taught Crates, who taught Zeno |
 | Epicurus, Lucretius, Zeno, Epictetus, Seneca, Marcus | SJC (Lucretius, Epictetus) | line | Y | — | — |
-| Pyrrho / Sextus Empiricus | *added* | | Y | A | Suspending judgment brings calm: converges with the Buddha; lands on hold beliefs loosely |
+| Pyrrho / Sextus Empiricus | *added* | branch (Pyrrho) | Y | — | Suspending judgment brings calm: converges with the Buddha; lands on hold beliefs loosely |
 | Euclid | SJC | | Y | C | Proof as a way of knowing: extended by Descartes, Spinoza (Ethics in geometric order) |
 | Plutarch | SJC | | Y | C | Lives as moral examples |
 | Plotinus | SJC | | Y | B | The One: converges with the Upanishads; extended by Augustine |
-| Hebrew Bible (Genesis, Job, Ecclesiastes) | CC, UC | branch (Eccl.) | Y | A | Job: why do the good suffer? Converges with the Buddha, Boethius |
+| Hebrew Bible (Genesis, Job, Ecclesiastes) | CC, UC | branch (Eccl., Job) | Y | — | Job: why do the good suffer? Converges with the Buddha, Boethius |
 | New Testament | CC, SJC | branch (Matt.) | Y | B | Sermon on the Mount, love of enemies: extended by Tolstoy, Gandhi, King |
 
 ## Medieval and Renaissance (Christian, Jewish, Islamic)
 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
-| Augustine | CC, SJC, DS, UC | | Y | A | "Our heart is restless until it rests in thee": converges with the Buddha and Schopenhauer on restless desire |
-| Boethius | *added* | | Y | A | Consolation of Philosophy, Fortune's wheel: extends the Stoics, written in prison awaiting execution |
+| Augustine | CC, SJC, DS, UC | branch | Y | — | "Our heart is restless until it rests in thee": converges with the Buddha and Schopenhauer on restless desire |
+| Boethius | *added* | branch | Y | — | Consolation of Philosophy, Fortune's wheel: extends the Stoics, written in prison awaiting execution |
 | Anselm | SJC | | Y | C | Ontological argument (puzzle node) |
 | Aquinas | SJC, DS | | Y | B | Natural law: extends Aristotle; refuted by Sartre |
 | Maimonides | SJC | | Y | A | Guide for the Perplexed, the middle path: converges with Aristotle's mean |
-| Al-Farabi, Avicenna, Averroes | DS ("medieval Arabic philosophers"), AH | | Y | A | Avicenna's floating man: converges with Descartes; Averroes carried Aristotle back to Europe |
+| Al-Farabi, Avicenna, Averroes | DS ("medieval Arabic philosophers"), AH | branch (Avicenna) | Y | — | Avicenna's floating man: converges with Descartes; Averroes carried Aristotle back to Europe |
 | Al-Ghazali | AH (Islamic philosophy) | branch | Y | — | — |
-| Rumi / Attar | AH (Sufi poetry) | | Y | A | The reed flute's longing: converges with Augustine's restless heart |
+| Rumi / Attar | AH (Sufi poetry) | branch (Rumi) | Y | — | The reed flute's longing: converges with Augustine's restless heart |
 | Ibn Khaldun | *added* | | Y | B | Asabiyyah: rise and fall of group cohesion; measured by modern social science |
 | Dante | LH, SJC, DS, UC | | Y | B | "Midway in the journey of our life": a crisis node; lands on examine daily |
 | Chaucer, Petrarch | SJC, DS | | Y | C | Petrarch's Ascent of Mont Ventoux, reading Augustine on a mountain |
@@ -78,7 +78,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Locke | CC, DS | | Y | B | Mind as blank slate: refuted by modern psychology |
 | Berkeley | DS | | Y | C | Puzzle node: the tree falling in the forest |
 | Rousseau | CC, SJC, DS | | Y | B | Amour-propre (comparison): measured by social-comparison research |
-| Kant | CC, DS, UC | | Y | A | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
+| Kant | CC, DS, UC | branch | Y | — | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
 | Adam Smith | CC | | Y | B | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
 | Burke / Tocqueville | DS (CC older) | | Y | C | Habits of the heart, associations: measured by the Harvard Study |
 | Mary Wollstonecraft | *added* | | Y | B | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
@@ -93,11 +93,11 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Hegel | DS (CC older) | | Y | C | Master–slave dialectic: extended by Marx, Douglass |
 | Schopenhauer, Nietzsche, Kierkegaard | CC, DS | line / branch | Y | — | — |
 | Marx | CC, DS | | Y | B | Alienated labor: lands on work that outlasts you; converges with Frankl on meaningful work |
-| John Stuart Mill | CC (older) | | Y | A | "Ask yourself whether you are happy, and you cease to be so": converges with Frankl; extends Epicurus |
-| Emerson / Thoreau | DS (Emerson) | | Y | A | Walden, living deliberately: extends the Stoics and the Gita (Thoreau read it); lands on body / simplicity |
-| Frederick Douglass | DS | | Y | A | Learning to read as the path to freedom: converges with Epictetus, who also began as a slave |
+| John Stuart Mill | CC (older) | branch | Y | — | "Ask yourself whether you are happy, and you cease to be so": converges with Frankl; extends Epicurus |
+| Emerson / Thoreau | DS (Emerson) | branch (Thoreau) | Y | — | Walden, living deliberately: extends the Stoics and the Gita (Thoreau read it); lands on body / simplicity |
+| Frederick Douglass | DS | branch | Y | — | Learning to read as the path to freedom: converges with Epictetus, who also began as a slave |
 | Darwin | CC, HSCI | branch | Y | — | — |
-| Tolstoy | SJC, DS | | Y | A | The Death of Ivan Ilyich: lands on death in view; also his non-resistance, extended by Gandhi |
+| Tolstoy | SJC, DS | branch (A Confession) | Y | — | The Death of Ivan Ilyich: lands on death in view; also his non-resistance, extended by Gandhi |
 | Dostoevsky | *added* | | Y | B | Grand Inquisitor: freedom as a burden; extended by Sartre |
 | William James | PSY | | Y | A | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
 | Wundt / Pavlov | PSY | | Y | C | Birth of experimental psychology; conditioning |
@@ -134,10 +134,10 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Shankara (Advaita) | WP (Indian unit), *added* by name | | Y | B | Non-duality: extends the Upanishads; Schrödinger echoes it |
 | Kalidasa / Indian epics (Mahabharata) | AH | | Y | C | Yudhishthira's riddles (a puzzle node): "What is the greatest wonder?" |
 | Confucius, Zengzi | AH | branch | Y | — | — |
-| Mencius | AH | | Y | A | The child at the well: innate compassion; refuted by Xunzi, measured by infant-helping studies |
+| Mencius | AH | branch | Y | — | The child at the well: innate compassion; refuted by Xunzi, measured by infant-helping studies |
 | Xunzi | *added* | | Y | B | Human nature is bad and must be shaped: extended by Hobbes |
 | Laozi | AH | branch | Y | — | — |
-| Zhuangzi | AH | | Y | A | The butterfly dream (puzzle): converges with Descartes's dream doubt and al-Ghazali |
+| Zhuangzi | AH | branch | Y | — | The butterfly dream (puzzle): converges with Descartes's dream doubt and al-Ghazali |
 | Mozi | *added* | | Y | C | Impartial care: converges with utilitarianism |
 | Dōgen / Zen (Linji, Hakuin) | WP (Japanese unit), *added* by name | | partly | B | Just sitting: secularized into mindfulness, alongside Kabat-Zinn |
 | Wang Yangming | *added* | | partly | C | Unity of knowing and acting: converges with William James's pragmatism |
@@ -160,9 +160,13 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Sor Juana Inés de la Cruz | *added* (Latin America) | | Y | B | The Reply to Sor Filotea, the right to learn: converges with Wollstonecraft and Douglass |
 | José Martí / Paulo Freire | WP (Latin American unit), *added* by name | | partly | C | Freire: education as freedom; extends Douglass |
 
-## What this suggests for the next batch
+## Batch 2 (done): Heraclitus, Plato's ring of Gyges, Pyrrho, Job, Augustine, Boethius, Avicenna, Rumi, Kant, Mill, Thoreau, Douglass, Tolstoy, Mencius, Zhuangzi.
 
-The next 15, chosen for the most new crossovers into nodes already on the map:
+## Suggested batch 3
+
+By links into the current map (see WIKIDATA.md) and the crossover column: Hegel, Goethe, Aquinas, Averroes, Maimonides, Gilgamesh, Zera Yacob, Ubuntu, the Seventh Generation principle, Gandhi → King, Arendt → Milgram, Kahneman, Xunzi and Hobbes (to argue with Mencius), Nagarjuna (to meet Hume), Du Bois.
+
+The batch-2 list was:
 
 1. **Heraclitus** (impermanence)
 2. **Plato's ring of Gyges** (dilemma)

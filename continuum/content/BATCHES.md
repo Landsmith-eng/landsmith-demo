@@ -37,7 +37,7 @@ idea ids are an error).
 |---|---|---|---|
 | 0 | `line_poc.js` | 14 + 4 practices | The daily line from the concept doc |
 | 1 | `traditions.js`, `science.js`, `modern.js` | 28 + 2 practices | First crossovers: world traditions, science & psychology, modern philosophy |
-| 2 | `ancient.js`, `east.js`, `modern2.js` | 15 + 1 practice | Roster priority A: Heraclitus → Zhuangzi |
+| 2 | `ancient.js`, `east.js`, `modern2.js` | 15 + 1 practice | Roster priority A: Heraclitus → Zhuangzi. Graph: 62 nodes, 120 edges, all 7 practices |
 
 ## Not yet decided
 
