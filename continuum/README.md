@@ -20,6 +20,7 @@ npm install
 npm run seed                                  # load/refresh all content: 14 daily nodes + walk-only branches (keeps journals)
 npm run invite -- "Tester Name"               # prints a personal link: http://localhost:8878/?u=<token>
 CONTINUUM_ADMIN_KEY=<secret> npm start        # http://localhost:8878
+npm run check                                 # content gate: every node and edge obeys the rules
 npm test                                      # API + content-integrity tests (in-memory DB)
 ```
 
@@ -49,7 +50,10 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 | `app.js` | Express API + static files |
 | `server.js` | Entrypoint (port 8878, `CONTINUUM_DB` overrides DB path) |
 | `content/line_poc.js` | The 14 line nodes, 4 practices, 21 edges |
-| `content/branches/*.js` | Walk-only crossovers: world traditions, science & psychology, modern philosophy |
+| `content/branches/*.js` | Walk-only crossovers, added in batches; see `content/BATCHES.md` for how to add one |
+| `content/ROSTER.md` | Who belongs on the map, from college curricula, with priorities |
+| `scripts/check-content.js` | Content gate (`npm run check`): ids, types, chronology, notes, paths to a practice |
+| `scripts/verify-quotes.js` | Matches every quoted passage against downloaded source texts |
 | `content/index.js` | Merges the line and every branch file for seeding |
 | `content/SOURCES.md` | **Verification checklist for every source passage — do before testers** |
 | `public/` | Vanilla HTML/CSS/ES-module frontend, no build step. `admin.html` = retention view |

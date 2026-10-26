@@ -1,12 +1,12 @@
 # Source verification checklist
 
-Checked on 2026-10-26 by downloading each text and matching the passage word for word.
+All 14 daily nodes are now either verified or labelled in-copyright summaries. Checked on 2026-10-26 by downloading each text and matching the passage word for word.
 "Verified" means the passage in `line_poc.js` matches the text at the source link exactly
 (an ellipsis marks each cut).
 
 | # | Node | Source used | Status |
 |---|---|---|---|
-| 1 | democritus_atoms_and_void | DK 68 B9 (Greek) + own literal English | **Unverified**: no reachable PD source for the Greek; check against Diels-Kranz |
+| 1 | democritus_atoms_and_void | **Hicks 1925, D.L. IX.44–45** (was the Greek DK 68 B9 from memory) | Verified (Wikisource) |
 | 2 | epicurus_absence_of_pain | Hicks 1925, D.L. X.131, X.125 | Verified (Wikisource) |
 | 3 | lucretius_death_nothing_to_us | **Leonard 1916** (was Munro; Munro not reachable) | Verified (Gutenberg 785) |
 | 4 | zeno_live_according_to_nature | Hicks 1925, D.L. VII.87 | Verified (Wikisource) |
@@ -16,7 +16,7 @@ Checked on 2026-10-26 by downloading each text and matching the passage word for
 | 8 | marcus_pain_is_your_estimate | Long 1862, VIII.47 | Verified (Gutenberg 15877); fixed "judgement" to "judgment" |
 | 9 | spinoza_freedom_understanding_necessity | Elwes 1883, Ethics V P6 | Verified (Gutenberg 3800) |
 | 10 | schopenhauer_will_source_of_suffering | Haldane & Kemp 1883, §38 | Verified (Gutenberg 38427) |
-| 11 | nietzsche_amor_fati | Ludovici 1911, Ecce Homo "Clever" §10; German Götzen-Dämmerung §12 | Verified (Gutenberg 52190, 7203); fixed "in a man" to "in man" |
+| 11 | nietzsche_amor_fati | Ludovici 1911, Ecce Homo "Clever" §10; German Götzen-Dämmerung §12 | Verified (Gutenberg 52190, 7203). The lead-in "My formula for greatness in man is" is left out because the Gutenberg transcription reads "is! amor fati" (a stray mark; Wikisource was unreachable to compare). The English rendering of the German line now sits in the citation, not the quote |
 | 12 | beck_cognitive_therapy_stoicism_tested | Beck et al. 1979, p. 8 (one sentence) | **Unverified**: in copyright; check a copy |
 | 13 | frankl_mans_search_for_meaning | Frankl (one sentence) | **Unverified**: in copyright; check a copy |
 | 14 | nozick_experience_machine | Nozick 1974 (one sentence + summary) | **Unverified**: in copyright; check a copy |

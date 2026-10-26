@@ -9,7 +9,8 @@ const branchFiles = existsSync(branchDir) ? readdirSync(branchDir).filter((f) =>
 const branches = await Promise.all(branchFiles.map((f) => import(new URL(f, branchDir))));
 
 const byId = new Map();
-for (const n of [line, ...branches].flatMap((m) => m.nodes)) {
+const tagged = [[line, 'line_poc.js'], ...branches.map((m, i) => [m, branchFiles[i]])];
+for (const n of tagged.flatMap(([m, file]) => m.nodes.map((node) => ({ ...node, file })))) {
   if (byId.has(n.id) && n.type !== 'practice') throw new Error(`duplicate node id ${n.id}`);
   if (!byId.has(n.id)) byId.set(n.id, n);
 }

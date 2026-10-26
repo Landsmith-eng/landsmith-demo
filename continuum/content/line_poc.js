@@ -15,9 +15,9 @@ export const nodes = [
     plain_face:
       'Zoom far enough into a photo on your phone and it turns into coloured squares. Democritus said the whole world is like that: sweet, bitter, warm and cold are how things look from our distance. Up close there is only tiny uncuttable bits ("atoms") and the empty space they move through.',
     source_face:
-      'νόμῳ γλυκὺ καὶ νόμῳ πικρόν, νόμῳ θερμόν, νόμῳ ψυχρόν, νόμῳ χροιή· ἐτεῇ δὲ ἄτομα καὶ κενόν.\n\nBy convention sweet, by convention bitter, by convention hot, by convention cold, by convention colour; but in reality atoms and void.',
-    source_citation: 'Democritus, fragment DK 68 B9, preserved in Sextus Empiricus, Against the Logicians I.135. English is a literal rendering of the Greek.',
-    source_url: null,
+      'The first principles of the universe are atoms and empty space; everything else is merely thought to exist. …\n\nThe qualities of things exist merely by convention; in nature there is nothing but atoms and void space.',
+    source_citation: 'Democritus, as reported in Diogenes Laërtius, Lives of Eminent Philosophers IX.44–45 (trans. R. D. Hicks, Loeb, 1925). The famous Greek form of the second sentence (DK 68 B9) is in Sextus Empiricus.',
+    source_url: 'https://en.wikisource.org/wiki/Lives_of_the_Eminent_Philosophers/Book_IX',
   },
   {
     seq: 2,
@@ -175,8 +175,8 @@ export const nodes = [
     plain_face:
       'Schopenhauer saw the hamster wheel and wanted off. Nietzsche, who read him as a young man, turned the other way: love the wheel. A marathon hurts the same whether you run it for a reason or for nothing, but only one is worth it. Pain is not the enemy; pointless pain is.',
     source_face:
-      'My formula for greatness in man is amor fati: the fact that a man wishes nothing to be different, either in front of him or behind him, or for all eternity. Not only must the necessary be borne, and on no account concealed—all idealism is falsehood in the face of necessity—but it must also be loved….\n\nHat man sein warum? des Lebens, so verträgt man sich fast mit jedem wie? (If one has one\'s own why of life, one can put up with almost any how.)',
-    source_citation: 'Friedrich Nietzsche, Ecce Homo, "Why I Am So Clever" §10 (trans. A. M. Ludovici, 1911); Twilight of the Idols, "Maxims and Arrows" §12 (1888; English is a literal rendering)',
+      'Amor fati: the fact that a man wishes nothing to be different, either in front of him or behind him, or for all eternity. Not only must the necessary be borne, and on no account concealed—all idealism is falsehood in the face of necessity—but it must also be loved….\n\nHat man sein warum? des Lebens, so verträgt man sich fast mit jedem wie?',
+    source_citation: 'Friedrich Nietzsche, Ecce Homo, "Why I Am So Clever" §10 (trans. A. M. Ludovici, 1911); Twilight of the Idols, "Maxims and Arrows" §12 (1888), literally: "If one has one\'s own why of life, one can put up with almost any how."',
     source_url: 'https://www.gutenberg.org/ebooks/52190',
   },
   {
@@ -262,7 +262,7 @@ export const nodes = [
 // Direction: `from` is the earlier idea; `relation` says what `to` did with it.
 // converged is symmetric (no contact); lands_on points from any node to a practice.
 export const edges = [
-  { from: 'democritus_atoms_and_void', to: 'epicurus_absence_of_pain', relation: 'extended', year: -306, note: 'Epicurus adopted Democritus\'s atoms and built an ethics of calm on them.' },
+  { from: 'democritus_atoms_and_void', to: 'epicurus_absence_of_pain', relation: 'extended', year: -306, note: 'Epicurus adopted Democritus\'s atoms, and Democritus had already made tranquillity "the end of action" (Diogenes Laërtius IX.45).' },
   { from: 'epicurus_absence_of_pain', to: 'lucretius_death_nothing_to_us', relation: 'extended', year: -55, note: 'Lucretius set Epicurus\'s teaching to Latin verse, two centuries later.' },
   { from: 'epicurus_absence_of_pain', to: 'zeno_live_according_to_nature', relation: 'refuted', year: -300, note: 'Rival schools in the same city: the Stoics held that virtue, not pleasure, is the only good.' },
   { from: 'epicurus_absence_of_pain', to: 'buddha_craving_root_of_suffering', relation: 'converged', note: 'Both trace suffering to unnecessary desire, with no known contact.' },
