@@ -124,7 +124,7 @@ test('write -> plain face, source and grouped neighbours; one card per day', asy
   assert.equal(r.status, 200);
   assert.ok(r.json.node.plain_face);
   assert.match(r.json.node.source_face, /atoms and void/);
-  assert.deepEqual(r.json.node.neighbours.map((n) => [n.id, n.relation, n.dir]), [['epicurus_absence_of_pain', 'extended', 'out']]);
+  assert.ok(r.json.node.neighbours.some((n) => n.id === 'epicurus_absence_of_pain' && n.relation === 'extended' && n.dir === 'out'));
 
   r = await call('/api/today?date=2026-11-01');
   assert.equal(r.json.state, 'done_today');

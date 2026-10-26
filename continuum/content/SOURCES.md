@@ -21,7 +21,23 @@ Checked on 2026-10-26 by downloading each text and matching the passage word for
 | 13 | frankl_mans_search_for_meaning | Frankl (one sentence) | **Unverified**: in copyright; check a copy |
 | 14 | nozick_experience_machine | Nozick 1974 (one sentence + summary) | **Unverified**: in copyright; check a copy |
 
-Branch nodes (content/branches/*.js) carry their own verification notes; see each file's report in the PR.
+## Branch nodes (walk-only, content/branches/)
+
+32 nodes outside the daily line, reached by walking. Every quoted passage below was matched word for word
+against a downloaded public-domain text (independent re-check script, 2026-10-26).
+The only changes are dropped footnote markers and inline verse numbers.
+
+| File | Verified quotations | Labelled summaries (in copyright; check before testers) |
+|---|---|---|
+| traditions.js | Bhagavad Gita (Arnold 1885), Chandogya Upanishad VI.13 (Müller 1879), al-Ghazali (Field 1909), Analects I.4 (Legge), Tao Te Ching 46 (Legge 1891), Ecclesiastes 9 & Matthew 6 (KJV), Ohiyesa (Eastman 1911), Qur'an 13:11 & 2:286 (Pickthall 1930) | Dalai Lama, *Beyond Religion* |
+| science.js | Aristotle NE VIII (Chase), Darwin, Origin closing (1859), Freud, Beyond the Pleasure Principle (Hubback 1922) | Harvard Study of Adult Development, Brickman lottery study, Kabat-Zinn MBSR, Einstein, Schrödinger |
+| modern.js | Plato, Apology 38a (Jowett), Montaigne I.19 (Cotton/Hazlitt), Descartes, Discourse IV (Veitch), Pascal, Pensées 139, Hume, Treatise I.4.6, Kierkegaard, Fear and Trembling (Hollander 1923) | Sartre, Camus |
+
+Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
+Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
+Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),
+the Einstein cable date (NYT, 25 April 1929), and the Brickman and Harvard Study figures in their summaries.
+Pascal's translator (Trotter) is cited from knowledge; the Gutenberg file doesn't name it.
 
 ## Edges changed from the concept doc (Jack to confirm)
 

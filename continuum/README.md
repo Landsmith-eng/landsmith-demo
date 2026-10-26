@@ -17,7 +17,7 @@ Requires Node ≥ 22.13 (uses built-in `node:sqlite`).
 
 ```sh
 npm install
-npm run seed                                  # load/refresh 14 line nodes, 4 practices, 21 edges (keeps journals)
+npm run seed                                  # load/refresh all content: 14 daily nodes + walk-only branches (keeps journals)
 npm run invite -- "Tester Name"               # prints a personal link: http://localhost:8878/?u=<token>
 CONTINUUM_ADMIN_KEY=<secret> npm start        # http://localhost:8878
 npm test                                      # API + content-integrity tests (in-memory DB)
@@ -49,6 +49,8 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 | `app.js` | Express API + static files |
 | `server.js` | Entrypoint (port 8878, `CONTINUUM_DB` overrides DB path) |
 | `content/line_poc.js` | The 14 line nodes, 4 practices, 21 edges |
+| `content/branches/*.js` | Walk-only crossovers: world traditions, science & psychology, modern philosophy |
+| `content/index.js` | Merges the line and every branch file for seeding |
 | `content/SOURCES.md` | **Verification checklist for every source passage — do before testers** |
 | `public/` | Vanilla HTML/CSS/ES-module frontend, no build step. `admin.html` = retention view |
 | `scripts/` | `seed`, `invite` |
