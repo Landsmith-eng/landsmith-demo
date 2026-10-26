@@ -153,4 +153,6 @@ export const edges = [
   { from: 'zeno_live_according_to_nature', to: 'sartre_existence_precedes_essence', relation: 'refuted', year: 1945, note: 'Sartre denies there is any given human nature, the premise of living "in agreement with nature".' },
   { from: 'kierkegaard_fear_and_trembling', to: 'camus_myth_of_sisyphus', relation: 'refuted', year: 1942, note: 'Camus names Kierkegaard\'s leap of faith as a form of "philosophical suicide" and refuses it.' },
   { from: 'nietzsche_amor_fati', to: 'camus_myth_of_sisyphus', relation: 'extended', year: 1942, note: 'Camus quotes Nietzsche throughout the essay; his happy Sisyphus is a cousin of amor fati.' },
+  { from: 'epictetus_up_to_us', to: 'pascal_sit_quietly_in_a_room', relation: 'extended', year: 1660, note: 'Pascal names "Epictetus, Montaigne" as the writers whose manner is "the most remembered, and the oftenest quoted," and argues with Epictetus throughout the Pensées.' },
+  { from: 'montaigne_to_philosophize_is_to_learn_to_die', to: 'nietzsche_amor_fati', relation: 'extended', year: 1874, note: 'Nietzsche ranked Montaigne beside Schopenhauer for honesty: "The joy of living on this earth is increased by the existence of such a man" (Schopenhauer as Educator, trans. Collins).' },
 ];
