@@ -175,7 +175,7 @@ export const nodes = [
     plain_face:
       'Schopenhauer saw the hamster wheel and wanted off. Nietzsche, who read him as a young man, turned the other way: love the wheel. A marathon hurts the same whether you run it for a reason or for nothing, but only one is worth it. Pain is not the enemy; pointless pain is.',
     source_face:
-      'Amor fati: the fact that a man wishes nothing to be different, either in front of him or behind him, or for all eternity. Not only must the necessary be borne, and on no account concealed—all idealism is falsehood in the face of necessity—but it must also be loved….\n\nHat man sein warum? des Lebens, so verträgt man sich fast mit jedem wie?',
+      'Amor fati: the fact that a man wishes nothing to be different, either in front of him or behind him, or for all eternity. Not only must the necessary be borne, and on no account concealed,—all idealism is falsehood in the face of necessity,—but it must also be loved….\n\nHat man sein warum? des Lebens, so verträgt man sich fast mit jedem wie?',
     source_citation: 'Friedrich Nietzsche, Ecce Homo, "Why I Am So Clever" §10 (trans. A. M. Ludovici, 1911); Twilight of the Idols, "Maxims and Arrows" §12 (1888), literally: "If one has one\'s own why of life, one can put up with almost any how."',
     source_url: 'https://www.gutenberg.org/ebooks/52190',
   },
