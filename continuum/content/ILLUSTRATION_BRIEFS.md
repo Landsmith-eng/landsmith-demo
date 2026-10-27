@@ -1,31 +1,46 @@
-# Illustration briefs: the 14 daily analogies
+# Illustration briefs: the 14 daily pictures
 
-Each daily node's plain face rests on one everyday analogy. These are the pictures to make, one per day.
-Illustrate the analogy, not the thinker: no invented portraits. Finished files go in `public/img/nodes/`
-and get alt text and a credit in `content/images.js`.
+One picture per daily node, shown on the plain face after the user has written. Direction: **symbolic**. One
+central metaphor, minimal setting, soft warm light, little or no human presence, never a portrait of the thinker.
+Finished files go in `public/img/nodes/` (named by node id) and get alt text and a credit in `content/images.js`.
 
-## Prompt to paste into Perplexity (or any research tool)
+## Style block (paste before every prompt)
 
-> I'm illustrating a daily philosophy app. For the analogy below, suggest three visual treatments for a single
-> quiet, warm illustration: one literal, one symbolic, one using a real public-domain artwork or artefact
-> (with its museum or Wikimedia Commons link and licence). No portraits of the thinker. Analogy: …
+> Quiet, warm editorial illustration, part of a single contemplative series. Flat, soft-textured gouache look,
+> no photorealism, no text or lettering in the image. Limited palette: cream background #f6f2ea, terracotta
+> #8a4b2a, dusty blue #2c6688, muted sage #4d6b35, one small amber accent #9a6a00. Soft late-afternoon window
+> light from the left, gentle shadows, generous empty space. One focal object. Include a quiet threshold element
+> (a window edge, doorway, page edge, horizon line or circle). The "before" part of the scene slightly
+> desaturated, the "after" part warmer, not brighter. No faces. Landscape, 3:2.
 
-## The analogies
+Export at 1536×1024 or 1200×800 as WebP, under 400 KB.
 
-| Day | Node | Thinker | The analogy | A starting picture |
-|---|---|---|---|---|
-| 1 | democritus_atoms_and_void | Democritus | Zoom into a phone photo until it turns into coloured squares | A photo of fruit dissolving into pixels at one edge |
-| 2 | epicurus_absence_of_pain | Epicurus | The moment a headache stops: nothing added, and it feels wonderful | A still garden at dusk; a tight knot loosening |
-| 3 | lucretius_death_nothing_to_us | Lucretius | The time before you were born is a mirror of the time after you die | A hand mirror reflecting an identical empty starry sky |
-| 4 | zeno_live_according_to_nature | Zeno of Citium | A knife is good if it cuts well; a person is good if they live as a person should | A plain, well-made knife beside a clean-cut loaf, under a painted porch |
-| 5 | epictetus_up_to_us | Epictetus | The archer controls the aim and release; the wind is not up to him | An arrow in flight through visible wind-blown grass |
-| 6 | seneca_evening_review | Seneca | A coach watching the game tape the same night, calmly | A lamp-lit desk at night, a notebook open, the day's tape beside it |
-| 7 | buddha_craving_root_of_suffering | The Buddha | Scratching a mosquito bite feels good for a second and makes the itch worse | A hand stopping just short of a bite; ripples settling on still water |
-| 8 | marcus_pain_is_your_estimate | Marcus Aurelius | The hurt is a parcel with a price tag; the parcel isn't yours, the price is | A brown-paper parcel with a tag being untied |
-| 9 | spinoza_freedom_understanding_necessity | Baruch Spinoza | You aren't angry at the rain; you know why it falls | Rain on a window with a calm figure seen from behind, a lens on the sill |
-| 10 | schopenhauer_will_source_of_suffering | Arthur Schopenhauer | A hamster wheel: reach the next rung and another appears | A wheel or an endless staircase in the style of an old engraving |
-| 11 | nietzsche_amor_fati | Friedrich Nietzsche | A marathon hurts the same for a reason or for nothing; only one is worth it | A runner's worn shoes at a finish line; a mountain path at dawn |
-| 12 | beck_cognitive_therapy_stoicism_tested | Aaron Beck | Catch the automatic thought, check it, and the mood shifts | A thought bubble "I always fail" under a magnifying glass, cracking |
-| 13 | frankl_mans_search_for_meaning | Viktor Frankl | The ones who held on had something waiting: a person, a task, a book to finish | An unfinished manuscript on a table by a window with light coming in |
-| 14 | nozick_experience_machine | Robert Nozick | A machine that feeds you a perfect life while you float in a tank | An empty, glowing tank beside an open door to a real, untidy street |
+## The prompts
 
+| Day | Node id | Prompt (after the style block) |
+|---|---|---|
+| 1 | democritus_atoms_and_void | A photograph of a bowl of fruit under a round magnifying glass; inside the lens the image breaks into small orderly coloured squares, like a hidden grid beneath the picture. |
+| 2 | epicurus_absence_of_pain | A small table lamp with a dark shade sliding away from it; the lamp is no brighter, the light is simply unblocked and the room feels lighter. |
+| 3 | lucretius_death_nothing_to_us | Two horizons facing each other like reflections: a pre-dawn sky on the left, a post-sunset sky on the right, the same stars in both, divided by a thin luminous line. |
+| 4 | zeno_live_according_to_nature | A plain, well-made knife that has just cut cleanly through a sheet of paper; beside it a small upright figure walks a straight path toward a painted porch with columns. |
+| 5 | epictetus_up_to_us | An arrow just leaving a bow; the bowstring is still and steady, while visible wind bends the arrow's path across a pale sky. |
+| 6 | seneca_evening_review | A lamp-lit desk at night by a dark window; an open notebook with a few lines written, a cooling cup of tea, everything neatly squared to the desk edge. |
+| 7 | buddha_craving_root_of_suffering | A fingertip hovering just above a small itch mark on a forearm; a small spiral curls outward from it and becomes a larger, tighter spiral. |
+| 8 | marcus_pain_is_your_estimate | A sealed brown-paper parcel on a table with a tag; a calm hand rewrites the amount on the tag, while the parcel itself stays shut and untouched. |
+| 9 | spinoza_freedom_understanding_necessity | Gentle rain seen through a window, drawn like a quiet natural diagram: cloud, falling drops, ripples on a puddle, each linked by faint lines. |
+| 10 | schopenhauer_will_source_of_suffering | A wheel that turns into a staircase; each time a rung is reached another appears just beyond it, receding into soft haze. |
+| 11 | nietzsche_amor_fati | Two identical uphill roads side by side under the same sun; one fades into blankness, the other leads to a small flag on the horizon. |
+| 12 | beck_cognitive_therapy_stoicism_tested | An empty thought bubble held under a magnifying glass; where the lens touches it, the bubble cracks and lets light through. |
+| 13 | frankl_mans_search_for_meaning | An unfinished manuscript on a table by an open window, a pen resting on the last page, warm light falling across it. |
+| 14 | nozick_experience_machine | A flawless miniature glowing world inside a glass tank, its light reflected on still water; beside the tank an open door shows a plain, real street. |
+
+## Alternates (Perplexity's originals for the three swapped above)
+
+- **Seneca:** a replay button on a calm desk beside a cooling cup of tea. Swapped because a user-interface icon reads as cheap next to the rest of the series.
+- **Beck:** a tangled thread passing through a lens and emerging as a straight line. Swapped because it loses the "check the thought" step that is the point of the node.
+- **Frankl:** a small warm light at the end of a long, dim corridor, tied by a thread to a book or a letter. Swapped because a long corridor beside Auschwitz carries the wrong echo.
+
+## Alt text and credit
+
+Write the alt text from what the finished picture actually shows, in one sentence. A credit for generated art:
+`Illustration generated with <tool> for Continuum`, with kind `illustration`.
