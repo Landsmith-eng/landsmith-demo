@@ -27,6 +27,7 @@ export function createApp(db, { adminKey } = {}) {
     node: db.prepare('SELECT * FROM nodes WHERE id = ?'),
     pickFor: db.prepare('SELECT node_id FROM daily_pick WHERE user_id = ? AND local_date = ?'),
     savePick: db.prepare('INSERT INTO daily_pick (user_id, local_date, node_id) VALUES (?, ?, ?)'),
+    dropPick: db.prepare('DELETE FROM daily_pick WHERE user_id = ? AND local_date = ?'),
     lastWritten: db.prepare('SELECT node_id FROM journal WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'),
     // Daily pick (concept doc): an unvisited neighbour of yesterday's node, else the next node in the starter line.
     // "Unvisited" = not written; among those, prefer ones the user hasn't already walked to and read.
@@ -102,7 +103,10 @@ export function createApp(db, { adminKey } = {}) {
   // Today's card is fixed once chosen, so walking the graph mid-day can't swap it out.
   function todaysPick(uid, date) {
     const saved = q.pickFor.get(uid, date);
-    if (saved) return saved.node_id;
+    // A remembered pick can go stale if that card was since written on another date (moving the test date back
+    // and forth, or a clock change). Choose again rather than serve a card that is already answered.
+    if (saved && !q.entry.get(uid, saved.node_id)) return saved.node_id;
+    if (saved) q.dropPick.run(uid, date);
     const last = q.lastWritten.get(uid);
     const pick = (last && q.neighbourPick.get({ last: last.node_id, uid })) || q.linePick.get(uid);
     if (!pick) return null;
@@ -169,7 +173,7 @@ export function createApp(db, { adminKey } = {}) {
     if (!text) return res.status(400).json({ error: 'empty_response' });
     if (text.length > MAX_BODY) return res.status(400).json({ error: 'too_long' });
     if (q.writtenOn.get(uid, date)) return res.status(409).json({ error: 'already_answered_today' });
-    if (todaysPick(uid, date) !== nodeId) return res.status(409).json({ error: 'not_todays_node' });
+    if (q.entry.get(uid, nodeId) || todaysPick(uid, date) !== nodeId) return res.status(409).json({ error: 'not_todays_node' });
     q.insertEntry.run(uid, nodeId, text, date);
     q.insertEvent.run(uid, 'respond', nodeId, date);
     res.json({ node: fullNode(q.node.get(nodeId), uid) });

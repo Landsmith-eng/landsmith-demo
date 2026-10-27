@@ -11,16 +11,16 @@
 }
 :root {
   /* Sage paper and forest green. Fields: philosophy green, science ochre, religion slate blue, practice berry. */
-  --bg: #eef2ec;
+  --bg: #e8eee6;
   --surface: #fbfcf9;
   --ink: #1b241e;
   --muted: #5a675e;
-  --line: #d3dccf;
-  --accent: #2c5a43;
+  --line: #c9d5c4;
+  --accent: #1d4632;
   --accent-ink: #f4f8f2;
-  --source-bg: #1e2a23;
-  --source-ink: #e8efe5;
-  --f-philosophy: #2f6b4f;
+  --source-bg: #173526;
+  --source-ink: #e9f1e6;
+  --f-philosophy: #23573f;
   --f-science: #86651a;
   --f-religion: #39608a;
   --f-practice: #8a4560;
@@ -32,16 +32,16 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111712;
-    --surface: #18201a;
+    --bg: #0c1a12;
+    --surface: #13251a;
     --ink: #e4ebe3;
     --muted: #98a69b;
-    --line: #2b372e;
-    --accent: #8cc7a3;
+    --line: #24392b;
+    --accent: #74b48e;
     --accent-ink: #0f1611;
-    --source-bg: #e6eee3;
+    --source-bg: #dfe9dc;
     --source-ink: #1b241e;
-    --f-philosophy: #86c7a2;
+    --f-philosophy: #7fbf98;
     --f-science: #d6b25c;
     --f-religion: #92b5dc;
     --f-practice: #d996ad;
