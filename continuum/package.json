@@ -10,6 +10,7 @@
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
     "invite": "node --disable-warning=ExperimentalWarning scripts/invite.js",
     "check": "node --disable-warning=ExperimentalWarning scripts/check-content.js",
+    "converge": "node --disable-warning=ExperimentalWarning scripts/find-convergences.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "dependencies": {

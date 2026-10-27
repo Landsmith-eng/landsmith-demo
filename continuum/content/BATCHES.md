@@ -7,7 +7,9 @@ idea ids are an error).
 
 ## The loop
 
-1. **Pick names** from `ROSTER.md` (priority A first) or from a new discovery. Add new discoveries to the roster
+1. **Pick names** from `ROSTER.md` (priority A first) or from a new discovery. For new *edges* between nodes already
+   on the map, run `npm run converge`: it lists unlinked pairs whose faces talk about the same thing
+   (`CONVERGENCE_CANDIDATES.md`), ranked; each still needs a verified note before it becomes an edge. Add new discoveries to the roster
    with a curriculum tag or `*added*`, and say what crossover they bring. `WIKIDATA.md` says how to pull
    influence links as suggestions for Western thinkers.
 2. **Write the file** `content/branches/<batch>.js` exporting `nodes` and `edges` in the shape of the existing

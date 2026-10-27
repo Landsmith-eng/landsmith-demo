@@ -54,6 +54,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 | `content/ROSTER.md` | Who belongs on the map, from college curricula, with priorities |
 | `scripts/check-content.js` | Content gate (`npm run check`): ids, types, chronology, notes, paths to a practice |
 | `scripts/verify-quotes.js` | Matches every quoted passage against downloaded source texts |
+| `scripts/find-convergences.js` | `npm run converge`: proposes unlinked pairs that say the same thing, for a researcher to verify |
 | `content/index.js` | Merges the line and every branch file for seeding |
 | `content/SOURCES.md` | **Verification checklist for every source passage — do before testers** |
 | `public/` | Vanilla HTML/CSS/ES-module frontend, no build step. `admin.html` = retention view |
