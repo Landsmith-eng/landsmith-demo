@@ -38,6 +38,8 @@ for (const e of content.edges) {
   if (e.relation !== 'lands_on' && !e.note) bad(`edge ${e.from} -> ${e.to}: needs a one-line note`);
 }
 
+for (const msg of content.imageIssues) bad(msg);
+
 // Every non-practice node must be able to reach a practice by walking.
 const adj = new Map();
 for (const e of content.edges) for (const [x, y] of [[e.from, e.to], [e.to, e.from]]) adj.set(x, [...(adj.get(x) ?? []), y]);
@@ -57,6 +59,8 @@ const byField = {};
 for (const n of content.nodes) byField[n.field ?? 'philosophy'] = (byField[n.field ?? 'philosophy'] ?? 0) + 1;
 const summaries = content.nodes.filter((n) => /^(Summary|Short quotation) \(/.test(n.source_face ?? '')).length;
 console.log(`${content.nodes.length} nodes (${line} daily, ${practices} practices, ${content.nodes.length - line - practices} walk-only), ${content.edges.length} edges`);
+const imaged = content.nodes.filter((n) => n.image).length;
+console.log(`images: ${imaged} of ${line} daily nodes`);
 console.log(`fields: ${Object.entries(byField).map(([k, v]) => `${k} ${v}`).join(', ')}; ${summaries} in-copyright summaries; files: line_poc.js, ${content.branchFiles.join(', ')}`);
 if (problems.length) { console.log(`\n${problems.length} problem(s):`); for (const p of problems) console.log('  ' + p); process.exit(1); }
 console.log('content OK');

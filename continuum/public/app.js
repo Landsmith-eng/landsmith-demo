@@ -106,6 +106,7 @@ function card(node) {
     : null;
   wrap.append(h('div', { class: 'card-inner' }, front, back));
   if (!back) return wrap;
+  if (node.image && node.entry) front.append(nodeFigure(node.image));
   if (node.misreading && node.entry) front.append(h('p', { class: 'misreading' }, h('strong', {}, 'Often misread. '), node.misreading));
 
   let flipped = false;
@@ -120,6 +121,17 @@ function card(node) {
     if (flipped) api('/api/event', { method: 'POST', body: { kind: 'flip', node_id: node.id, date: today() } }).catch(() => {});
   });
   return h('div', {}, wrap, h('div', { class: 'row' }, btn));
+}
+
+// The day's illustration, shown only after writing. `kind` says whether it is art of the analogy or a real artefact,
+// so a drawing is never mistaken for a likeness.
+function nodeFigure(img) {
+  const credit = img.credit_url
+    ? h('a', { href: img.credit_url, target: '_blank', rel: 'noopener' }, img.credit)
+    : img.credit;
+  return h('figure', { class: `node-image ${img.kind}` },
+    h('img', { src: img.src, alt: img.alt, loading: 'lazy', decoding: 'async' }),
+    h('figcaption', {}, img.kind === 'illustration' ? 'Illustration · ' : '', credit));
 }
 
 // "Keep this line": toggles a favourite; kept lines collect at the top of the Journal.

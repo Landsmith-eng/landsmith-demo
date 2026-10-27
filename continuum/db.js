@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   prompt TEXT,                         -- what the user is asked to write about
   seq INTEGER UNIQUE,                  -- order in the starter line (NULL = never a daily card, e.g. practices)
   misreading TEXT,                     -- a common misreading and what the thinker meant; shown only after writing
-  analysis_url TEXT                    -- deeper analysis (Stanford Encyclopedia of Philosophy where it has an entry)
+  analysis_url TEXT,                   -- deeper analysis (Stanford Encyclopedia of Philosophy where it has an entry)
+  image TEXT                           -- JSON {src, kind, alt, credit, credit_url}; daily nodes only, shown after writing
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS reactions (
 `;
 
 // Columns added after the first testers' databases were created. SQLite has no ADD COLUMN IF NOT EXISTS.
-const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT']];
+const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -98,19 +99,19 @@ export function seedContent(db, { nodes, edges }) {
     db.exec('PRAGMA defer_foreign_keys = ON');
     db.exec('DELETE FROM edges');
     const upsert = db.prepare(`
-      INSERT INTO nodes (id, type, title, plain_face, source_face, source_citation, source_url, field, thinker, year, prompt, seq, misreading, analysis_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO nodes (id, type, title, plain_face, source_face, source_citation, source_url, field, thinker, year, prompt, seq, misreading, analysis_url, image)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET type=excluded.type, title=excluded.title, plain_face=excluded.plain_face,
         source_face=excluded.source_face, source_citation=excluded.source_citation, source_url=excluded.source_url,
         field=excluded.field, thinker=excluded.thinker, year=excluded.year, prompt=excluded.prompt, seq=excluded.seq,
-        misreading=excluded.misreading, analysis_url=excluded.analysis_url`);
+        misreading=excluded.misreading, analysis_url=excluded.analysis_url, image=excluded.image`);
     db.exec('UPDATE nodes SET seq = NULL');
     for (const n of nodes) {
       // Concept doc rule: a non-thinker node is not published until both faces exist.
       if (!['thinker', 'practice'].includes(n.type) && !n.source_face) throw new Error(`${n.id}: missing source face`);
       upsert.run(n.id, n.type, n.title, n.plain_face, n.source_face ?? null, n.source_citation ?? null, n.source_url ?? null,
         n.field ?? 'philosophy', n.thinker ?? null, n.year ?? null, n.prompt ?? null, n.seq ?? null,
-        n.misreading ?? null, n.analysis_url ?? null);
+        n.misreading ?? null, n.analysis_url ?? null, n.image ? JSON.stringify(n.image) : null);
     }
     const insEdge = db.prepare('INSERT INTO edges (from_id, to_id, relation, year, note) VALUES (?, ?, ?, ?, ?)');
     for (const e of edges) insEdge.run(e.from, e.to, e.relation, e.year ?? null, e.note ?? null);

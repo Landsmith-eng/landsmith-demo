@@ -114,6 +114,7 @@ export function createApp(db, { adminKey } = {}) {
       source_url: n.source_url,
       analysis_url: n.analysis_url,
       misreading: n.misreading,
+      image: n.image ? JSON.parse(n.image) : null,
       entry: q.entry.get(uid, n.id) ?? null,
       favorite: Boolean(q.isFavorite.get(uid, n.id)),
       reaction: q.reaction.get(uid, n.id)?.value ?? null,
