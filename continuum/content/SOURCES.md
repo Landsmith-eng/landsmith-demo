@@ -198,6 +198,35 @@ Shankara → Schrödinger (via German Vedanta scholarship); Dostoevsky → Sartr
 Casas (Thomist argument at Valladolid); Haudenosaunee → Kimmerer; Maslow ↔ Frankl (the 1966 exchange); Newton →
 Einstein; Woolf → Beauvoir; Baldwin → hooks; Du Bois → Baldwin; Locke → Skinner.
 
+### Batch 7 (classical3.js, global4.js, modern5.js), 2026-10-27
+
+20 nodes. Two researchers were cut off by a usage limit after writing their files; the files were verified
+by `scripts/verify-quotes.js` against their downloaded texts and the researchers sent their reports afterwards.
+
+| Node | Source | Status |
+|---|---|---|
+| herodotus_call_no_man_happy | Histories I.32, Macaulay 1890 | Verified (Gutenberg 2707) |
+| euclid_proof | Elements I, Postulates 1–5 and Prop. 47, Heath 1908 | Verified (Perseus) |
+| petrarch_mont_ventoux | Ascent of Mont Ventoux, Robinson 1898 | Verified (Gutenberg 48776) |
+| berkeley_esse_est_percipi | Principles I §3 | Verified (Gutenberg 4723); an inline editor's note is cut with an ellipsis |
+| milton_mind_is_its_own_place | Paradise Lost I.249–258, 1667 spelling | Verified (Gutenberg 20) |
+| tocqueville_individualism | Democracy in America II, Reeve | Verified (Gutenberg 816) |
+| mahabharata_yaksha_questions | Vana Parva CCCXII, Ganguli | Verified (Gutenberg 12333) |
+| ramanuja_qualified_nondualism | Sri Bhashya I.1.1, Thibaut 1904 | Verified (Gutenberg 7297) |
+| deloria_god_is_red, freire_pedagogy_of_the_oppressed, senghor_negritude, wiredu_conceptual_decolonization | | **Summaries** (in copyright) |
+| mariategui_seven_essays | Siete ensayos (1928) | **Summary**: es.wikisource blocked; no Gutenberg text |
+| russell_value_of_philosophy | Problems of Philosophy ch. XV | Verified (Gutenberg 5827) |
+| peirce_how_to_make_our_ideas_clear | "How to Make Our Ideas Clear" (1878), in Chance, Love, and Logic | Verified (Gutenberg 65274); James crediting Peirce verified (Gutenberg 5116) |
+| pavlov_conditioned_reflex | Conditioned Reflexes (1927) | **Summary**: no text reachable |
+| rogers_unconditional_positive_regard, merleau_ponty_body_subject, nussbaum_capabilities, foucault_discipline | | **Summaries** (in copyright) |
+
+Edge notes verified: Aristotle on Solon (NE I.10, Chase); Descartes on the geometers (Discourse II); Spinoza's
+"geometrically"; Hume naming Berkeley; Berkeley quoting Locke; Montaigne quoting Petrarch; Hume named in Russell;
+Ramanuja's "that art thou" reading. Claims resting on memory: Euclid → Newton (axiomatic form); Petrarch → Montaigne
+(essay locations); Tocqueville → Harvard Study; Freire citing Hegel and Fanon; hooks on Freire; Du Bois → Senghor
+(least sure); Fanon on Sartre; Wiredu on Mbiti; Skinner citing Pavlov; James's 1898 lecture; Merleau-Ponty's preface;
+Nussbaum on Aristotle and Rawls; Foucault on Nietzsche; the "no contact" claims in the converged edges.
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),
