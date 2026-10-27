@@ -79,7 +79,7 @@ const year = (y) => (y == null ? '' : y < 0 ? `${-y} BCE` : y < 1000 ? `${y} CE`
 const who = (n) => [n.thinker, year(n.year)].filter(Boolean).join(' · ');
 const TYPE_LABEL = {
   thinker: 'Thinker', concept: 'Concept', quote: 'Quote', dilemma: 'Dilemma',
-  puzzle: 'Puzzle', text: 'Text', practice: 'Practice',
+  puzzle: 'Puzzle', text: 'Text', practice: 'Practice', work: 'Artwork', case: 'Court case', event: 'In the news',
 };
 
 function progress(done, total) {
@@ -91,7 +91,7 @@ function progress(done, total) {
 function card(node) {
   const wrap = h('div', { class: `card field-${node.field}` });
   const front = h('section', { class: 'face plain', 'aria-label': 'Plain face' },
-    h('div', { class: 'who' }, [TYPE_LABEL[node.type], who(node)].filter(Boolean).join(' · ')),
+    h('div', { class: 'who' }, [TYPE_LABEL[node.type], who(node), node.as_of && `as of ${node.as_of}`].filter(Boolean).join(' · ')),
     h('h1', {}, node.title),
     node.plain_face.split('\n\n').map((p) => h('p', {}, p)));
   const back = node.source_face
@@ -185,12 +185,14 @@ const GROUPS = [
   ['What it argued against', (r) => r.dir === 'in' && r.relation === 'refuted'],
   ['What it tested', (r) => r.dir === 'in' && r.relation === 'measured'],
   ['Kept the practice of', (r) => r.dir === 'in' && r.relation === 'secularized'],
+  ['The idea it echoes', (r) => r.dir === 'in' && r.relation === 'echoes'],
   ['Same idea, no contact', (r) => r.relation === 'converged'],
   ['Who it taught', (r) => r.dir === 'out' && r.relation === 'taught'],
   ['Who extended it', (r) => r.dir === 'out' && r.relation === 'extended'],
   ['Who attacked it', (r) => r.dir === 'out' && r.relation === 'refuted'],
   ['Who measured it', (r) => r.dir === 'out' && r.relation === 'measured'],
   ['Who kept the practice, without the deity', (r) => r.dir === 'out' && r.relation === 'secularized'],
+  ['Where it echoes: art, law, culture, the news', (r) => r.dir === 'out' && r.relation === 'echoes'],
   ['Where it lands', (r) => r.dir === 'out' && r.relation === 'lands_on'],
   ['Paths that land here', (r) => r.dir === 'in' && r.relation === 'lands_on'],
 ];
@@ -215,9 +217,33 @@ function lineage(node, trail) {
         r.note && h('span', { class: 'b-note' }, r.note)))))));
 }
 
+// A court case's opinions: who wrote what, in plain words, the passage itself, and the older idea it echoes.
+const ROLE_LABEL = { majority: 'Opinion of the Court', plurality: 'Plurality opinion', concurrence: 'Concurring', dissent: 'Dissenting' };
+function opinionsView(node, trail) {
+  if (!node.opinions?.length) return null;
+  return h('section', { class: 'opinions' },
+    h('h2', {}, 'How the Court divided'),
+    h('p', { class: 'muted small' }, 'Each opinion in plain words, then in the justice\'s own. The links show the older idea each one echoes.'),
+    node.opinions.map((o) => h('article', { class: `opinion role-${o.role}` },
+      h('div', { class: 'eyebrow' }, `${ROLE_LABEL[o.role] ?? o.role} · ${o.author}`),
+      h('p', {}, o.gist),
+      h('blockquote', {}, o.quote),
+      o.echoes && h('button', { type: 'button', class: `bubble field-${o.echoes.field}`, onclick: () => walkTo(o.echoes.id, [...trail, node]) },
+        h('span', { class: 'b-who' }, `Echoes ${o.echoes.thinker ?? ''}`.trim()),
+        h('span', { class: 'b-title' }, o.echoes.title)))));
+}
+
+function themeChips(node) {
+  if (!node.themes?.length) return null;
+  return h('div', { class: 'theme-chips' }, h('span', { class: 'eyebrow' }, 'Themes'),
+    node.themes.map((t) => h('button', { type: 'button', class: 'chip', onclick: () => showGallery('themes', { theme: t.id }) }, t.name)));
+}
+
 function nodeBody(node, trail) {
   return [
     card(node),
+    themeChips(node),
+    opinionsView(node, trail),
     node.type !== 'practice' && node.year != null && h('div', { class: 'row tl-link-row' },
       h('button', { type: 'button', class: 'link', onclick: () => showGallery('timeline', { focus: node.id }) }, 'See on the timeline →'),
       h('button', { type: 'button', class: 'link', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room →')),
@@ -353,10 +379,13 @@ const ERAS = [
 const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card: write first", upcoming: 'Coming up' };
 const openEntry = (n) => (n.state === 'today' ? showToday() : walkTo(n.id, []));
 
-function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false } = {}) {
+function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false, theme = null, kind = 'all' } = {}) {
   setNav('gallery');
   return guarded(async () => {
-    const { nodes, rooms } = await api(`/api/timeline?date=${today()}`);
+    const [{ nodes, rooms }, index] = await Promise.all([
+      api(`/api/timeline?date=${today()}`),
+      arrangement === 'themes' ? api(`/api/themes?date=${today()}`) : null,
+    ]);
     const met = nodes.filter((n) => n.state === 'written' || n.state === 'visited').length;
     const wander = () => {
       const open = nodes.filter((n) => n.state !== 'upcoming' && n.state !== 'today');
@@ -367,14 +396,38 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     const switcher = h('div', { class: 'row', style: 'justify-content:flex-start' },
       h('button', { type: 'button', class: `btn ${arrangement === 'rooms' ? '' : 'ghost'}`, onclick: () => showGallery('rooms') }, 'Rooms'),
       h('button', { type: 'button', class: `btn ${arrangement === 'timeline' ? '' : 'ghost'}`, onclick: () => showGallery('timeline') }, 'Timeline'),
-      h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝'));
+      h('button', { type: 'button', class: `btn ${arrangement === 'themes' ? '' : 'ghost'}`, onclick: () => showGallery('themes') }, 'Themes'),
+    );
     const intro = h('p', { class: 'muted small' },
-      `${nodes.length} ideas in ${rooms.length} rooms. Open any of them, any time. You have met ${met}. `
+      `${nodes.length} ideas in ${new Set(nodes.map((n) => n.room)).size} rooms. Open any of them, any time. You have met ${met}. `
       + 'Daily cards stay hidden until their day.');
-    const body = arrangement === 'rooms' ? galleryRooms(nodes, rooms, focus) : galleryTimeline(nodes, focus, featuredOnly);
-    render(h('h1', {}, 'Gallery of thought'), switcher, intro, ...body);
-    const el = focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`);
-    if (el) el.scrollIntoView({ block: 'center' });
+    const body = arrangement === 'rooms' ? galleryRooms(nodes, rooms, focus)
+      : arrangement === 'themes' ? galleryThemes(index.themes, theme, kind)
+        : galleryTimeline(nodes, focus, featuredOnly);
+    // Search sits above every arrangement. Results replace the arrangement while there is a query, without
+    // re-rendering the page, so typing keeps focus.
+    const browse = h('div', {}, switcher, intro, ...body);
+    const results = h('div', { class: 'search-results', hidden: true, 'aria-live': 'polite' });
+    const box = h('input', {
+      type: 'search', class: 'search', placeholder: 'Search themes, questions, thinkers, cases…', 'aria-label': 'Search the gallery',
+      autocomplete: 'off', enterkeyhint: 'search',
+    });
+    let timer = 0; let seq = 0;
+    box.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const qv = box.value.trim(); const mine = ++seq;
+        if (qv.length < 2) { results.hidden = true; browse.hidden = false; return; }
+        const r = await api(`/api/search?q=${encodeURIComponent(qv)}&date=${today()}`).catch(() => null);
+        if (!r || mine !== seq) return;
+        results.replaceChildren(...searchResults(r));
+        results.hidden = false; browse.hidden = true;
+      }, 220);
+    });
+    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝');
+    render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
+    const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
+    if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
   });
 }
 
@@ -401,6 +454,45 @@ function galleryRooms(nodes, rooms, focus) {
     h('h2', {}, r.name),
     h('p', { class: 'muted small room-blurb' }, r.blurb),
     h('div', { class: 'tiles' }, byRoom.get(r.id).map(tile))))];
+}
+
+// A catalogue row for one idea: used in themes and search results. Upcoming daily ideas stay closed.
+function ideaRow(n, extra) {
+  const inner = [
+    h('span', { class: 'b-who' }, [n.thinker, year(n.year)].filter(Boolean).join(' · ') || TYPE_LABEL[n.type] || ''),
+    n.title && h('span', { class: 'b-title' }, n.title),
+    (TL_STATE[n.state] || extra) && h('span', { class: 'b-note' }, [TL_STATE[n.state], extra].filter(Boolean).join(' · ')),
+  ];
+  return n.state === 'upcoming'
+    ? h('div', { class: `bubble field-${n.field} closed` }, inner)
+    : h('button', { type: 'button', class: `bubble field-${n.field}`, onclick: () => openEntry(n) }, inner);
+}
+
+const KIND_LABEL = { theme: 'Theme', conflict: 'Conflict', dilemma: 'Dilemma' };
+
+function galleryThemes(themes, focusTheme, kind) {
+  const shown = kind === 'all' ? themes : themes.filter((t) => t.kind === kind);
+  const filter = h('div', { class: 'row', style: 'justify-content:flex-start;margin-top:-4px' },
+    [['all', 'Everything'], ['theme', 'Themes'], ['conflict', 'Conflicts'], ['dilemma', 'Dilemmas']].map(([k, label]) =>
+      h('button', { type: 'button', class: `chip ${kind === k ? 'on' : ''}`, onclick: () => showGallery('themes', { kind: k }) }, label)));
+  const contents = h('nav', { class: 'room-index', 'aria-label': 'Index' }, shown.map((t) => h('button', {
+    type: 'button', class: 'chip', onclick: () => document.getElementById(`theme-${t.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+  }, t.name)));
+  return [filter, contents, ...shown.map((t) => h('section', { class: `theme${t.id === focusTheme ? ' focus' : ''}`, id: `theme-${t.id}` },
+    h('div', { class: 'eyebrow' }, `${KIND_LABEL[t.kind]} · ${t.nodes.length} ideas`),
+    h('h2', {}, t.name),
+    h('p', { class: 'prompt' }, t.question),
+    h('div', { class: 'bubbles' }, t.nodes.map((n) => ideaRow(n)))))];
+}
+
+function searchResults(r) {
+  const out = [];
+  if (r.themes.length) out.push(h('h2', {}, 'In the index'), h('div', { class: 'bubbles' }, r.themes.map((t) => h('button', {
+    type: 'button', class: 'bubble field-law', onclick: () => showGallery('themes', { theme: t.id }),
+  }, h('span', { class: 'b-who' }, `${KIND_LABEL[t.kind]} · ${t.count} ideas`), h('span', { class: 'b-title' }, t.name), h('span', { class: 'b-note' }, t.question)))));
+  if (r.ideas.length) out.push(h('h2', {}, 'Ideas'), h('div', { class: 'bubbles' }, r.ideas.map((n) => ideaRow(n, n.matched !== 'title' ? `found in ${n.matched}` : ''))));
+  if (!out.length) out.push(h('p', { class: 'muted' }, `Nothing on the map matches "${r.q}" yet.`));
+  return out;
 }
 
 function galleryTimeline(nodes, focus, featuredOnly) {

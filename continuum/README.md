@@ -53,15 +53,22 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
   run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
 - **Journal**: each answer is pinned to its node, with its reaction.
-- **Gallery**: every idea on the map, open to explore at any time, in two arrangements. *Rooms*: 12 wings by
-  region, tradition or theme (`content/rooms.js`; `npm run check` requires every idea to have one), with a swipeable
-  room index and a *Wander* button that opens a thinker you have not met. *Timeline*: date order by era, everyone or
-  only the 14 daily thinkers. Daily cards not yet reached show only thinker and year ("Coming up") until their day;
-  today's unwritten card leads to Today. Every card links to its place on the timeline and in its room.
+- **Gallery**: every idea on the map, open to explore at any time, in three arrangements, with search across all of
+  it (themes, questions, thinkers, both faces and court opinions). *Rooms*: wings by region, tradition or theme
+  (`content/rooms.js`), with a swipeable room index and *Wander*. *Timeline*: date order by era. *Themes*: the index
+  of themes, conflicts and dilemmas (`content/themes.js`), each with its question and the ideas that answer it;
+  every card shows its themes. Daily cards not yet reached show only thinker and year ("Coming up") until their day.
 - **Review**: This week (entries, where walks kept landing, who you kept returning to, reaction tally, "What did you
   believe on Monday that you do not on Sunday?") or Everything (adds day-1 vs last-day bookends). Finishing the line
   offers "See where it led".
 - **Retention**: `/admin` shows days opened, days written and walk steps per tester.
+- **Propose a connection**: `/propose` (admin key) queues a link between two ideas, or a new one (a thinker, an
+  artwork, a court case, a news story) linked to the map, with why, sources and themes. Nothing reaches the map
+  until it is verified: `npm run proposals` writes the open ones to `content/PROPOSALS.md`, or copy them from the page.
+- **Beyond philosophy**: art, culture, law and the news are fields of their own, with artworks, court cases (each
+  opinion quoted and explained, linked to the idea it echoes) and news events. Sourcing rules: `content/BATCHES.md`.
+  Verifying current cases needs `www.supremecourt.gov` (slip opinions) in the cloud environment's allowed domains;
+  older cases verify against Wikisource.
 - **Testing other days:** add `?day=1` to the app's URL to act as if it were tomorrow (`?day=2`, `?day=2026-11-05`
   also work; `?day=clear` returns to the real date). A dashed banner shows while a test date is set. The server
   trusts the client's date, so this is a test aid, not a control.

@@ -13,6 +13,10 @@ export const rooms = [
   { id: 'americas', name: 'The Americas', blurb: 'Indigenous philosophy and Latin American thought: the seventh generation, conquest, and what the land teaches.' },
   { id: 'science', name: 'How we came to know the world', blurb: 'Proof, observation and revolution in science, from Euclid to Kuhn.' },
   { id: 'mind', name: 'The study of the mind', blurb: 'Psychology puts the old questions to the test: habit, meaning, happiness and how we fool ourselves.' },
+  { id: 'art', name: 'Art and the image', blurb: 'Paintings, sculpture and music that put an old idea in front of the eyes and ears.' },
+  { id: 'culture', name: 'Culture and everyday life', blurb: 'Films, novels, rituals and habits where the great questions turn up without being named.' },
+  { id: 'law', name: 'Law and the state', blurb: 'Courts and constitutions working out conscience, liberty, equality and power, opinion by opinion.' },
+  { id: 'now', name: 'Now', blurb: 'Questions in the news, each paired with the older idea that helps you think it through.' },
 ];
 
 const R = {
@@ -54,6 +58,10 @@ const R = {
     'cordova_native_american_philosophy', 'kimmerer_braiding_sweetgrass'],
   science: ['euclid_proof', 'copernicus_de_revolutionibus', 'galileo_two_books', 'kepler_harmony', 'newton_general_scholium',
     'darwin_grandeur_of_life', 'einstein_spinozas_god', 'popper_falsification', 'schrodinger_atman_brahman', 'kuhn_paradigm_shift'],
+  art: [],
+  culture: [],
+  law: [],
+  now: [],
   mind: ['wundt_first_laboratory', 'william_james_habit', 'jung_the_shadow', 'freud_pleasure_principle', 'pavlov_conditioned_reflex',
     'harvard_study_adult_development', 'maslow_hierarchy', 'frankl_mans_search_for_meaning', 'rogers_unconditional_positive_regard',
     'milgram_obedience', 'seligman_learned_helplessness', 'skinner_beyond_freedom', 'brickman_lottery_winners',

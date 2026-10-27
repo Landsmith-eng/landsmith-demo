@@ -24,6 +24,10 @@
   --f-science: #86651a;
   --f-religion: #39608a;
   --f-practice: #8a4560;
+  --f-art: #9b4a2c;
+  --f-culture: #5e4f96;
+  --f-law: #4a5866;
+  --f-now: #1f6b78;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --lora: "Lora", var(--serif);
@@ -45,6 +49,10 @@
     --f-science: #d6b25c;
     --f-religion: #92b5dc;
     --f-practice: #d996ad;
+    --f-art: #e39a7c;
+    --f-culture: #b4a6e6;
+    --f-law: #aab8c6;
+    --f-now: #78c4d0;
   }
 }
 
@@ -123,6 +131,10 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .field-science { --field: var(--f-science); }
 .field-religion { --field: var(--f-religion); }
 .field-practice { --field: var(--f-practice); }
+.field-art { --field: var(--f-art); }
+.field-culture { --field: var(--f-culture); }
+.field-law { --field: var(--f-law); }
+.field-now { --field: var(--f-now); }
 
 .card-closed {
   background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--field, var(--line));
@@ -236,5 +248,27 @@ button.tile:hover { border-color: var(--field); }
 .tile.state-upcoming { background: transparent; border-style: dashed; }
 .tile.state-upcoming .b-who { opacity: .75; }
 .tile.focus { outline: 3px solid var(--field); outline-offset: 2px; }
-.wander { margin-left: auto; }
+.search-row { display: flex; gap: 8px; align-items: stretch; margin: 4px 0 14px; }
+.search-row .search { margin: 0; flex: 1; min-width: 0; }
+.search-row .wander { flex: none; }
 .tl-link-row { gap: 4px 16px; flex-wrap: wrap; }
+
+/* Court cases: one block per opinion. Dissents get a dashed rule so the split reads at a glance. */
+.opinions { margin: 8px 0 24px; }
+.opinion { border-left: 3px solid var(--f-law); padding: 2px 0 2px 14px; margin: 0 0 22px; }
+.opinion.role-dissent { border-left-style: dashed; }
+.opinion blockquote { font-family: var(--display); font-size: 1.05rem; line-height: 1.55; margin: 8px 0 10px; padding: 0; }
+.opinion .bubble { border-top: 1px solid var(--line); }
+.theme-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+.theme-chips .eyebrow { margin: 0 4px 0 0; }
+
+/* Gallery search and the themes index. */
+.search { width: 100%; font: inherit; padding: 11px 14px; margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.search-results h2 { margin: 1.2rem 0 .4rem; }
+.theme { scroll-margin-top: 12px; margin: 0 0 8px; }
+.theme h2 { margin: 1.8rem 0 .2rem; }
+.theme .prompt { margin: 0 0 .6rem; }
+.theme.focus h2 { color: var(--accent); }
+.bubble.closed { opacity: .7; }
+.bubble.closed::after { content: ''; }

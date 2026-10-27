@@ -3,6 +3,8 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { rooms } from './content/rooms.js';
+import { themes } from './content/themes.js';
+import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -86,6 +88,7 @@ export function createApp(db, { adminKey } = {}) {
         EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id) AS visited
       FROM nodes n WHERE n.type != 'practice'
       ORDER BY n.year, n.seq IS NULL, n.seq, n.thinker, n.title`),
+    searchable: db.prepare(`SELECT id, title, thinker, plain_face, source_face, prompt, opinions FROM nodes WHERE type != 'practice'`),
     reactionCounts: db.prepare(`
       SELECT value, COUNT(*) AS n FROM reactions WHERE user_id = ? AND local_date BETWEEN ? AND ? GROUP BY value`),
     daysActive: db.prepare(`SELECT COUNT(DISTINCT local_date) AS n FROM events WHERE user_id = ? AND local_date BETWEEN ? AND ?`),
@@ -93,6 +96,11 @@ export function createApp(db, { adminKey } = {}) {
       SELECT n.id, n.title, n.thinker, n.prompt, j.body, j.local_date FROM journal j JOIN nodes n ON n.id = j.node_id
       WHERE j.user_id = ? AND n.seq IS NOT NULL ORDER BY n.seq`),
   };
+
+  // Index: which themes each idea belongs to.
+  const themesByNode = new Map();
+  for (const t of themes) for (const id of t.nodes) themesByNode.set(id, [...(themesByNode.get(id) ?? []), { id: t.id, name: t.name, kind: t.kind }]);
+  const themesOf = (id) => themesByNode.get(id) ?? [];
 
   const localDate = (raw) => (typeof raw === 'string' && DATE_RE.test(raw) ? raw : new Date().toISOString().slice(0, 10));
   const shiftDate = (ymd, delta) => {
@@ -133,6 +141,13 @@ export function createApp(db, { adminKey } = {}) {
       favorite: Boolean(q.isFavorite.get(uid, n.id)),
       reaction: q.reaction.get(uid, n.id)?.value ?? null,
       neighbours: q.neighbours.all({ id: n.id }),
+      themes: themesOf(n.id),
+      as_of: n.as_of,
+      // A court case's opinions, each with the older idea it echoes (if any) resolved for linking.
+      opinions: n.opinions ? JSON.parse(n.opinions).map((o) => {
+        const e = o.echoes && q.node.get(o.echoes);
+        return { ...o, echoes: e ? { id: e.id, title: e.title, thinker: e.thinker, field: e.field } : null };
+      }) : null,
     };
   }
 
@@ -244,11 +259,10 @@ export function createApp(db, { adminKey } = {}) {
 
   // Timeline of everyone on the map. Daily cards the user has not reached yet keep their idea hidden (thinker and
   // year only, not clickable) so the daily practice still starts with writing; today's card links to Today.
-  app.get('/api/timeline', auth, (req, res) => {
-    const uid = req.user.id;
-    const date = localDate(req.query.date);
+  // Every idea with this user's relation to it. Daily cards not yet reached keep their idea hidden.
+  function mapEntries(uid, date) {
     const todayId = q.writtenOn.get(uid, date) ? null : todaysPick(uid, date);
-    const nodes = q.timeline.all({ uid }).map((n) => {
+    return q.timeline.all({ uid }).map((n) => {
       const daily = n.seq != null;
       const state = n.written ? 'written' : n.id === todayId ? 'today' : daily ? 'upcoming' : n.visited ? 'visited' : 'unseen';
       const hidden = state === 'upcoming';
@@ -259,12 +273,124 @@ export function createApp(db, { adminKey } = {}) {
         backdrop: !hidden && n.image ? JSON.parse(n.image).src : null,
       };
     });
-    res.json({ nodes, rooms });
+  }
+
+  const practiceEntry = (id) => {
+    const n = q.node.get(id);
+    return n && n.type === 'practice'
+      ? { id: n.id, title: n.title, thinker: null, year: null, field: 'practice', type: 'practice', daily: false, state: 'unseen' }
+      : null;
+  };
+
+  app.get('/api/timeline', auth, (req, res) => {
+    res.json({ nodes: mapEntries(req.user.id, localDate(req.query.date)), rooms });
+  });
+
+  // The index: themes, conflicts and dilemmas with the ideas they link, in date order.
+  app.get('/api/themes', auth, (req, res) => {
+    const byId = new Map(mapEntries(req.user.id, localDate(req.query.date)).map((n) => [n.id, n]));
+    res.json({
+      themes: themes.map((t) => ({
+        id: t.id, kind: t.kind, name: t.name, question: t.question,
+        // Practices are not on the gallery walls (no date) but belong in their themes, after the dated ideas.
+        nodes: t.nodes.map((id) => byId.get(id) ?? practiceEntry(id)).filter(Boolean)
+          .sort((a, b) => (a.year ?? Infinity) - (b.year ?? Infinity)),
+      })),
+    });
+  });
+
+  // Search across the index and every idea: titles, thinkers, both faces, prompts and court opinions. Ideas on
+  // daily cards not yet reached are left out of the matches (they still show, hidden, inside their themes).
+  app.get('/api/search', auth, (req, res) => {
+    const raw = String(req.query.q ?? '').trim().toLowerCase().slice(0, 80);
+    if (raw.length < 2) return res.json({ q: raw, themes: [], ideas: [] });
+    const words = raw.split(/\s+/).filter(Boolean);
+    const has = (text) => { const t = (text ?? '').toLowerCase(); return words.every((w) => t.includes(w)); };
+    const entries = new Map(mapEntries(req.user.id, localDate(req.query.date)).map((n) => [n.id, n]));
+    const themeHits = themes.filter((t) => has(`${t.name} ${t.question} ${t.kind}`))
+      .map((t) => ({ id: t.id, kind: t.kind, name: t.name, question: t.question, count: t.nodes.length }));
+    const ideaHits = [];
+    for (const n of q.searchable.all()) {
+      const e = entries.get(n.id);
+      if (!e || e.state === 'upcoming') continue;
+      const strong = has(`${n.title} ${n.thinker}`);
+      const where = strong ? null : [['plain_face', 'the plain face'], ['source_face', 'the source'], ['prompt', 'the question'], ['opinions', 'a court opinion']]
+        .find(([col]) => has(n[col]))?.[1];
+      if (strong || where) ideaHits.push({ ...e, matched: where ?? 'title', rank: strong ? 0 : 1 });
+    }
+    ideaHits.sort((a, b) => a.rank - b.rank || a.year - b.year);
+    res.json({ q: raw, themes: themeHits, ideas: ideaHits.slice(0, 40).map(({ rank, ...rest }) => rest) });
+  });
+
+  // Propose a connection (admin only). A proposal links two ideas, or brings in a new one (an artwork, a court case, a
+  // news story, a thinker) and links it to the map. Nothing goes on the map from here: proposals queue up to be
+  // verified and written into content/ in a later session (`npm run proposals` or the page's copy button).
+  const isAdmin = (req) => Boolean(adminKey) && req.get('x-admin-key') === adminKey;
+  const admin = (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: 'forbidden' }));
+  const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+  function cleanEnd(v, label, errors) {
+    if (typeof v === 'string') {
+      if (!q.node.get(v)) errors.push(`${label}: unknown idea ${v}`);
+      return { id: v };
+    }
+    if (!v || typeof v !== 'object') { errors.push(`${label}: pick an idea or describe a new one`); return null; }
+    const idea = {
+      title: str(v.title, 200), who: str(v.who, 160), field: str(v.field, 20), type: str(v.type, 20),
+      year: Number.isInteger(Number(v.year)) && String(v.year).trim() !== '' ? Number(v.year) : null,
+      description: str(v.description, 2000), as_of: str(v.as_of, 10) || null,
+    };
+    if (!idea.title) errors.push(`${label}: a new idea needs a title`);
+    if (!FIELDS.includes(idea.field)) errors.push(`${label}: pick a kind (field)`);
+    if (!TYPES.includes(idea.type)) errors.push(`${label}: pick a type`);
+    if (idea.as_of && !DATE_RE.test(idea.as_of)) errors.push(`${label}: date must be YYYY-MM-DD`);
+    return { new: idea };
+  }
+
+  app.get('/admin/api/model', admin, (req, res) => {
+    res.json({
+      types: TYPES, fields: FIELDS, relations: RELS.map((r) => ({ id: r, help: REL_HELP[r] })),
+      themes: themes.map((t) => ({ id: t.id, name: t.name })),
+      nodes: db.prepare('SELECT id, title, thinker, year, field, type FROM nodes ORDER BY year, thinker').all(),
+    });
+  });
+
+  app.get('/admin/api/proposals', admin, (req, res) => {
+    const rows = db.prepare('SELECT id, payload, status, reply, created_at, updated_at FROM proposals ORDER BY id DESC').all();
+    res.json({ proposals: rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })) });
+  });
+
+  app.post('/admin/api/proposals', admin, (req, res) => {
+    const b = req.body ?? {};
+    const errors = [];
+    const from = cleanEnd(b.from, 'Earlier idea', errors);
+    const to = cleanEnd(b.to, 'Later idea', errors);
+    const relation = str(b.relation, 20);
+    if (!RELS.includes(relation)) errors.push('Pick how they connect');
+    const why = str(b.why, 600);
+    if (!why) errors.push('Say in a line why they connect');
+    const sources = (Array.isArray(b.sources) ? b.sources : []).map((u) => str(u, 500)).filter(Boolean).slice(0, 10);
+    if (sources.some((u) => !/^https?:\/\//.test(u))) errors.push('Sources must be web links (http or https)');
+    const themeIds = (Array.isArray(b.themes) ? b.themes : []).filter((t) => themes.some((x) => x.id === t)).slice(0, 10);
+    const newTheme = str(b.new_theme, 160) || null;
+    if (from?.id && to?.id && from.id === to.id) errors.push('Pick two different ideas');
+    if (errors.length) return res.status(400).json({ error: 'invalid', errors });
+    const payload = { from, to, relation, why, sources, themes: themeIds, new_theme: newTheme };
+    const { lastInsertRowid } = db.prepare('INSERT INTO proposals (payload) VALUES (?)').run(JSON.stringify(payload));
+    res.json({ id: Number(lastInsertRowid) });
+  });
+
+  app.post('/admin/api/proposals/:id', admin, (req, res) => {
+    const status = str(req.body?.status, 10);
+    if (!['open', 'added', 'declined'].includes(status)) return res.status(400).json({ error: 'bad_status' });
+    const r = db.prepare("UPDATE proposals SET status = ?, reply = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(status, str(req.body?.reply, 600) || null, Number(req.params.id));
+    if (!r.changes) return res.status(404).json({ error: 'not_found' });
+    res.json({ ok: true });
   });
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.
-  app.get('/admin/api/stats', (req, res) => {
-    if (!adminKey || req.get('x-admin-key') !== adminKey) return res.status(403).json({ error: 'forbidden' });
+  app.get('/admin/api/stats', admin, (req, res) => {
     const users = db.prepare('SELECT id, name, created_at FROM users ORDER BY id').all();
     const days = db.prepare('SELECT DISTINCT local_date FROM events WHERE user_id = ? ORDER BY local_date');
     const wrote = db.prepare('SELECT local_date FROM journal WHERE user_id = ? ORDER BY local_date');
