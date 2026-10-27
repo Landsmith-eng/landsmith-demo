@@ -27,7 +27,7 @@ even still yet ever never here there once again about above below between throug
 until against among around both either neither one two three first last next new old long great little big make made
 makes making say says said saying think thinks thought thinking know knows knew known thing things way ways man men
 person people life live lives living day days time times world world's himself herself itself themselves something
-anything nothing everything someone anyone everyone went go goes going come comes came take takes took get gets got
+anything nothing everything someone anyone everyone thy thou thee thine ye hath doth dost shalt wilt unto thereof whereof art copyright summary work short quotation trans translated translation went go goes going come comes came take takes took get gets got
 give gives gave put see sees saw look looks looked call called like likes wants want wanted need needs use used
 tells tell told asks ask asked let lets keep keeps kept find finds found turn turns turned become becomes became
 own back off far away ago later earlier whole part real really ever often always sometimes mean means meant seems
@@ -39,8 +39,10 @@ function stem(w) {
   if (w.length <= 4) return w;
   return w.replace(/(ies)$/, 'y').replace(/(ings?|edly|ed|es|s)$/, '').replace(/(ness|ment)$/, '');
 }
-const tokens = (t) => (t.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().match(/[a-z]{3,}/g) ?? [])
-  .filter((w) => !STOP.has(w)).map(stem).filter((w) => w.length > 2);
+// Thinkers' names are excluded: a face that mentions "Socrates" should match on ideas, not on the name.
+const NAMES = new Set(content.nodes.flatMap((n) => (n.thinker ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/[a-z]{3,}/g) ?? []));
+const tokens = (t) => (t.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/[a-z]{3,}/g) ?? [])
+  .filter((w) => !STOP.has(w) && !NAMES.has(w)).map(stem).filter((w) => w.length > 2);
 
 const nodes = content.nodes.filter((n) => n.type !== 'practice');
 // Title, prompt and plain face carry the idea in our words; the source face carries the doctrine in the thinker's.
