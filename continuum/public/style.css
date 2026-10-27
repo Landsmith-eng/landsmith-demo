@@ -10,19 +10,20 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 :root {
-  --bg: #f6f2ea;
-  --surface: #fffdf8;
-  --ink: #23201a;
-  --muted: #6f685b;
-  --line: #e2dbcd;
-  --accent: #8a4b2a;
-  --accent-ink: #fffdf8;
-  --source-bg: #2a2620;
-  --source-ink: #f3ecdd;
-  --f-philosophy: #9a4f26;
-  --f-science: #9a6a00;
-  --f-religion: #2c6688;
-  --f-practice: #4d6b35;
+  /* Sage paper and forest green. Fields: philosophy green, science ochre, religion slate blue, practice berry. */
+  --bg: #eef2ec;
+  --surface: #fbfcf9;
+  --ink: #1b241e;
+  --muted: #5a675e;
+  --line: #d3dccf;
+  --accent: #2c5a43;
+  --accent-ink: #f4f8f2;
+  --source-bg: #1e2a23;
+  --source-ink: #e8efe5;
+  --f-philosophy: #2f6b4f;
+  --f-science: #86651a;
+  --f-religion: #39608a;
+  --f-practice: #8a4560;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --lora: "Lora", var(--serif);
@@ -31,19 +32,19 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16140f;
-    --surface: #1f1c16;
-    --ink: #ece5d6;
-    --muted: #a39a88;
-    --line: #36312a;
-    --accent: #d9905f;
-    --accent-ink: #16140f;
-    --source-bg: #f3ecdd;
-    --source-ink: #23201a;
-    --f-philosophy: #e09464;
-    --f-science: #d9ad4a;
-    --f-religion: #78b4d6;
-    --f-practice: #9cc07a;
+    --bg: #111712;
+    --surface: #18201a;
+    --ink: #e4ebe3;
+    --muted: #98a69b;
+    --line: #2b372e;
+    --accent: #8cc7a3;
+    --accent-ink: #0f1611;
+    --source-bg: #e6eee3;
+    --source-ink: #1b241e;
+    --f-philosophy: #86c7a2;
+    --f-science: #d6b25c;
+    --f-religion: #92b5dc;
+    --f-practice: #d996ad;
   }
 }
 
@@ -91,7 +92,7 @@ button { font: inherit; cursor: pointer; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
 .face {
   grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden;
-  border-radius: 14px; padding: 22px 20px; border: 1px solid var(--line);
+  border-radius: 4px; padding: 22px 20px; border: 1px solid var(--line);
 }
 .face.plain { background: var(--surface); }
 .face.source { background: var(--source-bg); color: var(--source-ink); border-color: transparent; transform: rotateY(180deg); }
@@ -102,20 +103,20 @@ button { font: inherit; cursor: pointer; }
 
 .prompt { font-family: var(--display); font-size: 1.15rem; line-height: 1.5; margin: 0 0 1.2rem; display: block; }
 textarea {
-  width: 100%; min-height: 160px; resize: vertical; padding: 14px; border-radius: 12px;
+  width: 100%; min-height: 160px; resize: vertical; padding: 14px; border-radius: 4px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit;
 }
 textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; }
 .btn {
-  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
   padding: 10px 20px; font-weight: 600;
 }
 .btn:disabled { opacity: .45; cursor: default; }
 .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 
 .yours { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 0 0 20px; white-space: pre-wrap; }
-.notice { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 0 0 20px; }
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px 16px; margin: 0 0 20px; }
 
 /* Field colours (concept doc): warm = secular and scientific lines, cool = belief traditions. */
 .field-philosophy { --field: var(--f-philosophy); }
@@ -125,7 +126,7 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 
 .card-closed {
   background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--field, var(--line));
-  border-radius: 14px; padding: 20px; margin: 0 0 20px;
+  border-radius: 4px; padding: 20px; margin: 0 0 20px;
 }
 /* First viewing: the day's picture sits faded behind the title. Faded on purpose: atmosphere, not a hint. */
 .card-closed.has-backdrop { position: relative; overflow: hidden; min-height: 210px; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -139,14 +140,17 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .face.source .fulltext { display: inline-block; margin-top: .75rem; color: inherit; font-size: .85rem; }
 
 .lineage .group { margin: 0 0 18px; }
-.bubbles { display: flex; flex-direction: column; gap: 8px; }
+.bubbles { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+/* Neighbours as catalogue entries: a plain row with the field's colour as a rule on the left and an arrow on the
+   right, like labels on a gallery wall, rather than rounded tinted bubbles. */
 .bubble {
-  display: block; width: 100%; text-align: left; color: var(--ink);
-  background: color-mix(in srgb, var(--field) 9%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--field) 35%, var(--line));
-  border-radius: 16px; padding: 10px 14px;
+  position: relative; display: block; width: 100%; text-align: left; color: var(--ink); font: inherit;
+  background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  padding: 11px 32px 11px 14px; box-shadow: inset 3px 0 0 var(--field);
 }
-.bubble:hover { border-color: var(--field); }
+.bubble::after { content: '→'; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.bubble:hover { background: color-mix(in srgb, var(--field) 7%, transparent); }
+.bubble:hover::after { color: var(--field); }
 .b-who { display: block; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--field); }
 .b-title { display: block; font-family: var(--display); font-size: 1.05rem; line-height: 1.35; }
 .b-note { display: block; font-size: .85rem; color: var(--muted); margin-top: 3px; }
@@ -165,7 +169,7 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .notice.testdate { border-style: dashed; font-size: .85rem; color: var(--muted); }
 .notice.testdate .link { padding: 2px 6px; font-size: inherit; }
 .node-image { margin: 14px 0 4px; }
-.node-image img { display: block; width: 100%; height: auto; max-height: 60vh; object-fit: cover; border-radius: 10px; background: var(--line); }
+.node-image img { display: block; width: 100%; height: auto; max-height: 60vh; object-fit: cover; border-radius: 2px; background: var(--line); }
 .node-image.artefact img { object-fit: contain; }
 .node-image figcaption { font-size: .78rem; color: var(--muted); margin-top: 6px; }
 .node-image figcaption a { color: inherit; }
@@ -186,7 +190,7 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .timeline::before { content: ''; position: absolute; left: 76px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
 .tl-item {
   display: grid; grid-template-columns: 64px 26px 1fr; align-items: start; width: 100%; text-align: left;
-  background: none; border: 0; padding: 8px 0; color: var(--ink); font: inherit; border-radius: 10px;
+  background: none; border: 0; padding: 8px 0; color: var(--ink); font: inherit; border-radius: 3px;
 }
 button.tl-item:hover .b-title { text-decoration: underline; text-underline-offset: 3px; }
 .tl-year { font-size: .8rem; color: var(--muted); text-align: right; padding: 3px 10px 0 0; font-variant-numeric: tabular-nums; }
@@ -207,7 +211,7 @@ button.tl-item:hover .b-title { text-decoration: underline; text-underline-offse
   .room-index { flex-wrap: nowrap; overflow-x: auto; margin: 4px -16px 8px; padding: 2px 16px 6px; scrollbar-width: none; }
   .room-index .chip { flex: none; }
 }
-.chip { font: inherit; font-size: .82rem; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; }
+.chip { font: inherit; font-size: .82rem; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; }
 .chip:hover, .chip.on { color: var(--ink); border-color: var(--accent); }
 .room { scroll-margin-top: 12px; }
 .room h2 { margin: 2rem 0 .3rem; }
@@ -216,11 +220,11 @@ button.tl-item:hover .b-title { text-decoration: underline; text-underline-offse
 .tile {
   position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 4px; min-height: 132px;
   text-align: left; font: inherit; color: var(--ink); padding: 12px 12px 10px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: inset 0 4px 0 var(--field);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+  box-shadow: inset 0 3px 0 var(--field);
 }
 button.tile:hover { border-color: var(--field); }
-.tile.featured { box-shadow: inset 0 4px 0 var(--field), inset 0 0 0 2px color-mix(in srgb, var(--field) 45%, transparent); }
+.tile.featured { box-shadow: inset 0 3px 0 var(--field), inset 0 0 0 2px color-mix(in srgb, var(--field) 45%, transparent); }
 .tile > :not(.tile-bg) { position: relative; z-index: 1; }
 .tile-bg { position: absolute; inset: 0; z-index: 0; }
 .tile-bg img { width: 100%; height: 100%; object-fit: cover; opacity: .3; filter: saturate(.85); }
