@@ -73,6 +73,12 @@ nav { display: flex; gap: 4px; }
 button { font: inherit; cursor: pointer; }
 .link { background: none; border: 0; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
 .link:hover, .link[aria-current="page"] { color: var(--ink); }
+/* Phones: the four tabs get their own row under the brand, evenly spaced. */
+@media (max-width: 520px) {
+  .bar { flex-wrap: wrap; gap: 2px; padding-bottom: 6px; }
+  .bar nav { width: 100%; justify-content: space-between; margin: 0 -8px; width: calc(100% + 16px); }
+  nav [aria-current="page"] { box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+}
 
 .eyebrow { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; }
 .progress { display: flex; gap: 4px; margin: 4px 0 20px; }
@@ -171,3 +177,24 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .reaction .row { margin-top: 4px; }
 .reaction .bubbles { margin-top: 10px; }
 .kept { font-family: var(--display); font-size: 1.05rem; margin: 0 0 6px; padding-left: 12px; border-left: 3px solid var(--line); }
+
+/* Timeline: a vertical line with one dot per idea, grouped by era. Featured (daily) thinkers get a ring. */
+.tl-link-row { justify-content: flex-start; margin: -4px 0 8px; }
+.tl-link-row .link { font-size: .9rem; }
+.tl-era h2 { margin: 1.6rem 0 .5rem; }
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline::before { content: ''; position: absolute; left: 76px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tl-item {
+  display: grid; grid-template-columns: 64px 26px 1fr; align-items: start; width: 100%; text-align: left;
+  background: none; border: 0; padding: 8px 0; color: var(--ink); font: inherit; border-radius: 10px;
+}
+button.tl-item:hover .b-title { text-decoration: underline; text-underline-offset: 3px; }
+.tl-year { font-size: .8rem; color: var(--muted); text-align: right; padding: 3px 10px 0 0; font-variant-numeric: tabular-nums; }
+.tl-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--field); margin: 4px 0 0 7px; position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--bg); }
+.tl-row.featured .tl-dot { width: 16px; height: 16px; margin: 2px 0 0 5px; background: var(--bg); border: 4px solid var(--field); }
+.tl-row.state-unseen .tl-dot, .tl-row.state-upcoming .tl-dot { opacity: .55; }
+.tl-text { min-width: 0; }
+.tl-state { display: block; font-size: .78rem; color: var(--muted); margin-top: 2px; }
+.tl-row.state-written .tl-state::before { content: '✓ '; color: var(--field); }
+.tl-row.state-today .tl-state { color: var(--accent); font-weight: 600; }
+.tl-row.focus .tl-item { background: color-mix(in srgb, var(--field) 12%, transparent); }

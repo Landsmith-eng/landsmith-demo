@@ -53,6 +53,9 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
   run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
 - **Journal**: each answer is pinned to its node, with its reaction.
+- **Timeline**: the 14 featured thinkers in date order, grouped by era, or everyone on the map (163 ideas). Tap an
+  entry to open it. Daily cards not yet reached show only thinker and year until their day. Every card has a
+  "See on the timeline" link that jumps to it in context.
 - **Review**: This week (entries, where walks kept landing, who you kept returning to, reaction tally, "What did you
   believe on Monday that you do not on Sunday?") or Everything (adds day-1 vs last-day bookends). Finishing the line
   offers "See where it led".
@@ -107,6 +110,7 @@ All `/api/*` calls need header `x-continuum-token`.
 - `GET /api/journal` → `{ journal, favorites }`: your entries in order (with `reaction`), and kept lines
 - `POST /api/favorite { node_id, on }` → `{ favorite }` (omit `on` or `true` to keep, `false` to let go)
 - `POST /api/reaction { node_id, value: changed|somewhat|unchanged, date }` → `{ reaction }`. 409 `write_first` until you have written on that node.
+- `GET /api/timeline?date=` → `{ nodes }`: every idea in date order with `state` (written, visited, today, upcoming, unseen); upcoming daily ideas have `title: null`
 - `GET /api/review?days=7&date=` (`days=0` = everything) → `{ from, to, days_active, entries, walked, practices, reactions, bookends }`
 - `POST /api/event { kind: "flip", node_id, date }`
 - `GET /admin/api/stats` (header `x-admin-key`) → per tester: open days, response days, `came_back`

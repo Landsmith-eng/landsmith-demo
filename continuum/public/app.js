@@ -218,6 +218,8 @@ function lineage(node, trail) {
 function nodeBody(node, trail) {
   return [
     card(node),
+    node.type !== 'practice' && node.year != null && h('div', { class: 'row tl-link-row' },
+      h('button', { type: 'button', class: 'link', onclick: () => showTimeline('line', node.id) }, 'See on the timeline →')),
     node.entry && h('div', {},
       h('div', { class: 'eyebrow' }, `Your take · ${node.entry.local_date}`),
       h('div', { class: 'yours' }, node.entry.body)),
@@ -340,6 +342,55 @@ function showReview(days = 7) {
   });
 }
 
+// Timeline: everyone on the map in date order, for context. 'line' = the 14 featured daily thinkers,
+// 'all' = every idea on the map. `focus` scrolls to and highlights one node.
+const ERAS = [
+  [-Infinity, -500, 'Before 500 BCE'], [-500, 500, '500 BCE to 500 CE'], [500, 1450, '500 to 1450'],
+  [1450, 1800, '1450 to 1800'], [1800, 1900, '1800 to 1900'], [1900, Infinity, '1900 to now'],
+];
+const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card", upcoming: 'Coming up' };
+
+function showTimeline(mode = 'line', focus = null) {
+  setNav('timeline');
+  return guarded(async () => {
+    const { nodes } = await api(`/api/timeline?date=${today()}`);
+    if (mode === 'line' && focus && !nodes.some((n) => n.id === focus && n.daily)) mode = 'all';
+    const shown = mode === 'line' ? nodes.filter((n) => n.daily) : nodes;
+    const met = shown.filter((n) => n.state === 'written' || n.state === 'visited').length;
+    const toggle = h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: `btn ${mode === 'line' ? '' : 'ghost'}`, onclick: () => showTimeline('line') }, 'Featured'),
+      h('button', { type: 'button', class: `btn ${mode === 'all' ? '' : 'ghost'}`, onclick: () => showTimeline('all') }, 'Everyone on the map'));
+    const row = (n) => {
+      const inner = [
+        h('span', { class: 'tl-year' }, year(n.year)),
+        h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
+        h('span', { class: 'tl-text' },
+          h('span', { class: 'b-who' }, n.thinker),
+          n.title && h('span', { class: 'b-title' }, n.title),
+          TL_STATE[n.state] && h('span', { class: 'tl-state' }, TL_STATE[n.state])),
+      ];
+      const cls = `tl-row field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.id === focus ? ' focus' : ''}`;
+      if (n.state === 'upcoming') return h('li', { class: cls, 'data-id': n.id }, h('div', { class: 'tl-item' }, inner));
+      return h('li', { class: cls, 'data-id': n.id }, h('button', {
+        type: 'button', class: 'tl-item',
+        onclick: () => (n.state === 'today' ? showToday() : walkTo(n.id, [])),
+      }, inner));
+    };
+    const eras = ERAS.map(([from, to, label]) => [label, shown.filter((n) => n.year >= from && n.year < to)])
+      .filter(([, rows]) => rows.length)
+      .map(([label, rows]) => h('section', { class: 'tl-era' }, h('h2', {}, label), h('ol', { class: 'timeline' }, rows.map(row))));
+    render(
+      h('h1', {}, 'Timeline'),
+      toggle,
+      h('p', { class: 'muted small' }, mode === 'line'
+        ? `The ${shown.length} featured thinkers of the daily line, in date order. Tap one to open it; each idea is revealed on its day.`
+        : `Everyone on the map: ${shown.length} ideas, in date order. Featured thinkers have a ring. You have met ${met} of them.`),
+      ...eras);
+    const el = focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`);
+    if (el) el.scrollIntoView({ block: 'center' });
+  });
+}
+
 function inviteView() {
   render(
     h('h1', {}, 'Continuum'),
@@ -411,6 +462,7 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   if (nav.dataset.nav === 'journal') showJournal();
   else if (nav.dataset.nav === 'review') showReview(7);
+  else if (nav.dataset.nav === 'timeline') showTimeline('line');
   else showToday();
 });
 

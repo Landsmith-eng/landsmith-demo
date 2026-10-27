@@ -77,6 +77,13 @@ export function createApp(db, { adminKey } = {}) {
       JOIN nodes n ON n.id = v.node_id
       WHERE v.user_id = ? AND v.kind = 'walk' AND v.local_date BETWEEN ? AND ?
       GROUP BY n.id ORDER BY count DESC, MAX(v.at) DESC`),
+    // Timeline: every idea node in date order, with this user's relation to it.
+    timeline: db.prepare(`
+      SELECT n.id, n.title, n.thinker, n.year, n.field, n.type, n.seq,
+        EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id) AS written,
+        EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id) AS visited
+      FROM nodes n WHERE n.type != 'practice'
+      ORDER BY n.year, n.seq IS NULL, n.seq, n.thinker, n.title`),
     reactionCounts: db.prepare(`
       SELECT value, COUNT(*) AS n FROM reactions WHERE user_id = ? AND local_date BETWEEN ? AND ? GROUP BY value`),
     daysActive: db.prepare(`SELECT COUNT(DISTINCT local_date) AS n FROM events WHERE user_id = ? AND local_date BETWEEN ? AND ?`),
@@ -228,6 +235,23 @@ export function createApp(db, { adminKey } = {}) {
       reactions: { changed: counts.changed ?? 0, somewhat: counts.somewhat ?? 0, unchanged: counts.unchanged ?? 0 },
       bookends: line.length >= 2 ? { first: line[0], last: line[line.length - 1] } : null,
     });
+  });
+
+  // Timeline of everyone on the map. Daily cards the user has not reached yet keep their idea hidden (thinker and
+  // year only, not clickable) so the daily practice still starts with writing; today's card links to Today.
+  app.get('/api/timeline', auth, (req, res) => {
+    const uid = req.user.id;
+    const date = localDate(req.query.date);
+    const todayId = q.writtenOn.get(uid, date) ? null : todaysPick(uid, date);
+    const nodes = q.timeline.all({ uid }).map((n) => {
+      const daily = n.seq != null;
+      const state = n.written ? 'written' : n.id === todayId ? 'today' : daily ? 'upcoming' : n.visited ? 'visited' : 'unseen';
+      return {
+        id: n.id, thinker: n.thinker, year: n.year, field: n.field, type: n.type, daily, state,
+        title: state === 'upcoming' ? null : n.title,
+      };
+    });
+    res.json({ nodes });
   });
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.
