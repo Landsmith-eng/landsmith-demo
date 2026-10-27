@@ -276,3 +276,30 @@ Seneca → **Examine yourself daily** (a 4th practice; the doc lists it as the p
 Epictetus → Beck measured.
 Edge-note claims to check: Meditations I.7 (Rusticus and Epictetus); Beck naming Marcus Aurelius;
 Schopenhauer's "can do what he wills, but cannot will what he wills" (Prize Essay on Freedom of the Will, 1839).
+
+## Batch 9: law.js (first court case)
+
+`barnette_flag_salute`: West Virginia State Board of Education v. Barnette, 319 U.S. 624 (1943). US federal court
+opinions are works of the US government and in the public domain, so every passage is quoted verbatim.
+
+| Passage | Verified against | Result |
+|---|---|---|
+| Source face: "If there is any fixed star …" (Jackson, opinion of the Court) | Wikisource, `West_Virginia_State_Board_of_Education_v._Barnette/Opinion_of_the_Court` (fetched via the REST HTML endpoint) | matched |
+| Majority: "Those who begin coercive elimination …" … "Authority here is to be controlled …" | same page | matched (2 fragments) |
+| Concurrence (Black and Douglas): "Words uttered under coercion …" | `/Concurrence_Black` | matched |
+| Concurrence (Murphy): "The right of freedom of thought and of religion …" | `/Concurrence_Murphy` | matched (sentence cut with …) |
+| Dissent (Frankfurter): "One who belongs …" … "neither Catholic nor agnostic." … "Law is concerned with external behavior …" | `/Dissent_Frankfurter` | matched (3 fragments) |
+
+Facts in the plain face and gists, all from the opinions themselves: the 1942 board resolution; Jehovah's Witnesses'
+reading of Exodus 20:4-5 and the flag as an "image"; expulsions and threatened prosecution of parents; Gobitis
+(June 3, 1940) reconsidered; decided June 14, 1943; Roberts and Reed note their dissent at the end of the Court's
+opinion (6 to 3); Black and Douglas say they "originally joined with the Court in the Gobitis case" and explain their
+"change of view"; Frankfurter invokes Socrates (the Wikisource transcription misspells the name "Socreates", so that
+sentence is described in the gist rather than quoted).
+
+From memory, not from the fetched text: that Frankfurter was the only Jewish justice on the Court in 1943 (Brandeis
+retired in 1939, Cardozo died in 1938). His own opening sentence identifies him as a member of "the most vilified and
+persecuted minority in history".
+
+Echo links: Frankfurter → Socrates is **cited**. The other three (Jackson → Zera Yacob, Black and Douglas → Antigone,
+Murphy → Gandhi) are **ours**: each note says so.

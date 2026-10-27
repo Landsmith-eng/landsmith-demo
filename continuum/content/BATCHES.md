@@ -75,6 +75,7 @@ enforces the rules below.
 | 6 | `ancient3.js`, `global3.js`, `science2.js` | 20 | Sappho to Baldwin; Ptahhotep, the oldest text on the map; Shankara, Mozi, Wang Yangming; Galileo, Newton, Kuhn, Popper. Graph: 130 nodes, 348 edges |
 | 7 | `classical3.js`, `global4.js`, `modern5.js` | 20 | Herodotus to Tocqueville; the Mahabharata and Rāmānuja; Deloria, Freire, Senghor, Mariátegui, Wiredu; Pavlov to Foucault. Graph: 150 nodes, 407 edges |
 | 8 | `classical4.js`, `global5.js`, `modern6.js` | 20 | Thucydides to Wundt (Copernicus and Kepler verified); Kalidasa, Dignāga, Cordova, Martí, Nkrumah, Paz; Husserl to Butler. The roster is empty. Graph: 170 nodes, ~468 edges |
+| 9 | `law.js` | 1 case + 4 echoes | The first court case, *West Virginia v. Barnette* (1943): majority, two concurrences and the dissent quoted and explained, each linked to the idea it echoes. Graph: 171 nodes, 473 edges |
 
 ## Not yet decided
 

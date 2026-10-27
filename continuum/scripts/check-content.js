@@ -33,6 +33,7 @@ for (const n of content.nodes) {
         if (!OPINION_ROLES.includes(o.role)) bad(`${n.id}: opinion ${i + 1} has a bad role "${o.role}"`);
         if (!o.author || !o.gist || !o.quote) bad(`${n.id}: opinion ${i + 1} needs author, gist (our plain words) and quote (verbatim)`);
         if (o.echoes && !byId.has(o.echoes)) bad(`${n.id}: opinion ${i + 1} echoes unknown node ${o.echoes}`);
+        if (o.echoes && !o.echo_note) bad(`${n.id}: opinion ${i + 1} needs an echo_note (why it echoes ${o.echoes}; say "cited" or "ours")`);
       }
     }
     if (!n.source_url) bad(`${n.id}: a case needs a source_url to the full opinions`);

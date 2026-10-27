@@ -230,7 +230,8 @@ function opinionsView(node, trail) {
       h('blockquote', {}, o.quote),
       o.echoes && h('button', { type: 'button', class: `bubble field-${o.echoes.field}`, onclick: () => walkTo(o.echoes.id, [...trail, node]) },
         h('span', { class: 'b-who' }, `Echoes ${o.echoes.thinker ?? ''}`.trim()),
-        h('span', { class: 'b-title' }, o.echoes.title)))));
+        h('span', { class: 'b-title' }, o.echoes.title),
+        o.echo_note && h('span', { class: 'b-note' }, o.echo_note)))));
 }
 
 function themeChips(node) {

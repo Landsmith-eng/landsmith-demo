@@ -25,5 +25,6 @@ export const REL_HELP = {
   echoes: 'B (art, law, culture, the news) restates, applies or tests A.',
 };
 
-// Court opinions: who wrote what. A case's plain face carries the holding; each opinion here is one voice.
+// Court opinions: who wrote what. A case's plain face carries the holding; each opinion here is one voice:
+// { role, author, gist (our plain account), quote (verbatim), echoes (older node id), echo_note (why; cited or ours) }.
 export const OPINION_ROLES = ['majority', 'plurality', 'concurrence', 'dissent'];

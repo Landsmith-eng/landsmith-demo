@@ -4,6 +4,7 @@ import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
 import * as line from '../content/line_poc.js';
 import * as content from '../content/index.js';
+import { TYPES, RELS, DIRECTED } from '../content/model.js';
 
 let server, base, db;
 const TOKEN = 'tester-token';
@@ -63,8 +64,6 @@ test('content matches the concept doc: 14 two-faced nodes, typed edges, every no
 
 test('branches: valid types, possible chronology, every node reaches a practice, sources present', () => {
   const byId = new Map(content.nodes.map((n) => [n.id, n]));
-  const TYPES = ['thinker', 'concept', 'quote', 'dilemma', 'puzzle', 'text', 'practice'];
-  const RELS = ['taught', 'extended', 'refuted', 'converged', 'measured', 'secularized', 'lands_on'];
   for (const n of content.nodes) {
     assert.ok(TYPES.includes(n.type), `${n.id} type`);
     assert.ok(n.plain_face, `${n.id} plain face`);
@@ -74,7 +73,7 @@ test('branches: valid types, possible chronology, every node reaches a practice,
     assert.ok(byId.has(e.from) && byId.has(e.to), `dangling edge ${e.from} -> ${e.to}`);
     assert.ok(RELS.includes(e.relation), `${e.from} -> ${e.to} relation`);
     const a = byId.get(e.from), b = byId.get(e.to);
-    if (['taught', 'extended', 'refuted', 'measured', 'secularized'].includes(e.relation) && a.year != null && b.year != null) {
+    if (DIRECTED.includes(e.relation) && a.year != null && b.year != null) {
       assert.ok(b.year >= a.year - 30, `impossible chronology: ${b.id} (${b.year}) ${e.relation} ${a.id} (${a.year})`);
     }
   }

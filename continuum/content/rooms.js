@@ -60,7 +60,7 @@ const R = {
     'darwin_grandeur_of_life', 'einstein_spinozas_god', 'popper_falsification', 'schrodinger_atman_brahman', 'kuhn_paradigm_shift'],
   art: [],
   culture: [],
-  law: [],
+  law: ['barnette_flag_salute'],
   now: [],
   mind: ['wundt_first_laboratory', 'william_james_habit', 'jung_the_shadow', 'freud_pleasure_principle', 'pavlov_conditioned_reflex',
     'harvard_study_adult_development', 'maslow_hierarchy', 'frankl_mans_search_for_meaning', 'rogers_unconditional_positive_regard',

@@ -16,7 +16,12 @@ const norm = (t) => t.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, 
 const corpus = files.map((f) => norm(readFileSync(f, 'utf8'))).join(' \u0000 ');
 const { nodes } = await import(contentIndex);
 let bad = 0;
-for (const n of nodes) {
+// A court case's opinions are quoted too: each opinion's passage is checked like a source face of its own.
+const checks = nodes.flatMap((n) => [
+  n.source_face ? { ...n } : null,
+  ...(n.opinions ?? []).map((o, i) => ({ id: `${n.id} [${o.role}, ${o.author}]`, file: n.file, source_face: o.quote, _i: i })),
+].filter(Boolean));
+for (const n of checks) {
   if (!n.source_face || (only && n.file !== only)) continue;
   if (/^(Summary|Short quotation)/.test(n.source_face)) { console.log(`SKIP  ${n.id} (labelled summary/short quotation)`); continue; }
   // A paragraph wrapped entirely in [square brackets] is an editorial rendering (e.g. our English for a
