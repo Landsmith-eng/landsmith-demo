@@ -134,6 +134,42 @@ Kabat-Zinn (his own yoga and Zen training); Kierkegaard → Wittgenstein (Drury'
 Wittgenstein (von Wright); Wollstonecraft → Beauvoir (no verified mention by name); Beck → Seligman (Learned
 Optimism crediting Beck). Dropped as wrongly `converged` (contact existed): Plato's cave ↔ Descartes, Gyges ↔ Rawls.
 
+### Batch 5 (classical2.js, global2.js, convergences1.js), 2026-10-27
+
+15 nodes and a verified pass over the convergence-finder's candidates (9 edges, no nodes).
+
+| Node | Source | Status |
+|---|---|---|
+| homer_achilles_choice | Iliad IX, Butler | Verified (Gutenberg 2199) |
+| sophocles_antigone | Antigone 450–464, Storr 1912 | Verified (Gutenberg 31) |
+| machiavelli_fortune_and_virtu | The Prince XXV, Marriott 1908 | Verified (Gutenberg 1232); Marriott reads "adventurous", not "impetuous"; an inline footnote is cut with an ellipsis |
+| locke_blank_slate | Essay II.i.2 | Verified (Gutenberg 10615) |
+| rousseau_born_free | Social Contract I.1, Cole 1913 | Verified (Gutenberg 46333) |
+| adam_smith_impartial_spectator | Theory of Moral Sentiments III, 1777 printing | Verified (Gutenberg 67363); "tribunal within our own breast" rather than the later "man within the breast" |
+| leibniz_best_of_all_possible_worlds | Theodicy I §8, Huggard 1951 | Verified (Gutenberg 17147, which Gutenberg hosts as cleared for the US; a thinker node, so the quote is optional) |
+| voltaire_cultivate_our_garden | Candide XXX, anonymous 1918 translation | Verified (Gutenberg 19942) |
+| tagore_gitanjali | Gitanjali 73, Tagore's own English 1912 | Verified (Gutenberg 7164) |
+| singer_drowning_child | "Famine, Affluence, and Morality" (1972) | **Summary** |
+| heidegger_being_toward_death | Sein und Zeit §§46–53 | **Summary**; the German was unreachable |
+| han_feizi_two_handles | Han Feizi ch. 7 | **Summary**; no public-domain English reachable |
+| fanon_wretched_of_the_earth | Black Skin, White Masks; The Wretched of the Earth | **Summary** |
+| hooks_all_about_love | All About Love (2000) | **Summary**; Peck's definition paraphrased, not quoted |
+| nishitani_religion_and_nothingness | Religion and Nothingness (1961) | **Summary** |
+
+Convergence edges (convergences1.js): Boethius → Brickman and Mill → Brickman `measured`; Nagarjuna ↔ Sartre,
+Job ↔ Socrates, Heraclitus ↔ Hume (Hume's "perpetual flux" verified), Averroes ↔ Zera Yacob, Laozi ↔ Schopenhauer
+(verified by absence: WWI vol. I never mentions the Tao), Aquinas ↔ Gandhi (verified by absence: Hind Swaraj's
+authorities appendix has no Aquinas) `converged`; Buddha → Schopenhauer `extended` (WWI §68 "In Buddhism also…"
+verified). Rejected: Avicenna ↔ Du Bois (opposite answers to one question), Seneca ↔ Gilgamesh (vocabulary only),
+Gyges → King (the King summary does not support it).
+
+Edge notes verified against texts in this batch: Apology on Achilles; Hume's footnote on Locke; Rousseau naming
+Locke and Hobbes (Discourse on Inequality); Wollstonecraft on Rousseau; Smith quoting Epictetus; the Theodicy naming
+Spinoza and citing Job; Candide on Leibniz. Claims resting on memory: Rousseau → Kant ("set me right", unpublished
+notes); Hume → Smith (TMS never names Hume); Smith → Marx; Kierkegaard and Tolstoy → Heidegger (footnotes in §40,
+§51); Upanishads → Tagore; Dōgen → Nishitani; King → hooks; Gandhi → Tagore `refuted` (the 1921 exchange in
+Modern Review and Young India). Dropped: Epicurus ↔ Voltaire `converged` (Voltaire knew Epicurus through Lucretius).
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),

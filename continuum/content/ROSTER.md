@@ -33,9 +33,9 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Name | Curricula | Status | PD? | Priority | Crossover to build |
 |---|---|---|---|---|---|
 | Gilgamesh | UC | branch | Y | — | Facing death, the oldest text on it: converges with Lucretius, Ecclesiastes; lands on death in view |
-| Homer | LH, SJC, DS, UC | | Y | B | Achilles' choice: short glorious life or long quiet one; links to Epicurus vs. Zeno |
+| Homer | LH, SJC, DS, UC | branch | Y | — | Achilles' choice: short glorious life or long quiet one; links to Epicurus vs. Zeno |
 | Sappho | LH, DS | | Y | C | Love and longing; converges with the Buddha on craving |
-| Aeschylus / Sophocles | SJC, DS, UC | | Y | B | Antigone, conscience vs. law: extended by Thoreau, King |
+| Aeschylus / Sophocles | SJC, DS, UC | branch (Antigone) | Y | — | Antigone, conscience vs. law: extended by Thoreau, King |
 | Herodotus / Thucydides | SJC, DS | | Y | C | Solon's "call no man happy until he is dead": converges with Kahneman's peak-end |
 | Heraclitus | *added* | branch | Y | — | "No man steps in the same river twice": converges with the Buddha on impermanence |
 | Democritus | *added* | line | Y | — | — |
@@ -66,7 +66,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Ibn Khaldun | *added* | | Y | B | Asabiyyah: rise and fall of group cohesion; measured by modern social science |
 | Dante | LH, SJC, DS, UC | | Y | B | "Midway in the journey of our life": a crisis node; lands on examine daily |
 | Chaucer, Petrarch | SJC, DS | | Y | C | Petrarch's Ascent of Mont Ventoux, reading Augustine on a mountain |
-| Machiavelli | CC, SJC, DS | | Y | B | Fortune vs. virtù: refutes the Stoic acceptance of fate |
+| Machiavelli | CC, SJC, DS | branch | Y | — | Fortune vs. virtù: refutes the Stoic acceptance of fate |
 | Montaigne | SJC | branch | Y | — | — |
 
 ## Early modern and Enlightenment
@@ -75,11 +75,11 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 |---|---|---|---|---|---|
 | Descartes, Pascal, Hume, Spinoza | CC, SJC, DS | branch / line | Y | — | — |
 | Hobbes | CC, SJC, DS | branch | Y | — | Life without society, "nasty, brutish, and short": refuted by Rousseau |
-| Locke | CC, DS | | Y | B | Mind as blank slate: refuted by modern psychology |
+| Locke | CC, DS | branch | Y | — | Mind as blank slate: refuted by modern psychology |
 | Berkeley | DS | | Y | C | Puzzle node: the tree falling in the forest |
-| Rousseau | CC, SJC, DS | | Y | B | Amour-propre (comparison): measured by social-comparison research |
+| Rousseau | CC, SJC, DS | branch | Y | — | Amour-propre (comparison): measured by social-comparison research |
 | Kant | CC, DS, UC | branch | Y | — | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
-| Adam Smith | CC | | Y | B | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
+| Adam Smith | CC | branch | Y | — | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
 | Burke / Tocqueville | DS (CC older) | | Y | C | Habits of the heart, associations: measured by the Harvard Study |
 | Mary Wollstonecraft | *added* | branch | Y | — | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
 | Galileo | SJC, HSCI | | Y | B | Letter to the Grand Duchess Christina: science and scripture |
@@ -141,7 +141,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Mozi | *added* | | Y | C | Impartial care: converges with utilitarianism |
 | Dōgen / Zen (Linji, Hakuin) | WP (Japanese unit), *added* by name | branch (Dōgen) | partly | — | Just sitting: secularized into mindfulness, alongside Kabat-Zinn |
 | Wang Yangming | *added* | | partly | C | Unity of knowing and acting: converges with William James's pragmatism |
-| Tagore / Gandhi | AH (Gandhi) | | partly | B | See Gandhi above |
+| Tagore / Gandhi | AH (Gandhi) | branch | partly | — | See Gandhi above |
 
 ## Africa, the Americas, and Indigenous thought
 
@@ -166,7 +166,13 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 
 ## Batch 4 (done): Plato's cave, Plotinus, Śāntideva, Patañjali, Dōgen, Wollstonecraft, Sor Juana, Marx, William James, Jung, Wittgenstein, Rawls, Parfit, Beauvoir, Seligman.
 
-## Suggested batch 5
+## Batch 5 (done): Homer, Antigone, Machiavelli, Locke, Rousseau, Adam Smith, Leibniz, Voltaire, Tagore, Singer, Heidegger, Han Feizi, Fanon, bell hooks, Nishitani; plus nine verified convergence edges.
+
+## Suggested batch 6
+
+Sappho, Diogenes the Cynic, Anselm's argument (puzzle), Dante, Ibn Khaldun, Dostoevsky's Grand Inquisitor, Galileo, Newton, Kuhn, Popper, Skinner, Rogers, Maslow, Shankara, Mozi, Wang Yangming, Ptahhotep, the Valladolid debate, Kimmerer, Woolf, Baldwin.
+
+## Earlier suggestion for batch 5
 
 Top convergence candidates needing verified notes (see CONVERGENCE_CANDIDATES.md): Boethius → Brickman `measured`, Mill ↔ Brickman, Nagarjuna ↔ Sartre, Schopenhauer ↔ Laozi, Zera Yacob ↔ Averroes. New nodes: Kahneman's companion Seligman is in; next Singer's drowning child, Heidegger's being-toward-death, Han Feizi, Fanon, Nishitani, bell hooks, Leibniz/Voltaire, Popper, Gilgamesh's companion Homer (Achilles' choice), Sappho, Antigone, Machiavelli, Locke, Rousseau, Adam Smith, Darwin's companion Mendel? no: Galileo and Newton (the humbling), Tagore.
 
@@ -200,17 +206,17 @@ Names on that map's 107 that are on neither our graph nor the tables above. Prio
 | Śāntideva (Bodhicaryāvatāra) | Indian | branch | A | — |
 | Dignāga / Dharmakīrti | Indian | N | C | Buddhist logic and perception |
 | Rāmānuja | Indian | partly | C | Qualified non-dualism: refutes Shankara |
-| Han Feizi | Chinese | partly | B | Legalism: extends Xunzi, converges with Hobbes and Machiavelli |
-| Leibniz | Western | Y | B | Best of all possible worlds: refuted by Voltaire's Candide; converges with the Stoics on providence |
+| Han Feizi | Chinese (branch) | partly | — | Legalism: extends Xunzi, converges with Hobbes and Machiavelli |
+| Leibniz | Western (branch) | Y | — | Best of all possible worlds: refuted by Voltaire's Candide; converges with the Stoics on providence |
 | Peirce / Russell / Popper | Western | partly | B | Fallibilism, falsification: lands on hold beliefs loosely; Popper extends Hume's problem of induction |
-| Husserl / Heidegger / Merleau-Ponty | Western | N | C | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
+| Husserl / Heidegger / Merleau-Ponty | Western (branch) | N | — | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
 | Adorno / Foucault / Derrida | Western | N | C | Later |
 | Rawls | Western | branch | A | — |
 | Parfit | Western | branch | A | — |
-| Singer | Western | N | B | The drowning child: a dilemma node; extends Mill, converges with Mencius's child at the well |
+| Singer | Western (branch) | N | — | The drowning child: a dilemma node; extends Mill, converges with Mencius's child at the well |
 | Nussbaum / MacIntyre / Taylor / Nagel | Western | N | B | Nussbaum and MacIntyre revive Aristotle's virtue ethics; Nagel's "What is it like to be a bat?" is a puzzle node |
 | Judith Butler | Western | N | C | Extends Beauvoir |
-| Fanon / Senghor / Nkrumah | African | N | B | Fanon extends Hegel's recognition and refutes Sartre; converges with Du Bois |
+| Fanon / Senghor / Nkrumah | African (branch) | N | — | Fanon extends Hegel's recognition and refutes Sartre; converges with Du Bois |
 | Mariátegui / Octavio Paz | Latin American | N | C | Later |
-| Keiji Nishitani | Japanese | N | B | Kyoto School: Nāgārjuna's emptiness meets Nietzsche's nihilism, by someone who read both |
-| bell hooks | American | N | B | All About Love: extends King; lands on invest in people |
+| Keiji Nishitani | Japanese (branch) | N | — | Kyoto School: Nāgārjuna's emptiness meets Nietzsche's nihilism, by someone who read both |
+| bell hooks | American (branch) | N | — | All About Love: extends King; lands on invest in people |
