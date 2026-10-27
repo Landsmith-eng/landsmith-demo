@@ -40,14 +40,14 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Heraclitus | *added* | branch | Y | — | "No man steps in the same river twice": converges with the Buddha on impermanence |
 | Democritus | *added* | line | Y | — | — |
 | Socrates (via Plato) | CC, SJC, DS, UC | branch | Y | — | — |
-| Plato | CC, SJC, DS, UC | branch (Gyges) | Y | — | The cave, the ring of Gyges (a dilemma node), the tripartite soul: extended by Freud |
+| Plato | CC, SJC, DS, UC | branch (Gyges, cave) | Y | — | The cave, the ring of Gyges (a dilemma node), the tripartite soul: extended by Freud |
 | Aristotle | CC, SJC, DS, UC | branch | Y | A | Add the golden mean and habit (we become just by doing just acts): extended by William James |
 | Diogenes the Cynic | *added* | | Y | B | Radical simplicity: taught Crates, who taught Zeno |
 | Epicurus, Lucretius, Zeno, Epictetus, Seneca, Marcus | SJC (Lucretius, Epictetus) | line | Y | — | — |
 | Pyrrho / Sextus Empiricus | *added* | branch (Pyrrho) | Y | — | Suspending judgment brings calm: converges with the Buddha; lands on hold beliefs loosely |
 | Euclid | SJC | | Y | C | Proof as a way of knowing: extended by Descartes, Spinoza (Ethics in geometric order) |
 | Plutarch | SJC | | Y | C | Lives as moral examples |
-| Plotinus | SJC | | Y | B | The One: converges with the Upanishads; extended by Augustine |
+| Plotinus | SJC | branch | Y | — | The One: converges with the Upanishads; extended by Augustine |
 | Hebrew Bible (Genesis, Job, Ecclesiastes) | CC, UC | branch (Eccl., Job) | Y | — | Job: why do the good suffer? Converges with the Buddha, Boethius |
 | New Testament | CC, SJC | branch (Matt.) | Y | B | Sermon on the Mount, love of enemies: extended by Tolstoy, Gandhi, King |
 
@@ -81,7 +81,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Kant | CC, DS, UC | branch | Y | — | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
 | Adam Smith | CC | | Y | B | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
 | Burke / Tocqueville | DS (CC older) | | Y | C | Habits of the heart, associations: measured by the Harvard Study |
-| Mary Wollstonecraft | *added* | | Y | B | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
+| Mary Wollstonecraft | *added* | branch | Y | — | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
 | Galileo | SJC, HSCI | | Y | B | Letter to the Grand Duchess Christina: science and scripture |
 | Copernicus / Kepler / Newton | HSCI | | Y | B | Moving us from the center: a humbling that echoes Marcus's "view from above" |
 | Milton | SJC, DS | | Y | C | "The mind is its own place": converges with Epictetus and Marcus |
@@ -92,14 +92,14 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 |---|---|---|---|---|---|
 | Hegel | DS (CC older) | branch | Y | — | Master–slave dialectic: extended by Marx, Douglass |
 | Schopenhauer, Nietzsche, Kierkegaard | CC, DS | line / branch | Y | — | — |
-| Marx | CC, DS | | Y | B | Alienated labor: lands on work that outlasts you; converges with Frankl on meaningful work |
+| Marx | CC, DS | branch | Y | — | Alienated labor: lands on work that outlasts you; converges with Frankl on meaningful work |
 | John Stuart Mill | CC (older) | branch | Y | — | "Ask yourself whether you are happy, and you cease to be so": converges with Frankl; extends Epicurus |
 | Emerson / Thoreau | DS (Emerson) | branch (Thoreau) | Y | — | Walden, living deliberately: extends the Stoics and the Gita (Thoreau read it); lands on body / simplicity |
 | Frederick Douglass | DS | branch | Y | — | Learning to read as the path to freedom: converges with Epictetus, who also began as a slave |
 | Darwin | CC, HSCI | branch | Y | — | — |
 | Tolstoy | SJC, DS | branch (A Confession) | Y | — | The Death of Ivan Ilyich: lands on death in view; also his non-resistance, extended by Gandhi |
 | Dostoevsky | *added* | | Y | B | Grand Inquisitor: freedom as a burden; extended by Sartre |
-| William James | PSY | | Y | A | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
+| William James | PSY | branch | Y | — | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
 | Wundt / Pavlov | PSY | | Y | C | Birth of experimental psychology; conditioning |
 | Goethe / Wordsworth / Flaubert | SJC, DS | branch (Goethe) | Y | — | Faust's bargain: never be satisfied (refutes Epicurean contentment) |
 
@@ -109,16 +109,16 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 |---|---|---|---|---|---|
 | Freud | CC, PSY | branch | Y (pre-1929) | — | — |
 | W. E. B. Du Bois | CC | branch | Y (1903) | — | Double consciousness: converges with Douglass; extends Hegel's recognition |
-| Jung | PSY | | partly | B | The shadow: converges with Augustine's divided will |
+| Jung | PSY | branch | partly | — | The shadow: converges with Augustine's divided will |
 | Einstein, Bohr, Heisenberg, Schrödinger | HSCI | branch (2) | N | B | Uncertainty as a scientific limit on knowing: lands on hold beliefs loosely |
 | Virginia Woolf | CC, LH, DS | | Y (pre-1929 works) | B | A Room of One's Own: lands on work that outlasts you |
 | Gandhi | AH | branch | partly | — | Satyagraha: extends the Gita, Tolstoy and Thoreau; extended by King |
 | Martin Luther King Jr. | UC | branch | N | — | Letter from Birmingham Jail: extends Gandhi, Aquinas on unjust law, Socrates |
 | James Baldwin | SJC, UC | | N | B | The Fire Next Time: love as moral demand |
 | Hannah Arendt | DS | branch | N | — | Banality of evil: measured by Milgram's obedience experiments |
-| Simone de Beauvoir / Iris Murdoch | DS | | N | B | Beauvoir: one is not born a woman (refutes fixed essence). Murdoch: attention as moral practice, which converges with Simone Weil |
+| Simone de Beauvoir / Iris Murdoch | DS | branch (Beauvoir) | N | — | Beauvoir: one is not born a woman (refutes fixed essence). Murdoch: attention as moral practice, which converges with Simone Weil |
 | Sartre / Camus | *added* (owner request) | branch | N | — | — |
-| Wittgenstein | *added* | | partly | C | "Whereof one cannot speak": converges with Laozi's "the Tao that can be named" |
+| Wittgenstein | *added* | branch | partly | — | "Whereof one cannot speak": converges with Laozi's "the Tao that can be named" |
 | Thomas Kuhn | HSCI | | N | B | Paradigm shifts: lands on hold beliefs loosely |
 | Skinner / Rogers / Maslow | PSY | | N | B | Skinner refutes free will (converges with Spinoza). Rogers: unconditional positive regard. Maslow: needs pyramid, with Frankl's critique |
 | Kahneman / Seligman | *added* (contemporary) | branch (Kahneman) | N | — | Kahneman measured Bentham. Seligman's learned helplessness was measured, and Beck and the Stoics were extended into positive psychology |
@@ -139,7 +139,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Laozi | AH | branch | Y | — | — |
 | Zhuangzi | AH | branch | Y | — | The butterfly dream (puzzle): converges with Descartes's dream doubt and al-Ghazali |
 | Mozi | *added* | | Y | C | Impartial care: converges with utilitarianism |
-| Dōgen / Zen (Linji, Hakuin) | WP (Japanese unit), *added* by name | | partly | B | Just sitting: secularized into mindfulness, alongside Kabat-Zinn |
+| Dōgen / Zen (Linji, Hakuin) | WP (Japanese unit), *added* by name | branch (Dōgen) | partly | — | Just sitting: secularized into mindfulness, alongside Kabat-Zinn |
 | Wang Yangming | *added* | | partly | C | Unity of knowing and acting: converges with William James's pragmatism |
 | Tagore / Gandhi | AH (Gandhi) | | partly | B | See Gandhi above |
 
@@ -157,16 +157,18 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Vine Deloria Jr. | IND | | N | B | God Is Red: space vs. time traditions; refutes linear Western history |
 | V. F. Cordova | IND | | N | C | Native American worldview as philosophy |
 | Robin Wall Kimmerer | *added* | | N | B | Braiding Sweetgrass, reciprocity with land: converges with the Gita's offering and Ohiyesa |
-| Sor Juana Inés de la Cruz | *added* (Latin America) | | Y | B | The Reply to Sor Filotea, the right to learn: converges with Wollstonecraft and Douglass |
+| Sor Juana Inés de la Cruz | *added* (Latin America) | branch | Y | — | The Reply to Sor Filotea, the right to learn: converges with Wollstonecraft and Douglass |
 | José Martí / Paulo Freire | WP (Latin American unit), *added* by name | | partly | C | Freire: education as freedom; extends Douglass |
 
 ## Batch 2 (done): Heraclitus, Plato's ring of Gyges, Pyrrho, Job, Augustine, Boethius, Avicenna, Rumi, Kant, Mill, Thoreau, Douglass, Tolstoy, Mencius, Zhuangzi.
 
 ## Batch 3 (done): Gilgamesh, Aquinas, Averroes, Maimonides, Zera Yacob, Ubuntu, the Seventh Generation principle, Nagarjuna, Xunzi, Gandhi, Hobbes, Hegel, Goethe, Du Bois, King, Arendt, Milgram, Kahneman.
 
-## Suggested batch 4
+## Batch 4 (done): Plato's cave, Plotinus, Śāntideva, Patañjali, Dōgen, Wollstonecraft, Sor Juana, Marx, William James, Jung, Wittgenstein, Rawls, Parfit, Beauvoir, Seligman.
 
-From the remaining priority A and the Philosophy Map additions: Plato's cave or Phaedo, Plotinus, Marx, Rawls, Parfit, Śāntideva, Patañjali, William James, Jung, Wollstonecraft, Sor Juana, Beauvoir, Seligman, Kabat-Zinn's Zen roots (Dōgen), Wittgenstein ↔ Laozi.
+## Suggested batch 5
+
+Top convergence candidates needing verified notes (see CONVERGENCE_CANDIDATES.md): Boethius → Brickman `measured`, Mill ↔ Brickman, Nagarjuna ↔ Sartre, Schopenhauer ↔ Laozi, Zera Yacob ↔ Averroes. New nodes: Kahneman's companion Seligman is in; next Singer's drowning child, Heidegger's being-toward-death, Han Feizi, Fanon, Nishitani, bell hooks, Leibniz/Voltaire, Popper, Gilgamesh's companion Homer (Achilles' choice), Sappho, Antigone, Machiavelli, Locke, Rousseau, Adam Smith, Darwin's companion Mendel? no: Galileo and Newton (the humbling), Tagore.
 
 The batch-2 list was:
 
@@ -194,8 +196,8 @@ Names on that map's 107 that are on neither our graph nor the tables above. Prio
 
 | Name | Group | PD? | Priority | Crossover to build |
 |---|---|---|---|---|
-| Patañjali (Yoga Sutras) | Indian | Y | A | "Yoga is the stilling of the mind's fluctuations": converges with the Stoics; lands on care for the body |
-| Śāntideva (Bodhicaryāvatāra) | Indian | partly | A | "If it can be remedied, why be unhappy? If it cannot, what use is being unhappy?": converges with Epictetus almost word for word |
+| Patañjali (Yoga Sutras) | Indian | branch | A | — |
+| Śāntideva (Bodhicaryāvatāra) | Indian | branch | A | — |
 | Dignāga / Dharmakīrti | Indian | N | C | Buddhist logic and perception |
 | Rāmānuja | Indian | partly | C | Qualified non-dualism: refutes Shankara |
 | Han Feizi | Chinese | partly | B | Legalism: extends Xunzi, converges with Hobbes and Machiavelli |
@@ -203,8 +205,8 @@ Names on that map's 107 that are on neither our graph nor the tables above. Prio
 | Peirce / Russell / Popper | Western | partly | B | Fallibilism, falsification: lands on hold beliefs loosely; Popper extends Hume's problem of induction |
 | Husserl / Heidegger / Merleau-Ponty | Western | N | C | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
 | Adorno / Foucault / Derrida | Western | N | C | Later |
-| Rawls | Western | N | A | The veil of ignorance: a dilemma node; extends Kant, refuted by Nozick (already on the map) |
-| Parfit | Western | N | A | Reasons and Persons on personal identity: measured/extended Hume and Nāgārjuna's no-self (Parfit says so) |
+| Rawls | Western | branch | A | — |
+| Parfit | Western | branch | A | — |
 | Singer | Western | N | B | The drowning child: a dilemma node; extends Mill, converges with Mencius's child at the well |
 | Nussbaum / MacIntyre / Taylor / Nagel | Western | N | B | Nussbaum and MacIntyre revive Aristotle's virtue ethics; Nagel's "What is it like to be a bat?" is a puzzle node |
 | Judith Butler | Western | N | C | Extends Beauvoir |

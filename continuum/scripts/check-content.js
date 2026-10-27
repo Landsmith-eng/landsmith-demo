@@ -22,7 +22,7 @@ for (const n of content.nodes) {
   if (!n.title || !n.plain_face) bad(`${n.id}: missing title or plain_face`);
   if (n.type !== 'practice' && !n.prompt) bad(`${n.id}: missing prompt`);
   if (!['thinker', 'practice'].includes(n.type) && !(n.source_face && n.source_citation)) bad(`${n.id}: non-thinker node needs source_face and source_citation`);
-  if (n.source_face && !/^(Summary|Short quotation) \(work under copyright\)/.test(n.source_face) && !n.source_url) bad(`${n.id}: quoted source needs a source_url (or label it a summary/short quotation)`);
+  if (n.source_face && !/^(Summary|Short quotation) \(/.test(n.source_face) && !n.source_url) bad(`${n.id}: quoted source needs a source_url (or label it: start the face with "Summary (…): " or "Short quotation (…): " saying why)`);
   if (n.plain_face && n.plain_face.length > 700) bad(`${n.id}: plain_face is ${n.plain_face.length} chars; keep it to one screen (<= 700)`);
   if (n.type !== 'practice' && !content.edges.some((e) => e.from === n.id || e.to === n.id)) bad(`${n.id}: has no edges`);
 }
@@ -55,7 +55,7 @@ const line = content.nodes.filter((n) => n.seq != null).length;
 const practices = content.nodes.filter((n) => n.type === 'practice').length;
 const byField = {};
 for (const n of content.nodes) byField[n.field ?? 'philosophy'] = (byField[n.field ?? 'philosophy'] ?? 0) + 1;
-const summaries = content.nodes.filter((n) => /^(Summary|Short quotation) \(work under copyright\)/.test(n.source_face ?? '')).length;
+const summaries = content.nodes.filter((n) => /^(Summary|Short quotation) \(/.test(n.source_face ?? '')).length;
 console.log(`${content.nodes.length} nodes (${line} daily, ${practices} practices, ${content.nodes.length - line - practices} walk-only), ${content.edges.length} edges`);
 console.log(`fields: ${Object.entries(byField).map(([k, v]) => `${k} ${v}`).join(', ')}; ${summaries} in-copyright summaries; files: line_poc.js, ${content.branchFiles.join(', ')}`);
 if (problems.length) { console.log(`\n${problems.length} problem(s):`); for (const p of problems) console.log('  ' + p); process.exit(1); }

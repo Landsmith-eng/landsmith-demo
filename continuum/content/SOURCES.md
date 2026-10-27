@@ -103,6 +103,37 @@ expected"; Mencius → Xunzi (ch. 23 names Mencius); Aristotle → Maimonides on
 the Incoherence as Averroes's reply. Dropped as too loose: Plato's Gyges → Milgram `measured`, Seventh Generation ↔
 Kant `converged`.
 
+### Batch 4 (ancient2.js, modern4.js, contemporary.js), 2026-10-27
+
+15 nodes. Quotations matched word for word by the researcher and again by `scripts/verify-quotes.js`.
+
+| Node | Source | Status |
+|---|---|---|
+| plato_cave | Republic VII 514a–517b, Jowett | Verified (Gutenberg 1497) |
+| plotinus_the_one | Enneads VI.9, Guthrie 1918 | Verified (Gutenberg 42930); MacKenna not reachable |
+| shantideva_remedy_or_no_remedy | Bodhicaryāvatāra VI.10 | **Summary**: no public-domain English translation reachable (Barnett 1909 not online) |
+| patanjali_stilling_the_mind | Yoga Sutras I.2–3, I.12–14, Johnston 1912 | Verified (Gutenberg 2526); Johnston's "Union, spiritual consciousness" rendering, with the literal gloss in the citation |
+| dogen_just_sitting | Dōgen as quoted in Nukariya, The Religion of the Samurai (1913) | Verified (Gutenberg 5173); Genjōkōan only paraphrased |
+| wollstonecraft_reason_has_no_sex | Vindication, ch. III–IV | Verified (Gutenberg 3420) |
+| sor_juana_reply | Respuesta a Sor Filotea, Spanish, Obras selectas 1872 | Verified (Gutenberg 74087); the bracketed English is ours. This edition reads "estudiar para ignorar menos", not the popular "no estudio para saber más" |
+| marx_alienated_labor | Communist Manifesto, Moore 1888 | Verified (Gutenberg 61); Capital not reachable, node dated 1848 |
+| william_james_habit | Principles of Psychology I, ch. IV and XI | Verified (Gutenberg 57628) |
+| jung_the_shadow | Psychology of the Unconscious, Hinkle 1916 | Verified (Gutenberg 65903); "shadow" is a later, in-copyright term, so the title follows the passage |
+| wittgenstein_whereof_one_cannot_speak | Tractatus 6.43, 6.52, 6.54, 7, Ogden 1922; German of 7 | Verified (Wikisource page scans; Gutenberg 5740) |
+| rawls_veil_of_ignorance | A Theory of Justice (1971) | **Summary** |
+| parfit_what_matters | Reasons and Persons (1984), Appendix J | **Summary**; appendix details from secondary literature |
+| beauvoir_second_sex | The Second Sex, Parshley 1953 | **Short quotation**: "One is not born, but rather becomes, a woman", confirmed by search against two scholarly sources, not grep-matched against a fetched text |
+| seligman_learned_helplessness | Seligman & Maier 1967; Learned Optimism 1991 | **Summary** |
+
+Edge notes verified against texts: Augustine's "books of the Platonists" (Confessions VII.9); Descartes on the senses
+deceiving (Discourse IV); Legge's Tao Te Ching ch. 1; Jung naming Freud and quoting James; James's attention line.
+
+Batch 4 claims resting on memory: Hegel → Marx (Capital's afterword, not fetchable); Marx → Sartre; Upanishads →
+Patañjali (Katha 2.3.11); Plotinus → Augustine (the "Platonists" identified with Plotinus); Patañjali and Dōgen →
+Kabat-Zinn (his own yoga and Zen training); Kierkegaard → Wittgenstein (Drury's recollection); Schopenhauer →
+Wittgenstein (von Wright); Wollstonecraft → Beauvoir (no verified mention by name); Beck → Seligman (Learned
+Optimism crediting Beck). Dropped as wrongly `converged` (contact existed): Plato's cave ↔ Descartes, Gyges ↔ Rawls.
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),

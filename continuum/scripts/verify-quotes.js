@@ -12,7 +12,7 @@ if (!root) { console.error('usage: node scripts/verify-quotes.js <texts-dir> [br
 const files = [];
 const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else files.push(p); } };
 walk(root);
-const norm = (t) => t.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\{\d+\}/g, ' ').replace(/\[\d+\]/g, ' ').replace(/\b\d+:\d+\b/g, ' ').replace(/'''?|\[\[|\]\]|\{\{[^}]*\}\}|_/g, '').replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/[—–]|--/g, '-').replace(/-\s*-/g,'-').replace(/\s+/g, ' ').toLowerCase();
+const norm = (t) => t.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\{\d+\}/g, ' ').replace(/\[(FN#)?\d+\]/g, ' ').replace(/\b\d+:\d+\b/g, ' ').replace(/'''?|\[\[|\]\]|\{\{[^}]*\}\}|_/g, '').replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/[—–]|--/g, '-').replace(/-\s*-/g,'-').replace(/\s+/g, ' ').toLowerCase();
 const corpus = files.map((f) => norm(readFileSync(f, 'utf8'))).join(' \u0000 ');
 const { nodes } = await import(contentIndex);
 let bad = 0;
@@ -24,7 +24,8 @@ for (const n of nodes) {
   const frags = n.source_face.split(/\n\n/).map((x) => x.trim()).filter((x) => !/^\[[\s\S]*\]$/.test(x))
     .flatMap((para) => para.split(/\s*…\s*|\n/)).map((x) => x.trim()).filter((x) => x.length > 12);
   // A fragment may end with our own closing punctuation where the passage was cut.
-  const missing = frags.filter((f) => !corpus.includes(norm(f).replace(/^"|"$/g, '').trim().replace(/[.:;,]+$/, '')));
+  // A fragment may also begin with a section or proposition number ("6.52 ", "7 ") that the source formats apart.
+  const missing = frags.filter((f) => !corpus.includes(norm(f).replace(/^"|"$/g, '').trim().replace(/^\d+(\.\d+)*\s+/, '').replace(/[.:;,]+$/, '')));
   if (missing.length) { bad++; console.log(`MISS  ${n.id}:`); for (const m of missing) console.log('        ' + m.slice(0, 110)); }
   else console.log(`OK    ${n.id} (${frags.length} fragment${frags.length > 1 ? 's' : ''})`);
 }
