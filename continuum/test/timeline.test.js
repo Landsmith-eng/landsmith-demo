@@ -4,7 +4,7 @@ import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
 import * as content from '../content/index.js';
 
-test('timeline: every idea in date order, upcoming daily ideas hidden, user state marked', async () => {
+test('gallery/timeline: every idea in date order and in a room, upcoming daily ideas hidden, user state marked', async () => {
   const db = openDb(':memory:');
   seedContent(db, content);
   db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
@@ -16,7 +16,12 @@ test('timeline: every idea in date order, upcoming daily ideas hidden, user stat
   }).then((r) => r.json());
   const get = (nodes, id) => nodes.find((n) => n.id === id);
   try {
-    let { nodes } = await call('/api/timeline?date=2026-11-01');
+    let { nodes, rooms } = await call('/api/timeline?date=2026-11-01');
+    // Gallery rooms: every idea sits in one of the listed rooms.
+    assert.ok(rooms.length >= 10);
+    assert.ok(nodes.every((n) => rooms.some((r) => r.id === n.room)), 'every idea has a room');
+    // Upcoming daily cards carry no picture either; Epicurus has one but is not reached yet.
+    assert.equal(get(nodes, 'epicurus_absence_of_pain').backdrop, null);
     const ideas = content.nodes.filter((n) => n.type !== 'practice');
     assert.equal(nodes.length, ideas.length);
     assert.ok(nodes.every((n, i) => i === 0 || nodes[i - 1].year <= n.year), 'sorted by year');
@@ -42,5 +47,7 @@ test('timeline: every idea in date order, upcoming daily ideas hidden, user stat
     ({ nodes } = await call('/api/timeline?date=2026-11-02'));
     assert.equal(get(nodes, 'epicurus_absence_of_pain').state, 'today');
     assert.match(get(nodes, 'epicurus_absence_of_pain').title, /absence of pain/);
+    const epi = content.nodes.find((n) => n.id === 'epicurus_absence_of_pain');
+    assert.equal(get(nodes, 'epicurus_absence_of_pain').backdrop, epi.image?.src ?? null);
   } finally { server.close(); }
 });

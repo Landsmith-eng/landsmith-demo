@@ -75,7 +75,7 @@ function setNav(name) {
   }
 }
 
-const year = (y) => (y == null ? '' : y < 0 ? `${-y} BCE` : String(y));
+const year = (y) => (y == null ? '' : y < 0 ? `${-y} BCE` : y < 1000 ? `${y} CE` : String(y));
 const who = (n) => [n.thinker, year(n.year)].filter(Boolean).join(' · ');
 const TYPE_LABEL = {
   thinker: 'Thinker', concept: 'Concept', quote: 'Quote', dilemma: 'Dilemma',
@@ -219,7 +219,8 @@ function nodeBody(node, trail) {
   return [
     card(node),
     node.type !== 'practice' && node.year != null && h('div', { class: 'row tl-link-row' },
-      h('button', { type: 'button', class: 'link', onclick: () => showTimeline('line', node.id) }, 'See on the timeline →')),
+      h('button', { type: 'button', class: 'link', onclick: () => showGallery('timeline', { focus: node.id }) }, 'See on the timeline →'),
+      h('button', { type: 'button', class: 'link', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room →')),
     node.entry && h('div', {},
       h('div', { class: 'eyebrow' }, `Your take · ${node.entry.local_date}`),
       h('div', { class: 'yours' }, node.entry.body)),
@@ -342,53 +343,88 @@ function showReview(days = 7) {
   });
 }
 
-// Timeline: everyone on the map in date order, for context. 'line' = the 14 featured daily thinkers,
-// 'all' = every idea on the map. `focus` scrolls to and highlights one node.
+// The gallery of thought: every idea on the map, open to wander at any time, in two arrangements.
+// 'rooms' = wings by region, tradition or theme; 'timeline' = date order. Daily cards the user has not reached yet
+// show thinker and year only ("Coming up") so the daily practice still starts with writing.
 const ERAS = [
   [-Infinity, -500, 'Before 500 BCE'], [-500, 500, '500 BCE to 500 CE'], [500, 1450, '500 to 1450'],
   [1450, 1800, '1450 to 1800'], [1800, 1900, '1800 to 1900'], [1900, Infinity, '1900 to now'],
 ];
-const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card", upcoming: 'Coming up' };
+const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card: write first", upcoming: 'Coming up' };
+const openEntry = (n) => (n.state === 'today' ? showToday() : walkTo(n.id, []));
 
-function showTimeline(mode = 'line', focus = null) {
-  setNav('timeline');
+function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false } = {}) {
+  setNav('gallery');
   return guarded(async () => {
-    const { nodes } = await api(`/api/timeline?date=${today()}`);
-    if (mode === 'line' && focus && !nodes.some((n) => n.id === focus && n.daily)) mode = 'all';
-    const shown = mode === 'line' ? nodes.filter((n) => n.daily) : nodes;
-    const met = shown.filter((n) => n.state === 'written' || n.state === 'visited').length;
-    const toggle = h('div', { class: 'row', style: 'justify-content:flex-start' },
-      h('button', { type: 'button', class: `btn ${mode === 'line' ? '' : 'ghost'}`, onclick: () => showTimeline('line') }, 'Featured'),
-      h('button', { type: 'button', class: `btn ${mode === 'all' ? '' : 'ghost'}`, onclick: () => showTimeline('all') }, 'Everyone on the map'));
-    const row = (n) => {
-      const inner = [
-        h('span', { class: 'tl-year' }, year(n.year)),
-        h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
-        h('span', { class: 'tl-text' },
-          h('span', { class: 'b-who' }, n.thinker),
-          n.title && h('span', { class: 'b-title' }, n.title),
-          TL_STATE[n.state] && h('span', { class: 'tl-state' }, TL_STATE[n.state])),
-      ];
-      const cls = `tl-row field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.id === focus ? ' focus' : ''}`;
-      if (n.state === 'upcoming') return h('li', { class: cls, 'data-id': n.id }, h('div', { class: 'tl-item' }, inner));
-      return h('li', { class: cls, 'data-id': n.id }, h('button', {
-        type: 'button', class: 'tl-item',
-        onclick: () => (n.state === 'today' ? showToday() : walkTo(n.id, [])),
-      }, inner));
+    const { nodes, rooms } = await api(`/api/timeline?date=${today()}`);
+    const met = nodes.filter((n) => n.state === 'written' || n.state === 'visited').length;
+    const wander = () => {
+      const open = nodes.filter((n) => n.state !== 'upcoming' && n.state !== 'today');
+      const fresh = open.filter((n) => n.state === 'unseen');
+      const pool = fresh.length ? fresh : open;
+      openEntry(pool[Math.floor(Math.random() * pool.length)]);
     };
-    const eras = ERAS.map(([from, to, label]) => [label, shown.filter((n) => n.year >= from && n.year < to)])
-      .filter(([, rows]) => rows.length)
-      .map(([label, rows]) => h('section', { class: 'tl-era' }, h('h2', {}, label), h('ol', { class: 'timeline' }, rows.map(row))));
-    render(
-      h('h1', {}, 'Timeline'),
-      toggle,
-      h('p', { class: 'muted small' }, mode === 'line'
-        ? `The ${shown.length} featured thinkers of the daily line, in date order. Tap one to open it; each idea is revealed on its day.`
-        : `Everyone on the map: ${shown.length} ideas, in date order. Featured thinkers have a ring. You have met ${met} of them.`),
-      ...eras);
+    const switcher = h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: `btn ${arrangement === 'rooms' ? '' : 'ghost'}`, onclick: () => showGallery('rooms') }, 'Rooms'),
+      h('button', { type: 'button', class: `btn ${arrangement === 'timeline' ? '' : 'ghost'}`, onclick: () => showGallery('timeline') }, 'Timeline'),
+      h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝'));
+    const intro = h('p', { class: 'muted small' },
+      `${nodes.length} ideas in ${rooms.length} rooms. Open any of them, any time. You have met ${met}. `
+      + 'Daily cards stay hidden until their day.');
+    const body = arrangement === 'rooms' ? galleryRooms(nodes, rooms, focus) : galleryTimeline(nodes, focus, featuredOnly);
+    render(h('h1', {}, 'Gallery of thought'), switcher, intro, ...body);
     const el = focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`);
     if (el) el.scrollIntoView({ block: 'center' });
   });
+}
+
+function galleryRooms(nodes, rooms, focus) {
+  const byRoom = new Map(rooms.map((r) => [r.id, []]));
+  for (const n of nodes) byRoom.get(n.room)?.push(n);
+  const index = h('nav', { class: 'room-index', 'aria-label': 'Rooms' }, rooms.map((r) => h('button', {
+    type: 'button', class: 'chip',
+    onclick: () => document.getElementById(`room-${r.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+  }, r.name)));
+  const tile = (n) => {
+    const cls = `tile field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.backdrop ? ' has-backdrop' : ''}${n.id === focus ? ' focus' : ''}`;
+    const inner = [
+      n.backdrop && h('span', { class: 'tile-bg', 'aria-hidden': 'true' }, h('img', { src: n.backdrop, alt: '', loading: 'lazy', decoding: 'async' })),
+      h('span', { class: 'b-who' }, n.thinker),
+      n.title && h('span', { class: 'tile-title' }, n.title),
+      h('span', { class: 'tile-meta' }, [year(n.year), TL_STATE[n.state], n.daily && n.state !== 'upcoming' && 'Daily line'].filter(Boolean).join(' · ')),
+    ];
+    return n.state === 'upcoming'
+      ? h('div', { class: cls, 'data-id': n.id }, inner)
+      : h('button', { type: 'button', class: cls, 'data-id': n.id, onclick: () => openEntry(n) }, inner);
+  };
+  return [index, ...rooms.filter((r) => byRoom.get(r.id).length).map((r) => h('section', { class: 'room', id: `room-${r.id}` },
+    h('h2', {}, r.name),
+    h('p', { class: 'muted small room-blurb' }, r.blurb),
+    h('div', { class: 'tiles' }, byRoom.get(r.id).map(tile))))];
+}
+
+function galleryTimeline(nodes, focus, featuredOnly) {
+  const shown = featuredOnly ? nodes.filter((n) => n.daily) : nodes;
+  const filter = h('div', { class: 'row', style: 'justify-content:flex-start;margin-top:-4px' },
+    h('button', { type: 'button', class: `chip ${featuredOnly ? '' : 'on'}`, onclick: () => showGallery('timeline') }, 'Everyone'),
+    h('button', { type: 'button', class: `chip ${featuredOnly ? 'on' : ''}`, onclick: () => showGallery('timeline', { featuredOnly: true }) }, 'Only the 14 daily thinkers'));
+  const row = (n) => {
+    const inner = [
+      h('span', { class: 'tl-year' }, year(n.year)),
+      h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
+      h('span', { class: 'tl-text' },
+        h('span', { class: 'b-who' }, n.thinker),
+        n.title && h('span', { class: 'b-title' }, n.title),
+        TL_STATE[n.state] && h('span', { class: 'tl-state' }, TL_STATE[n.state])),
+    ];
+    const cls = `tl-row field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.id === focus ? ' focus' : ''}`;
+    if (n.state === 'upcoming') return h('li', { class: cls, 'data-id': n.id }, h('div', { class: 'tl-item' }, inner));
+    return h('li', { class: cls, 'data-id': n.id }, h('button', { type: 'button', class: 'tl-item', onclick: () => openEntry(n) }, inner));
+  };
+  const eras = ERAS.map(([from, to, label]) => [label, shown.filter((n) => n.year >= from && n.year < to)])
+    .filter(([, rows]) => rows.length)
+    .map(([label, rows]) => h('section', { class: 'tl-era' }, h('h2', {}, label), h('ol', { class: 'timeline' }, rows.map(row))));
+  return [filter, h('p', { class: 'muted small' }, 'Daily thinkers have a ring.'), ...eras];
 }
 
 function inviteView() {
@@ -462,7 +498,7 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   if (nav.dataset.nav === 'journal') showJournal();
   else if (nav.dataset.nav === 'review') showReview(7);
-  else if (nav.dataset.nav === 'timeline') showTimeline('line');
+  else if (nav.dataset.nav === 'gallery') showGallery('rooms');
   else showToday();
 });
 

@@ -198,3 +198,39 @@ button.tl-item:hover .b-title { text-decoration: underline; text-underline-offse
 .tl-row.state-written .tl-state::before { content: '✓ '; color: var(--field); }
 .tl-row.state-today .tl-state { color: var(--accent); font-weight: 600; }
 .tl-row.focus .tl-item { background: color-mix(in srgb, var(--field) 12%, transparent); }
+
+/* Gallery rooms: a wall of tiles per room. Featured (daily) tiles get a heavier frame; reached daily cards show their
+   picture faded behind the text. */
+.room-index { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+@media (max-width: 520px) {
+  /* One swipeable row on phones instead of a tall stack. */
+  .room-index { flex-wrap: nowrap; overflow-x: auto; margin: 4px -16px 8px; padding: 2px 16px 6px; scrollbar-width: none; }
+  .room-index .chip { flex: none; }
+}
+.chip { font: inherit; font-size: .82rem; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; }
+.chip:hover, .chip.on { color: var(--ink); border-color: var(--accent); }
+.room { scroll-margin-top: 12px; }
+.room h2 { margin: 2rem 0 .3rem; }
+.room-blurb { margin: 0 0 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile {
+  position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 4px; min-height: 132px;
+  text-align: left; font: inherit; color: var(--ink); padding: 12px 12px 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: inset 0 4px 0 var(--field);
+}
+button.tile:hover { border-color: var(--field); }
+.tile.featured { box-shadow: inset 0 4px 0 var(--field), inset 0 0 0 2px color-mix(in srgb, var(--field) 45%, transparent); }
+.tile > :not(.tile-bg) { position: relative; z-index: 1; }
+.tile-bg { position: absolute; inset: 0; z-index: 0; }
+.tile-bg img { width: 100%; height: 100%; object-fit: cover; opacity: .3; filter: saturate(.85); }
+.tile-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 10%, var(--surface) 85%); }
+.tile-title { font-family: var(--display); font-size: 1rem; line-height: 1.3; }
+.tile-meta { margin-top: auto; font-size: .75rem; color: var(--muted); }
+.tile.state-written .tile-meta::before { content: '✓ '; color: var(--field); }
+.tile.state-today .tile-meta { color: var(--accent); font-weight: 600; }
+.tile.state-upcoming { background: transparent; border-style: dashed; }
+.tile.state-upcoming .b-who { opacity: .75; }
+.tile.focus { outline: 3px solid var(--field); outline-offset: 2px; }
+.wander { margin-left: auto; }
+.tl-link-row { gap: 4px 16px; flex-wrap: wrap; }

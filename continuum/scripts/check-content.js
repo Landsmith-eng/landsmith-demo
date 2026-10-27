@@ -39,6 +39,7 @@ for (const e of content.edges) {
 }
 
 for (const msg of content.imageIssues) bad(msg);
+for (const n of content.nodes) if (n.type !== 'practice' && !n.room && (!only || n.file === only)) bad(`${n.id}: needs a gallery room in content/rooms.js`);
 
 // Every non-practice node must be able to reach a practice by walking.
 const adj = new Map();

@@ -2,6 +2,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { rooms } from './content/rooms.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -79,7 +80,7 @@ export function createApp(db, { adminKey } = {}) {
       GROUP BY n.id ORDER BY count DESC, MAX(v.at) DESC`),
     // Timeline: every idea node in date order, with this user's relation to it.
     timeline: db.prepare(`
-      SELECT n.id, n.title, n.thinker, n.year, n.field, n.type, n.seq,
+      SELECT n.id, n.title, n.thinker, n.year, n.field, n.type, n.seq, n.room, n.image,
         EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id) AS written,
         EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id) AS visited
       FROM nodes n WHERE n.type != 'practice'
@@ -246,12 +247,15 @@ export function createApp(db, { adminKey } = {}) {
     const nodes = q.timeline.all({ uid }).map((n) => {
       const daily = n.seq != null;
       const state = n.written ? 'written' : n.id === todayId ? 'today' : daily ? 'upcoming' : n.visited ? 'visited' : 'unseen';
+      const hidden = state === 'upcoming';
       return {
-        id: n.id, thinker: n.thinker, year: n.year, field: n.field, type: n.type, daily, state,
-        title: state === 'upcoming' ? null : n.title,
+        id: n.id, thinker: n.thinker, year: n.year, field: n.field, type: n.type, room: n.room, daily, state,
+        title: hidden ? null : n.title,
+        // A daily card's picture, faded on its gallery tile, once the user has reached that card.
+        backdrop: !hidden && n.image ? JSON.parse(n.image).src : null,
       };
     });
-    res.json({ nodes });
+    res.json({ nodes, rooms });
   });
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.

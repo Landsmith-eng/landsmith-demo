@@ -40,6 +40,16 @@ for (const [id, img] of Object.entries(images)) {
   n.image = { src: `/img/nodes/${img.file}`, kind: img.kind, alt: img.alt.trim(), credit: img.credit.trim(), credit_url: img.credit_url ?? null };
 }
 
+// Gallery rooms. Unknown ids fail loudly; an idea with no room is reported by `npm run check`.
+const { rooms, roomOf } = await import('./rooms.js');
+for (const [id, room] of Object.entries(roomOf)) {
+  const n = byId.get(id);
+  if (!n) throw new Error(`rooms.js: unknown node ${id}`);
+  if (!rooms.some((r) => r.id === room)) throw new Error(`rooms.js: unknown room ${room}`);
+  n.room = room;
+}
+
 export const nodes = [...byId.values()];
+export { rooms };
 export { imageIssues };
 export { edges, branchFiles };

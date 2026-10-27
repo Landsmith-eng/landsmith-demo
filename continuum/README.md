@@ -53,9 +53,11 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
   run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
 - **Journal**: each answer is pinned to its node, with its reaction.
-- **Timeline**: the 14 featured thinkers in date order, grouped by era, or everyone on the map (163 ideas). Tap an
-  entry to open it. Daily cards not yet reached show only thinker and year until their day. Every card has a
-  "See on the timeline" link that jumps to it in context.
+- **Gallery**: every idea on the map, open to explore at any time, in two arrangements. *Rooms*: 12 wings by
+  region, tradition or theme (`content/rooms.js`; `npm run check` requires every idea to have one), with a swipeable
+  room index and a *Wander* button that opens a thinker you have not met. *Timeline*: date order by era, everyone or
+  only the 14 daily thinkers. Daily cards not yet reached show only thinker and year ("Coming up") until their day;
+  today's unwritten card leads to Today. Every card links to its place on the timeline and in its room.
 - **Review**: This week (entries, where walks kept landing, who you kept returning to, reaction tally, "What did you
   believe on Monday that you do not on Sunday?") or Everything (adds day-1 vs last-day bookends). Finishing the line
   offers "See where it led".
