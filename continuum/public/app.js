@@ -123,15 +123,15 @@ function card(node) {
   return h('div', {}, wrap, h('div', { class: 'row' }, btn));
 }
 
-// The day's illustration, shown only after writing. `kind` says whether it is art of the analogy or a real artefact,
-// so a drawing is never mistaken for a likeness.
+// The day's picture, shown in full after writing. Illustrations made for Continuum carry no caption (their
+// source is recorded in content/images.js); a real artefact keeps its credit, which its licence usually requires.
 function nodeFigure(img) {
   const credit = img.credit_url
     ? h('a', { href: img.credit_url, target: '_blank', rel: 'noopener' }, img.credit)
     : img.credit;
   return h('figure', { class: `node-image ${img.kind}` },
     h('img', { src: img.src, alt: img.alt, loading: 'lazy', decoding: 'async' }),
-    h('figcaption', {}, img.kind === 'illustration' ? 'Illustration · ' : '', credit));
+    img.kind === 'artefact' && h('figcaption', {}, credit));
 }
 
 // "Keep this line": toggles a favourite; kept lines collect at the top of the Journal.

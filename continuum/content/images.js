@@ -9,7 +9,8 @@
 //          kind: 'illustration',            // illustration = drawn or generated art of the analogy
 //                                           // artefact     = a real object: bust, manuscript, first edition
 //          alt: 'What the picture shows, for screen readers (one sentence).',
-//          credit: 'Who made it, and the licence',   // e.g. 'Generated with ChatGPT for Continuum'
+//          credit: 'Who made it, and the licence',   // kept as a record; shown under the picture only for artefacts
+//                                                    // e.g. 'Generated with ChatGPT for Continuum'
 //                                                    //      'Bust of Democritus, Pushkin Museum. Wikimedia Commons, CC BY-SA 4.0'
 //          credit_url: 'https://…' }        // optional: the Commons or museum page
 //   3. npm run check, then npm run seed.

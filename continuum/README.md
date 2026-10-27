@@ -45,7 +45,8 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
   another tradition. Counts show up in Review.
 - **Type**: Lora (self-hosted, `public/fonts/`), a soft, readable serif, for the brand, headings, questions, idea titles and quotations; body text stays sans. Set `--display` to `var(--serif)` in `style.css` to undo.
 - **Illustrations** (daily nodes only): one picture per day. Before writing it sits faded and blurred behind the card's
-  title as atmosphere; after writing it appears in full on the plain face, with its credit.
+  title as atmosphere; after writing it appears in full on the plain face. Illustrations show no caption; a real artefact (bust, manuscript)
+  shows its credit, as its licence usually requires. Every picture's source stays recorded in `content/images.js`.
   Drop the file in `public/img/nodes/` named by node id and fill in alt text, kind and credit in `content/images.js`;
   `npm run check` reports a missing file, alt text or credit. Illustrate the analogy, not the thinker.
 - **Keep this line** (☆ on the source face) saves a favourite; kept lines collect at the top of the Journal.

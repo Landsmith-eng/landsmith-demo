@@ -44,4 +44,4 @@ chat and add "match the style of the attached image".
 ## Alt text and credit
 
 Write the alt text from what the finished picture actually shows, in one sentence. A credit for generated art:
-`Generated with <tool> for Continuum`, with kind `illustration`.
+`Generated with <tool> for Continuum`, with kind `illustration`. It is kept as a record and not shown in the app.
