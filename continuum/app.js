@@ -53,11 +53,43 @@ export function createApp(db, { adminKey } = {}) {
         FROM edges e JOIN nodes n ON n.id = e.to_id WHERE e.from_id = :id
       ORDER BY 10`),
     journal: db.prepare(`
-      SELECT n.id, n.title, n.thinker, n.field, j.body, j.local_date FROM journal j
-      JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? ORDER BY j.created_at, j.rowid`),
+      SELECT n.id, n.title, n.thinker, n.field, j.body, j.local_date, r.value AS reaction FROM journal j
+      JOIN nodes n ON n.id = j.node_id
+      LEFT JOIN reactions r ON r.user_id = j.user_id AND r.node_id = j.node_id
+      WHERE j.user_id = ? ORDER BY j.created_at, j.rowid`),
+    favorites: db.prepare(`
+      SELECT n.id, n.title, n.thinker, n.field, n.source_face, n.source_citation, f.created_at FROM favorites f
+      JOIN nodes n ON n.id = f.node_id WHERE f.user_id = ? ORDER BY f.created_at DESC`),
+    isFavorite: db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND node_id = ?'),
+    addFavorite: db.prepare('INSERT OR IGNORE INTO favorites (user_id, node_id) VALUES (?, ?)'),
+    removeFavorite: db.prepare('DELETE FROM favorites WHERE user_id = ? AND node_id = ?'),
+    reaction: db.prepare('SELECT value FROM reactions WHERE user_id = ? AND node_id = ?'),
+    setReaction: db.prepare(`INSERT INTO reactions (user_id, node_id, value, local_date) VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, node_id) DO UPDATE SET value = excluded.value, local_date = excluded.local_date`),
+    // Review: entries in a date range, the nodes walked to most, and the practices those walks landed on.
+    entriesBetween: db.prepare(`
+      SELECT n.id, n.title, n.thinker, n.field, n.prompt, j.body, j.local_date, r.value AS reaction FROM journal j
+      JOIN nodes n ON n.id = j.node_id
+      LEFT JOIN reactions r ON r.user_id = j.user_id AND r.node_id = j.node_id
+      WHERE j.user_id = ? AND j.local_date BETWEEN ? AND ? ORDER BY j.local_date, j.rowid`),
+    walkedBetween: db.prepare(`
+      SELECT n.id, n.title, n.thinker, n.field, n.type, COUNT(*) AS count FROM events v
+      JOIN nodes n ON n.id = v.node_id
+      WHERE v.user_id = ? AND v.kind = 'walk' AND v.local_date BETWEEN ? AND ?
+      GROUP BY n.id ORDER BY count DESC, MAX(v.at) DESC`),
+    reactionCounts: db.prepare(`
+      SELECT value, COUNT(*) AS n FROM reactions WHERE user_id = ? AND local_date BETWEEN ? AND ? GROUP BY value`),
+    daysActive: db.prepare(`SELECT COUNT(DISTINCT local_date) AS n FROM events WHERE user_id = ? AND local_date BETWEEN ? AND ?`),
+    firstAndLast: db.prepare(`
+      SELECT n.id, n.title, n.thinker, n.prompt, j.body, j.local_date FROM journal j JOIN nodes n ON n.id = j.node_id
+      WHERE j.user_id = ? AND n.seq IS NOT NULL ORDER BY n.seq`),
   };
 
   const localDate = (raw) => (typeof raw === 'string' && DATE_RE.test(raw) ? raw : new Date().toISOString().slice(0, 10));
+  const shiftDate = (ymd, delta) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
+  };
 
   // Today's card is fixed once chosen, so walking the graph mid-day can't swap it out.
   function todaysPick(uid, date) {
@@ -80,7 +112,11 @@ export function createApp(db, { adminKey } = {}) {
       source_face: n.source_face,
       source_citation: n.source_citation,
       source_url: n.source_url,
+      analysis_url: n.analysis_url,
+      misreading: n.misreading,
       entry: q.entry.get(uid, n.id) ?? null,
+      favorite: Boolean(q.isFavorite.get(uid, n.id)),
+      reaction: q.reaction.get(uid, n.id)?.value ?? null,
       neighbours: q.neighbours.all({ id: n.id }),
     };
   }
@@ -147,7 +183,45 @@ export function createApp(db, { adminKey } = {}) {
   });
 
   app.get('/api/journal', auth, (req, res) => {
-    res.json({ journal: q.journal.all(req.user.id) });
+    res.json({ journal: q.journal.all(req.user.id), favorites: q.favorites.all(req.user.id) });
+  });
+
+  // "Keep this line": a favourite is a source passage the user wants to find again.
+  app.post('/api/favorite', auth, (req, res) => {
+    const { node_id: nodeId, on } = req.body ?? {};
+    if (!q.node.get(nodeId)) return res.status(404).json({ error: 'not_found' });
+    if (on === false) q.removeFavorite.run(req.user.id, nodeId); else q.addFavorite.run(req.user.id, nodeId);
+    res.json({ favorite: on !== false });
+  });
+
+  // One question after reading: did the source change your mind? The answer steers the suggested next step.
+  app.post('/api/reaction', auth, (req, res) => {
+    const { node_id: nodeId, value } = req.body ?? {};
+    const date = localDate(req.body?.date);
+    if (!['changed', 'somewhat', 'unchanged'].includes(value)) return res.status(400).json({ error: 'bad_value' });
+    if (!q.entry.get(req.user.id, nodeId)) return res.status(409).json({ error: 'write_first' });
+    q.setReaction.run(req.user.id, nodeId, value, date);
+    res.json({ reaction: value });
+  });
+
+  // Review of a span of days (default 7; 0 = everything): what you wrote, where you walked, what landed.
+  app.get('/api/review', auth, (req, res) => {
+    const uid = req.user.id;
+    const to = localDate(req.query.date);
+    const days = Number.isInteger(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const from = days > 0 ? shiftDate(to, 1 - days) : '0000-00-00';
+    const walked = q.walkedBetween.all(uid, from, to);
+    const counts = Object.fromEntries(q.reactionCounts.all(uid, from, to).map((r) => [r.value, r.n]));
+    const line = q.firstAndLast.all(uid);
+    res.json({
+      from: days > 0 ? from : null, to, days,
+      days_active: q.daysActive.get(uid, from, to).n,
+      entries: q.entriesBetween.all(uid, from, to),
+      walked: walked.filter((n) => n.type !== 'practice').slice(0, 8),
+      practices: walked.filter((n) => n.type === 'practice'),
+      reactions: { changed: counts.changed ?? 0, somewhat: counts.somewhat ?? 0, unchanged: counts.unchanged ?? 0 },
+      bookends: line.length >= 2 ? { first: line[0], last: line[line.length - 1] } : null,
+    });
   });
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.

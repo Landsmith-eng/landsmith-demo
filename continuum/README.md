@@ -38,7 +38,18 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Daily pick** (doc's rule): an unwritten neighbour of yesterday's node, preferring ones you haven't already read on a walk;
   else the next unwritten node in the line. Saved per day, so walking can't swap today's card. Missed days skip nothing.
 - **Practices** are the floor: one face, never a daily card, reachable from every line node.
-- **Journal**: each answer is pinned to its node.
+- **Often misread**: after you write, the plain face adds one short paragraph naming the common misreading of that idea
+  (field `misreading`; written for the 14 daily nodes so far).
+- **Did the source change your mind?** Yes / A little / No, asked once per node after reading. The answer steers the
+  next step: yes → who extended or tested it; no → who argued against it; a little → who reached the same place from
+  another tradition. Counts show up in Review.
+- **Keep this line** (☆ on the source face) saves a favourite; kept lines collect at the top of the Journal.
+- **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
+  run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
+- **Journal**: each answer is pinned to its node, with its reaction.
+- **Review**: This week (entries, where walks kept landing, who you kept returning to, reaction tally, "What did you
+  believe on Monday that you do not on Sunday?") or Everything (adds day-1 vs last-day bookends). Finishing the line
+  offers "See where it led".
 - **Retention**: `/admin` shows days opened, days written and walk steps per tester.
 - **Testing other days:** add `?day=1` to the app's URL to act as if it were tomorrow (`?day=2`, `?day=2026-11-05`
   also work; `?day=clear` returns to the real date). A dashed banner shows while a test date is set. The server
@@ -58,6 +69,8 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 | `scripts/check-content.js` | Content gate (`npm run check`): ids, types, chronology, notes, paths to a practice |
 | `scripts/verify-quotes.js` | Matches every quoted passage against downloaded source texts |
 | `scripts/find-convergences.js` | `npm run converge`: proposes unlinked pairs that say the same thing, for a researcher to verify |
+| `scripts/check-links.js` | HEAD-checks every `source_url` and `analysis_url` (`node scripts/check-links.js [analysis|source]`) |
+| `content/analysis_links.js` | Stanford Encyclopedia entry per node, merged in by `content/index.js` |
 | `content/index.js` | Merges the line and every branch file for seeding |
 | `content/SOURCES.md` | **Verification checklist for every source passage — do before testers** |
 | `public/` | Vanilla HTML/CSS/ES-module frontend, no build step. `admin.html` = retention view |
@@ -83,6 +96,9 @@ All `/api/*` calls need header `x-continuum-token`.
 - `GET /api/today?date=YYYY-MM-DD` → `{ state: write|done_today|complete, done, total, node }`
 - `POST /api/respond { node_id, body, date }` → full node (source + lineage). 409 if not today's node or already wrote today.
 - `GET /api/node/:id` → any node in full (today's unwritten card returns `{ today: true }` instead)
-- `GET /api/journal` → your entries in order
+- `GET /api/journal` → `{ journal, favorites }`: your entries in order (with `reaction`), and kept lines
+- `POST /api/favorite { node_id, on }` → `{ favorite }` (omit `on` or `true` to keep, `false` to let go)
+- `POST /api/reaction { node_id, value: changed|somewhat|unchanged, date }` → `{ reaction }`. 409 `write_first` until you have written on that node.
+- `GET /api/review?days=7&date=` (`days=0` = everything) → `{ from, to, days_active, entries, walked, practices, reactions, bookends }`
 - `POST /api/event { kind: "flip", node_id, date }`
 - `GET /admin/api/stats` (header `x-admin-key`) → per tester: open days, response days, `came_back`

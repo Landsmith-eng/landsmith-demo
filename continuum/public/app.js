@@ -99,10 +99,14 @@ function card(node) {
         h('div', { class: 'who' }, 'The source'),
         h('blockquote', {}, node.source_face.split('\n\n').map((p) => h('p', {}, p))),
         h('cite', {}, node.source_citation ?? ''),
-        node.source_url && h('a', { href: node.source_url, target: '_blank', rel: 'noopener', class: 'fulltext', tabindex: '-1' }, 'Read the full text ↗'))
+        h('div', { class: 'srclinks' },
+          node.source_url && h('a', { href: node.source_url, target: '_blank', rel: 'noopener', class: 'fulltext', tabindex: '-1' }, 'Read the full text ↗'),
+          node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext', tabindex: '-1' }, 'Deeper: Stanford Encyclopedia ↗')),
+        favoriteButton(node))
     : null;
   wrap.append(h('div', { class: 'card-inner' }, front, back));
   if (!back) return wrap;
+  if (node.misreading && node.entry) front.append(h('p', { class: 'misreading' }, h('strong', {}, 'Often misread. '), node.misreading));
 
   let flipped = false;
   const btn = h('button', { type: 'button', class: 'btn ghost flip' }, 'Flip to the source');
@@ -116,6 +120,50 @@ function card(node) {
     if (flipped) api('/api/event', { method: 'POST', body: { kind: 'flip', node_id: node.id, date: today() } }).catch(() => {});
   });
   return h('div', {}, wrap, h('div', { class: 'row' }, btn));
+}
+
+// "Keep this line": toggles a favourite; kept lines collect at the top of the Journal.
+function favoriteButton(node) {
+  const btn = h('button', { type: 'button', class: 'link keep', 'aria-pressed': String(Boolean(node.favorite)), tabindex: '-1' });
+  const paint = () => { btn.textContent = node.favorite ? '★ Kept' : '☆ Keep this line'; btn.setAttribute('aria-pressed', String(Boolean(node.favorite))); };
+  paint();
+  btn.addEventListener('click', async () => {
+    node.favorite = !node.favorite; paint();
+    try { await api('/api/favorite', { method: 'POST', body: { node_id: node.id, on: node.favorite } }); }
+    catch { node.favorite = !node.favorite; paint(); }
+  });
+  return btn;
+}
+
+// After writing and reading: did the source change your mind? The answer picks the suggested next step,
+// so the redirect rests on what the reader said, not on guessing from their text.
+const REACTIONS = [['changed', 'Yes'], ['somewhat', 'A little'], ['unchanged', 'No']];
+const REACTION_LABEL = { changed: 'changed my mind', somewhat: 'moved me a little', unchanged: 'did not change my mind' };
+function reactionRow(node, trail) {
+  const box = h('section', { class: 'reaction' });
+  const pick = (rel, dir) => node.neighbours.find((r) => r.relation === rel && (!dir || r.dir === dir));
+  const respond = (value) => {
+    let line, next;
+    if (value === 'changed') { next = pick('extended', 'out') ?? pick('measured', 'out'); line = next ? 'Then follow where it went:' : 'That is the whole point of the walk.'; }
+    else if (value === 'unchanged') { next = pick('refuted', 'out') ?? pick('refuted', 'in'); line = next ? 'Hold your ground, and meet someone who argued against it:' : 'Holding your ground is a position too. Keep walking.'; }
+    else { next = pick('converged'); line = next ? 'Someone reached the same place from another tradition:' : 'A little is how most minds move.'; }
+    box.replaceChildren(
+      h('div', { class: 'eyebrow' }, 'Your reaction'),
+      h('p', {}, `${{ changed: 'The source changed your mind.', somewhat: 'It moved you a little.', unchanged: 'It did not change your mind.' }[value]} ${line}`),
+      next && h('div', { class: 'bubbles' }, h('button', { type: 'button', class: `bubble field-${next.field}`, onclick: () => walkTo(next.id, [...trail, node]) },
+        next.thinker && h('span', { class: 'b-who' }, next.thinker), h('span', { class: 'b-title' }, next.title))));
+  };
+  if (node.reaction) { respond(node.reaction); return box; }
+  box.append(
+    h('div', { class: 'eyebrow' }, 'Did the source change your mind?'),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, REACTIONS.map(([value, label]) => h('button', {
+      type: 'button', class: 'btn ghost',
+      onclick: async () => {
+        try { await api('/api/reaction', { method: 'POST', body: { node_id: node.id, value, date: today() } }); node.reaction = value; respond(value); }
+        catch { /* leave the buttons */ }
+      },
+    }, label))));
+  return box;
 }
 
 // Neighbour groups, read from the current node's point of view. `in` = the neighbour is the earlier idea A
@@ -161,6 +209,7 @@ function nodeBody(node, trail) {
     node.entry && h('div', {},
       h('div', { class: 'eyebrow' }, `Your take · ${node.entry.local_date}`),
       h('div', { class: 'yours' }, node.entry.body)),
+    node.entry && node.source_face && reactionRow(node, trail),
     lineage(node, trail),
   ];
 }
@@ -225,7 +274,57 @@ function completeView(data) {
     progress(data.total, data.total),
     h('h1', {}, 'You walked the whole line.'),
     h('p', {}, 'Everything you wrote is in your journal. The map is still open: walk it from any entry.'),
-    h('button', { type: 'button', class: 'btn', onclick: showJournal }, 'Open your journal'));
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn', onclick: () => showReview(0) }, 'See where it led'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: showJournal }, 'Open your journal')));
+}
+
+// The review: what you wrote, where you walked, what it landed on. days = 7 for the week, 0 for everything.
+function showReview(days = 7) {
+  setNav('review');
+  return guarded(async () => {
+    const r = await api(`/api/review?days=${days}&date=${today()}`);
+    const span = days ? `Last ${days} days` : 'The whole walk';
+    const toggle = h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: `btn ${days === 7 ? '' : 'ghost'}`, onclick: () => showReview(7) }, 'This week'),
+      h('button', { type: 'button', class: `btn ${days === 0 ? '' : 'ghost'}`, onclick: () => showReview(0) }, 'Everything'));
+    const changed = r.reactions.changed + r.reactions.somewhat;
+    const answered = changed + r.reactions.unchanged;
+    const practices = r.practices.length
+      ? h('div', {}, h('h2', {}, 'Where it kept landing'),
+          h('p', { class: 'muted small' }, 'The practices your walks arrived at, most often first.'),
+          h('div', { class: 'bubbles' }, r.practices.map((p) => h('button', { type: 'button', class: 'bubble field-practice', onclick: () => walkTo(p.id, []) },
+            h('span', { class: 'b-title' }, p.title), h('span', { class: 'b-note' }, `${p.count} ${p.count === 1 ? 'walk' : 'walks'} ended here`)))))
+      : null;
+    const walked = r.walked.length
+      ? h('div', {}, h('h2', {}, 'Who you kept returning to'),
+          h('div', { class: 'bubbles' }, r.walked.slice(0, 5).map((n) => h('button', { type: 'button', class: `bubble field-${n.field}`, onclick: () => walkTo(n.id, []) },
+            n.thinker && h('span', { class: 'b-who' }, n.thinker), h('span', { class: 'b-title' }, n.title), h('span', { class: 'b-note' }, `${n.count} ${n.count === 1 ? 'visit' : 'visits'}`)))))
+      : null;
+    const minds = answered
+      ? h('p', {}, `You answered "did it change your mind?" ${answered} ${answered === 1 ? 'time' : 'times'}: yes ${r.reactions.changed}, a little ${r.reactions.somewhat}, no ${r.reactions.unchanged}.`)
+      : null;
+    const entries = r.entries.length
+      ? h('div', {}, h('h2', {}, days ? 'What you wrote this week' : 'Everything you wrote'),
+          h('ul', { class: 'path' }, r.entries.map((e) => h('li', {},
+            h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => walkTo(e.id, []) }, h('span', { class: 't' }, e.title)),
+            h('div', { class: 'muted small' }, [e.thinker, e.local_date, e.reaction && REACTION_LABEL[e.reaction]].filter(Boolean).join(' · ')),
+            h('p', {}, e.body)))))
+      : h('p', { class: 'muted' }, days ? 'Nothing written in the last week yet.' : 'Nothing written yet.');
+    const bookends = !days && r.bookends && r.bookends.first.id !== r.bookends.last.id
+      ? h('div', { class: 'notice' },
+          h('div', { class: 'eyebrow' }, 'First and last'),
+          h('p', { class: 'small muted' }, `Day 1 asked: ${r.bookends.first.prompt}`), h('div', { class: 'yours' }, r.bookends.first.body),
+          h('p', { class: 'small muted', style: 'margin-top:12px' }, `Last asked: ${r.bookends.last.prompt}`), h('div', { class: 'yours' }, r.bookends.last.body),
+          h('p', { class: 'prompt' }, 'What did you believe on day 1 that you do not now?'))
+      : null;
+    render(
+      h('h1', {}, 'Review'),
+      toggle,
+      h('p', { class: 'muted small' }, `${span}: active on ${r.days_active} ${r.days_active === 1 ? 'day' : 'days'}, ${r.entries.length} ${r.entries.length === 1 ? 'entry' : 'entries'}.`),
+      days ? h('p', { class: 'prompt' }, 'What did you believe on Monday that you do not on Sunday?') : null,
+      bookends, practices, walked, minds, entries);
+  });
 }
 
 function inviteView() {
@@ -256,14 +355,21 @@ function showToday() {
 function showJournal() {
   setNav('journal');
   return guarded(async () => {
-    const { journal } = await api('/api/journal');
+    const { journal, favorites } = await api('/api/journal');
+    const kept = favorites.length
+      ? h('div', { style: 'margin-bottom:24px' }, h('h2', { style: 'margin-top:0' }, 'Kept lines'),
+          h('ul', { class: 'path' }, favorites.map((f) => h('li', {},
+            h('blockquote', { class: 'kept' }, (f.source_face ?? '').split(/\s*…\s*|\n\n/)[0]),
+            h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => walkTo(f.id, []) }, [f.thinker, f.title].filter(Boolean).join(' · '))))))
+      : null;
     render(
       h('h1', {}, 'Your journal'),
+      kept,
       journal.length
         ? h('ul', { class: 'path' }, journal.map((p) => h('li', {},
             h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => walkTo(p.id, []) },
               h('span', { class: 't' }, p.title)),
-            h('div', { class: 'muted small' }, [p.thinker, p.local_date].filter(Boolean).join(' · ')),
+            h('div', { class: 'muted small' }, [p.thinker, p.local_date, p.reaction && REACTION_LABEL[p.reaction]].filter(Boolean).join(' · ')),
             h('p', {}, p.body))))
         : h('p', { class: 'muted' }, 'Nothing yet. Each day\'s answer is kept here, pinned to its idea.'));
   });
@@ -290,7 +396,9 @@ document.addEventListener('click', (e) => {
   const nav = e.target.closest('[data-nav]');
   if (!nav) return;
   e.preventDefault();
-  if (nav.dataset.nav === 'journal') showJournal(); else showToday();
+  if (nav.dataset.nav === 'journal') showJournal();
+  else if (nav.dataset.nav === 'review') showReview(7);
+  else showToday();
 });
 
 showToday();

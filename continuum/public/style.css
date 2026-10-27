@@ -138,3 +138,11 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .card + .row { margin: -8px 0 24px; }
 .notice.testdate { border-style: dashed; font-size: .85rem; color: var(--muted); }
 .notice.testdate .link { padding: 2px 6px; font-size: inherit; }
+.misreading { font-size: .92rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 12px; }
+.srclinks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.keep { color: inherit; opacity: .8; padding: 8px 0 0; }
+.keep[aria-pressed="true"] { opacity: 1; font-weight: 600; }
+.reaction { margin: 0 0 20px; }
+.reaction .row { margin-top: 4px; }
+.reaction .bubbles { margin-top: 10px; }
+.kept { font-family: var(--serif); font-size: 1.05rem; margin: 0 0 6px; padding-left: 12px; border-left: 3px solid var(--line); }

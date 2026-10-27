@@ -189,6 +189,69 @@ test('admin stats require the key and report return visits and walk depth', asyn
   assert.equal(w.walk_steps, 2);
 });
 
+test('favourites: keep a line, see it in the journal, let it go', async () => {
+  assert.equal((await call('/api/favorite', { method: 'POST', body: { node_id: 'nope' } })).status, 404);
+  let r = await call('/api/favorite', { method: 'POST', body: { node_id: 'seneca_evening_review' } });
+  assert.equal(r.json.favorite, true);
+  r = await call('/api/journal');
+  assert.equal(r.json.favorites.length, 1);
+  assert.equal(r.json.favorites[0].id, 'seneca_evening_review');
+  assert.match(r.json.favorites[0].source_face, /\S/);
+  r = await call('/api/node/seneca_evening_review?date=2026-12-01');
+  assert.equal(r.json.node.favorite, true);
+  await call('/api/favorite', { method: 'POST', body: { node_id: 'seneca_evening_review', on: false } });
+  assert.equal((await call('/api/journal')).json.favorites.length, 0);
+});
+
+test('reactions: only after writing, one per node, latest wins', async () => {
+  const body = { node_id: 'seneca_evening_review', value: 'changed', date: '2026-12-01' };
+  assert.equal((await call('/api/reaction', { method: 'POST', body: { ...body, value: 'meh' } })).status, 400);
+  // The walker user never wrote on Seneca: must write first.
+  assert.equal((await call('/api/reaction', { method: 'POST', body, token: 'walker' })).status, 409);
+  let r = await call('/api/reaction', { method: 'POST', body });
+  assert.equal(r.json.reaction, 'changed');
+  r = await call('/api/reaction', { method: 'POST', body: { ...body, value: 'unchanged' } });
+  assert.equal(r.json.reaction, 'unchanged');
+  r = await call('/api/node/seneca_evening_review?date=2026-12-01');
+  assert.equal(r.json.node.reaction, 'unchanged');
+  assert.equal((await call('/api/journal')).json.journal.find((e) => e.id === 'seneca_evening_review').reaction, 'unchanged');
+});
+
+test('review: a week and everything, with practices landed on and day-1/last bookends', async () => {
+  await call('/api/reaction', { method: 'POST', body: { node_id: 'nozick_experience_machine', value: 'somewhat', date: '2026-11-28' } });
+  // Walk to a practice twice so it tops "where it kept landing".
+  await call('/api/node/practice_keep_death_in_view?date=2026-11-28');
+  await call('/api/node/practice_keep_death_in_view?date=2026-11-28');
+  await call('/api/node/epictetus_up_to_us?date=2026-11-28');
+
+  let r = await call('/api/review?days=7&date=2026-11-28');
+  assert.equal(r.status, 200);
+  assert.equal(r.json.from, '2026-11-22');
+  assert.equal(r.json.to, '2026-11-28');
+  // Entries were written every other day on even dates: 22, 24, 26, 28.
+  assert.deepEqual(r.json.entries.map((e) => e.local_date), ['2026-11-22', '2026-11-24', '2026-11-26', '2026-11-28']);
+  assert.equal(r.json.practices[0].id, 'practice_keep_death_in_view');
+  assert.equal(r.json.practices[0].count, 2);
+  assert.ok(r.json.walked.every((n) => n.type !== 'practice'));
+  assert.equal(r.json.walked[0].id, 'epictetus_up_to_us');
+  assert.deepEqual(r.json.reactions, { changed: 0, somewhat: 1, unchanged: 0 });
+  assert.ok(r.json.days_active >= 1);
+
+  r = await call('/api/review?days=0&date=2026-12-01');
+  assert.equal(r.json.from, null);
+  assert.equal(r.json.entries.length, 14);
+  assert.deepEqual(r.json.reactions, { changed: 0, somewhat: 1, unchanged: 1 });
+  assert.equal(r.json.bookends.first.id, 'democritus_atoms_and_void');
+  assert.equal(r.json.bookends.last.id, 'nozick_experience_machine');
+  assert.match(r.json.bookends.first.body, /\S/);
+
+  // A user with nothing in the window gets an empty, well-formed review.
+  r = await call('/api/review?days=7&date=2030-01-01', { token: 'walker' });
+  assert.deepEqual(r.json.entries, []);
+  assert.equal(r.json.bookends.last.id, 'epicurus_absence_of_pain'); // walker wrote twice; bookends span the whole line
+  assert.equal((await call('/api/review', { token: 'nobody-yet' })).status, 401);
+});
+
 test('re-seeding keeps journal entries', () => {
   seedContent(db, content);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM journal WHERE user_id = 1').get().n, 14);

@@ -17,5 +17,13 @@ for (const n of tagged.flatMap(([m, file]) => m.nodes.map((node) => ({ ...node, 
 const edgeKey = (e) => `${e.from}|${e.to}|${e.relation}`;
 const edges = [...new Map([line, ...branches].flatMap((m) => m.edges).map((e) => [edgeKey(e), e])).values()];
 
+// Deeper-analysis links live in one file so they can be checked and updated without touching the branches.
+const { analysisLinks } = await import('./analysis_links.js');
+for (const [id, url] of Object.entries(analysisLinks)) {
+  const n = byId.get(id);
+  if (!n) throw new Error(`analysis_links.js: unknown node ${id}`);
+  n.analysis_url = url;
+}
+
 export const nodes = [...byId.values()];
 export { edges, branchFiles };
