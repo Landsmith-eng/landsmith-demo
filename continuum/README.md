@@ -43,6 +43,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Did the source change your mind?** Yes / A little / No, asked once per node after reading. The answer steers the
   next step: yes → who extended or tested it; no → who argued against it; a little → who reached the same place from
   another tradition. Counts show up in Review.
+- **Type**: Dancing Script (self-hosted, `public/fonts/`) for the brand, headings, questions, idea titles and quotations; body text stays sans for reading. Set `--display` to `var(--serif)` in `style.css` to undo.
 - **Illustrations** (daily nodes only): one picture per day on the plain face, shown after writing, with its credit.
   Drop the file in `public/img/nodes/` named by node id and fill in alt text, kind and credit in `content/images.js`;
   `npm run check` reports a missing file, alt text or credit. Illustrate the analogy, not the thinker.
@@ -73,6 +74,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 | `scripts/verify-quotes.js` | Matches every quoted passage against downloaded source texts |
 | `scripts/find-convergences.js` | `npm run converge`: proposes unlinked pairs that say the same thing, for a researcher to verify |
 | `scripts/check-links.js` | HEAD-checks every `source_url` and `analysis_url` (`node scripts/check-links.js [analysis|source]`) |
+| `content/ILLUSTRATION_BRIEFS.md` | The 14 daily analogies as picture briefs, with a research prompt |
 | `content/images.js` | Illustration per daily node (file, kind, alt, credit); files in `public/img/nodes/` |
 | `content/analysis_links.js` | Stanford Encyclopedia entry per node, merged in by `content/index.js` |
 | `content/index.js` | Merges the line and every branch file for seeding |
