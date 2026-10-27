@@ -261,7 +261,8 @@ function writeView(data) {
   render(
     h('div', { class: 'eyebrow' }, `Today · ${data.done} of ${data.total} so far`),
     progress(data.done, data.total),
-    h('section', { class: `card-closed field-${node.field}` },
+    h('section', { class: `card-closed field-${node.field}${node.backdrop ? ' has-backdrop' : ''}` },
+      node.backdrop && h('div', { class: 'backdrop', 'aria-hidden': 'true' }, h('img', { src: node.backdrop, alt: '', decoding: 'async' })),
       h('div', { class: 'who' }, [TYPE_LABEL[node.type], who(node)].filter(Boolean).join(' · ')),
       h('h1', {}, node.title)),
     form);

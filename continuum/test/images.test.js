@@ -26,7 +26,7 @@ test('image entries need a real file, a kind, alt text and a credit', () => {
   assert.match(imageProblems('n', { ...good, credit_url: 'http://x' }, size(1)).join(), /https/);
 });
 
-test('the image reaches the API only after the user has written', async () => {
+test('closed card gets a faded backdrop; the full image arrives only after writing', async () => {
   const image = { src: '/img/nodes/democritus_atoms_and_void.webp', kind: 'illustration', alt: good.alt, credit: good.credit, credit_url: null };
   const nodes = content.nodes.map((n) => (n.id === 'democritus_atoms_and_void' ? { ...n, image } : n));
   const db = openDb(':memory:');
@@ -41,7 +41,10 @@ test('the image reaches the API only after the user has written', async () => {
   try {
     const today = await call('/api/today?date=2026-11-01');
     assert.equal(today.node.id, 'democritus_atoms_and_void');
-    assert.equal(JSON.stringify(today).includes('img/nodes'), false); // closed card carries no picture
+    // The closed card carries the picture's address only, for the faded backdrop: no alt text or credit yet.
+    assert.equal(today.node.backdrop, image.src);
+    assert.equal(today.node.image, undefined);
+    assert.equal(JSON.stringify(today).includes(image.alt), false);
     const after = await call('/api/respond', { node_id: 'democritus_atoms_and_void', body: 'x', date: '2026-11-01' });
     assert.deepEqual(after.node.image, image);
     // Walking to a daily node you have not written on yet: no picture, no misreading.

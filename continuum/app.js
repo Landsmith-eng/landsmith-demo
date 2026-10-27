@@ -144,7 +144,10 @@ export function createApp(db, { adminKey } = {}) {
     } else {
       const pick = todaysPick(uid, date);
       state = pick ? 'write' : 'complete';
-      node = pick ? card(q.node.get(pick)) : null;
+      const n = pick ? q.node.get(pick) : null;
+      // The closed card carries only the picture's address, shown faded behind the title as atmosphere.
+      // The picture itself, with alt text and credit, belongs to the reveal after writing.
+      node = n ? { ...card(n), backdrop: n.image ? JSON.parse(n.image).src : null } : null;
     }
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
     res.json({ name: req.user.name, state, done, total, node });

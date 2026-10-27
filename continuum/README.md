@@ -43,8 +43,9 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Did the source change your mind?** Yes / A little / No, asked once per node after reading. The answer steers the
   next step: yes → who extended or tested it; no → who argued against it; a little → who reached the same place from
   another tradition. Counts show up in Review.
-- **Type**: Dancing Script (self-hosted, `public/fonts/`) for the brand, headings, questions, idea titles and quotations; body text stays sans for reading. Set `--display` to `var(--serif)` in `style.css` to undo.
-- **Illustrations** (daily nodes only): one picture per day on the plain face, shown after writing, with its credit.
+- **Type**: Lora (self-hosted, `public/fonts/`), a soft, readable serif, for the brand, headings, questions, idea titles and quotations; body text stays sans. Set `--display` to `var(--serif)` in `style.css` to undo.
+- **Illustrations** (daily nodes only): one picture per day. Before writing it sits faded and blurred behind the card's
+  title as atmosphere; after writing it appears in full on the plain face, with its credit.
   Drop the file in `public/img/nodes/` named by node id and fill in alt text, kind and credit in `content/images.js`;
   `npm run check` reports a missing file, alt text or credit. Illustrate the analogy, not the thinker.
 - **Keep this line** (☆ on the source face) saves a favourite; kept lines collect at the top of the Journal.

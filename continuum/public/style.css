@@ -1,12 +1,12 @@
-/* Dancing Script (SIL Open Font License 1.1, see public/fonts/OFL.txt), self-hosted so the app makes no outside calls. */
+/* Lora (SIL Open Font License 1.1, see public/fonts/OFL.txt), self-hosted so the app makes no outside calls. */
 @font-face {
-  font-family: 'Dancing Script'; font-style: normal; font-weight: 400 700; font-display: swap;
-  src: url(/fonts/dancing-script-latin.woff2) format('woff2');
+  font-family: 'Lora'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/fonts/lora-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Dancing Script'; font-style: normal; font-weight: 400 700; font-display: swap;
-  src: url(/fonts/dancing-script-latin-ext.woff2) format('woff2');
+  font-family: 'Lora'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/fonts/lora-latin-ext.woff2) format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 :root {
@@ -25,9 +25,9 @@
   --f-practice: #4d6b35;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --script: "Dancing Script", var(--serif);
+  --lora: "Lora", var(--serif);
   /* The characterful face: brand, headings, questions, quotations, idea titles. Set to var(--serif) to undo. */
-  --display: var(--script);
+  --display: var(--lora);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -56,9 +56,9 @@ body {
   font: 17px/1.55 var(--sans);
 }
 main { max-width: 640px; margin: 0 auto; padding: 8px 16px 64px; }
-h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.2; margin: 0 0 .4em; }
-h1 { font-size: 2.1rem; }
-h2 { font-size: 1.5rem; margin-top: 2rem; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.25; margin: 0 0 .4em; }
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.2rem; margin-top: 2rem; }
 p { margin: 0 0 1em; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
@@ -68,7 +68,7 @@ p { margin: 0 0 1em; }
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   max-width: 640px; margin: 0 auto; padding: 14px 16px;
 }
-.brand { font-family: var(--display); font-weight: 700; font-size: 1.6rem; color: var(--ink); text-decoration: none; }
+.brand { font-family: var(--display); font-weight: 600; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
 nav { display: flex; gap: 4px; }
 button { font: inherit; cursor: pointer; }
 .link { background: none; border: 0; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
@@ -90,11 +90,11 @@ button { font: inherit; cursor: pointer; }
 .face.plain { background: var(--surface); }
 .face.source { background: var(--source-bg); color: var(--source-ink); border-color: transparent; transform: rotateY(180deg); }
 .face .who { font-size: .9rem; opacity: .75; margin-bottom: .75rem; }
-.face.source blockquote { font-family: var(--display); font-size: 1.4rem; line-height: 1.45; margin: 0 0 1rem; }
+.face.source blockquote { font-family: var(--display); font-size: 1.15rem; line-height: 1.6; margin: 0 0 1rem; }
 .face.source cite { display: block; font-style: normal; font-size: .8rem; opacity: .7; }
 @media (prefers-reduced-motion: reduce) { .card-inner { transition: none; } }
 
-.prompt { font-family: var(--display); font-size: 1.45rem; line-height: 1.35; margin: 0 0 1.1rem; }
+.prompt { font-family: var(--display); font-size: 1.15rem; line-height: 1.5; margin: 0 0 1.2rem; display: block; }
 textarea {
   width: 100%; min-height: 160px; resize: vertical; padding: 14px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit;
@@ -121,6 +121,12 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
   background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--field, var(--line));
   border-radius: 14px; padding: 20px; margin: 0 0 20px;
 }
+/* First viewing: the day's picture sits faded behind the title. Faded on purpose: atmosphere, not a hint. */
+.card-closed.has-backdrop { position: relative; overflow: hidden; min-height: 210px; display: flex; flex-direction: column; justify-content: flex-end; }
+.card-closed .backdrop { position: absolute; inset: 0; z-index: 0; }
+.card-closed .backdrop img { width: 100%; height: 100%; object-fit: cover; opacity: .38; filter: blur(1.5px) saturate(.85); }
+.card-closed .backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 15%, var(--surface) 92%); }
+.card-closed.has-backdrop > :not(.backdrop) { position: relative; z-index: 1; }
 .card-closed .who, .face.plain .who { color: var(--field, var(--muted)); opacity: 1; font-weight: 600; font-size: .8rem; letter-spacing: .04em; }
 .face.plain { border-left: 4px solid var(--field, var(--line)); }
 .face.source blockquote p { margin: 0 0 .8em; white-space: pre-line; }
@@ -136,7 +142,7 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 }
 .bubble:hover { border-color: var(--field); }
 .b-who { display: block; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--field); }
-.b-title { display: block; font-family: var(--display); font-size: 1.3rem; line-height: 1.25; }
+.b-title { display: block; font-family: var(--display); font-size: 1.05rem; line-height: 1.35; }
 .b-note { display: block; font-size: .85rem; color: var(--muted); margin-top: 3px; }
 .trail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0; font-size: .85rem; color: var(--muted); margin: 0 0 12px; }
 .trail > * { white-space: nowrap; }
@@ -146,7 +152,7 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 
 .path { list-style: none; padding: 0; margin: 0; }
 .path li { border-top: 1px solid var(--line); padding: 14px 0; }
-.path .t { font-family: var(--display); font-size: 1.3rem; }
+.path .t { font-family: var(--display); font-size: 1.05rem; }
 .path p { white-space: pre-wrap; margin: .4rem 0 0; }
 .back { margin-bottom: 12px; }
 .card + .row { margin: -8px 0 24px; }
@@ -164,4 +170,4 @@ textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(-
 .reaction { margin: 0 0 20px; }
 .reaction .row { margin-top: 4px; }
 .reaction .bubbles { margin-top: 10px; }
-.kept { font-family: var(--display); font-size: 1.3rem; margin: 0 0 6px; padding-left: 12px; border-left: 3px solid var(--line); }
+.kept { font-family: var(--display); font-size: 1.05rem; margin: 0 0 6px; padding-left: 12px; border-left: 3px solid var(--line); }
