@@ -170,6 +170,34 @@ notes); Hume → Smith (TMS never names Hume); Smith → Marx; Kierkegaard and T
 §51); Upanishads → Tagore; Dōgen → Nishitani; King → hooks; Gandhi → Tagore `refuted` (the 1921 exchange in
 Modern Review and Young India). Dropped: Epicurus ↔ Voltaire `converged` (Voltaire knew Epicurus through Lucretius).
 
+### Batch 6 (ancient3.js, global3.js, science2.js), 2026-10-27
+
+20 nodes.
+
+| Node | Source | Status |
+|---|---|---|
+| sappho_fragment_31 | Wharton, Sappho (1885; 1908 printing), literal prose of fr. 31 | Verified (Gutenberg 57390) |
+| diogenes_the_cynic | Diogenes Laërtius VI.23, 38, 41, 56, Hicks | Verified (Wikisource Book VI); the transcription reads "Metron" for Hicks's "Metroön", so that word is cut |
+| anselm_ontological_argument | Proslogion 1–2, Webb 1903 | Verified (Wikisource); broken words in the transcription rejoined |
+| dante_midway | Inferno I.1–12, Longfellow | Verified (Gutenberg 1001) |
+| ptahhotep_maxims | Gunn 1906, maxims 1–2 | Verified (Gutenberg 30508) |
+| ibn_khaldun_asabiyyah | Muqaddimah | **Summary**: Rosenthal 1958 in copyright |
+| shankara_rope_and_snake | Brahma-Sutra commentary I.4.6, Thibaut 1890 | Verified (Gutenberg 16295) |
+| mozi_impartial_care | Mozi chs. 14–16 | **Summary**: Mei 1929 not reachable; Mencius's attack on Mozi (3B.9) verified for the edge |
+| wang_yangming_unity_of_knowing_and_acting | Chuanxilu | **Summary**: Henke 1916 not reachable; Mencius VII.A.15 verified for the edge |
+| las_casas_valladolid | MacNutt, Bartholomew de Las Casas (1909), ch. XX | Verified (Gutenberg 23466); a bracketed label separates Sepúlveda's heads from Las Casas's reply |
+| kimmerer_braiding_sweetgrass | Braiding Sweetgrass (2013) | **Summary** |
+| dostoevsky_grand_inquisitor | Brothers Karamazov V.5, Garnett 1912 | Verified (Gutenberg 28054); Nietzsche on Dostoevsky verified (Twilight §45) |
+| galileo_two_books | Letter to the Grand Duchess Christina | **Summary**: Salusbury 1661 only as unproofed OCR; Drake in copyright. Typed `concept` |
+| newton_general_scholium | Principia, Motte 1729 (1846 ed.) | Verified (Gutenberg 76404); Newton names Galileo, verified for the edge |
+| kuhn_paradigm_shift, popper_falsification, skinner_beyond_freedom, maslow_hierarchy, baldwin_fire_next_time | | **Summaries** |
+| woolf_room_of_ones_own | A Room of One's Own, Hogarth 1929 | Verified (Wikisource); Wollstonecraft is not named, so that edge is `converged` |
+
+Batch 6 claims resting on memory: Averroes → Ibn Khaldun (shared tradition only); Boethius → Dante (Convivio II.xii);
+Shankara → Schrödinger (via German Vedanta scholarship); Dostoevsky → Sartre (the 1946 lecture); Aquinas → Las
+Casas (Thomist argument at Valladolid); Haudenosaunee → Kimmerer; Maslow ↔ Frankl (the 1966 exchange); Newton →
+Einstein; Woolf → Beauvoir; Baldwin → hooks; Du Bois → Baldwin; Locke → Skinner.
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),

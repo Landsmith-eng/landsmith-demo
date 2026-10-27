@@ -44,7 +44,8 @@ idea ids are an error).
 | 2 | `ancient.js`, `east.js`, `modern2.js` | 15 + 1 practice | Roster priority A: Heraclitus → Zhuangzi. Graph: 62 nodes, 120 edges, all 7 practices |
 | 3 | `medieval2.js`, `global.js`, `modern3.js` | 18 | Gilgamesh to Kahneman; Africa, the Americas and India; the 20th century. Graph: 80 nodes, 177 edges |
 | 4 | `ancient2.js`, `modern4.js`, `contemporary.js` | 15 | Plato's cave to Seligman; Yoga and Zen; women's reason (Sor Juana, Wollstonecraft, Beauvoir). Graph: 95 nodes, 229 edges |
-| 5 | `classical2.js`, `global2.js`, `convergences1.js` | 15 + 9 edges | Homer to Voltaire; the global 20th century; first verified pass over the convergence-finder's candidates. Graph: 110 nodes, ~285 edges |
+| 5 | `classical2.js`, `global2.js`, `convergences1.js` | 15 + 9 edges | Homer to Voltaire; the global 20th century; first verified pass over the convergence-finder's candidates. Graph: 110 nodes, 285 edges |
+| 6 | `ancient3.js`, `global3.js`, `science2.js` | 20 | Sappho to Baldwin; Ptahhotep, the oldest text on the map; Shankara, Mozi, Wang Yangming; Galileo, Newton, Kuhn, Popper. Graph: 130 nodes, ~347 edges |
 
 ## Not yet decided
 
