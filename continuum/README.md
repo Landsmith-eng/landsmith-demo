@@ -40,6 +40,9 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Practices** are the floor: one face, never a daily card, reachable from every line node.
 - **Journal**: each answer is pinned to its node.
 - **Retention**: `/admin` shows days opened, days written and walk steps per tester.
+- **Testing other days:** add `?day=1` to the app's URL to act as if it were tomorrow (`?day=2`, `?day=2026-11-05`
+  also work; `?day=clear` returns to the real date). A dashed banner shows while a test date is set. The server
+  trusts the client's date, so this is a test aid, not a control.
 - Drafts stay in the browser until submitted. Invite token = only credential: fine for 5 known testers, not the public.
 
 ## Layout

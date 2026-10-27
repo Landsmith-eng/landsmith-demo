@@ -9,18 +9,31 @@ const store = {
 };
 
 // Pick up an invite token from ?u=..., keep it, and clean the URL so it isn't shared by accident.
+const DATE_KEY = 'continuum.date';
 const params = new URLSearchParams(location.search);
-if (params.get('u')) {
-  store.set(TOKEN_KEY, params.get('u'));
-  history.replaceState(null, '', location.pathname);
+if (params.get('u')) store.set(TOKEN_KEY, params.get('u'));
+// Test aid: ?day=1 means tomorrow, ?day=2 the day after, ?day=2026-11-02 pins that date;
+// ?day=clear goes back to the real date. The setting sticks until cleared.
+if (params.get('day')) {
+  const v = params.get('day').trim(); // a "+" in a URL arrives as a space, so "+1" and "1" both mean tomorrow
+  if (v === 'clear') store.del(DATE_KEY);
+  else if (/^[+-]?\d{1,3}$/.test(v)) store.set(DATE_KEY, shiftDate(realToday(), Number(v)));
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) store.set(DATE_KEY, v);
 }
+if (params.get('u') || params.get('day')) history.replaceState(null, '', location.pathname);
 const token = () => store.get(TOKEN_KEY) ?? '';
 
-function today() {
-  const d = new Date();
+function fmt(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+function realToday() { return fmt(new Date()); }
+function shiftDate(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return fmt(new Date(y, m - 1, d + days));
+}
+const testDate = () => store.get(DATE_KEY);
+function today() { return testDate() ?? realToday(); }
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {
@@ -47,7 +60,11 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  view.replaceChildren(...nodes.filter(Boolean));
+  const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
+    `Test date: ${testDate()} (real date ${realToday()}). `,
+    h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
+    h('button', { type: 'button', class: 'link', onclick: () => { store.del(DATE_KEY); showToday(); } }, 'use real date'));
+  view.replaceChildren(...[banner, ...nodes].filter(Boolean));
   window.scrollTo(0, 0);
 }
 
