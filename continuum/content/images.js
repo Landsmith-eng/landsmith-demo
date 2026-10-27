@@ -9,7 +9,7 @@
 //          kind: 'illustration',            // illustration = drawn or generated art of the analogy
 //                                           // artefact     = a real object: bust, manuscript, first edition
 //          alt: 'What the picture shows, for screen readers (one sentence).',
-//          credit: 'Who made it, and the licence',   // e.g. 'Illustration generated with ChatGPT for Continuum'
+//          credit: 'Who made it, and the licence',   // e.g. 'Generated with ChatGPT for Continuum'
 //                                                    //      'Bust of Democritus, Pushkin Museum. Wikimedia Commons, CC BY-SA 4.0'
 //          credit_url: 'https://…' }        // optional: the Commons or museum page
 //   3. npm run check, then npm run seed.
@@ -18,7 +18,12 @@
 // and an invented face sits badly next to a verified source. Use `artefact` for a real bust or page instead.
 export const images = {
   democritus_atoms_and_void: null,
-  epicurus_absence_of_pain: null,
+  epicurus_absence_of_pain: {
+    file: 'epicurus_absence_of_pain.webp',
+    kind: 'illustration',
+    alt: 'A blue mug on a table by a window; the left half of the room is grey and dim, the right half the same room in warm light, with nothing added.',
+    credit: 'Generated with ChatGPT for Continuum',
+  },
   lucretius_death_nothing_to_us: null,
   zeno_live_according_to_nature: null,
   epictetus_up_to_us: null,

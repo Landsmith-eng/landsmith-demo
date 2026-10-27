@@ -13,14 +13,15 @@ Finished files go in `public/img/nodes/` (named by node id) and get alt text and
 > (a window edge, doorway, page edge, horizon line or circle). The "before" part of the scene slightly
 > desaturated, the "after" part warmer, not brighter. No faces. Landscape, 3:2.
 
-Export at 1536×1024 or 1200×800 as WebP, under 400 KB.
+Export at 1536×1024 or 1200×800 as WebP, under 400 KB. For a consistent set, attach the Epicurus picture to each new
+chat and add "match the style of the attached image".
 
 ## The prompts
 
 | Day | Node id | Prompt (after the style block) |
 |---|---|---|
 | 1 | democritus_atoms_and_void | A photograph of a bowl of fruit under a round magnifying glass; inside the lens the image breaks into small orderly coloured squares, like a hidden grid beneath the picture. |
-| 2 | epicurus_absence_of_pain | A small table lamp with a dark shade sliding away from it; the lamp is no brighter, the light is simply unblocked and the room feels lighter. |
+| 2 | epicurus_absence_of_pain | **Done** (`public/img/nodes/epicurus_absence_of_pain.webp`): the same room and mug turning from grey to warm, with nothing added. This is also the style reference for the rest of the set. Original prompt: a small table lamp with a dark shade sliding away from it; the lamp is no brighter, the light is simply unblocked and the room feels lighter. |
 | 3 | lucretius_death_nothing_to_us | Two horizons facing each other like reflections: a pre-dawn sky on the left, a post-sunset sky on the right, the same stars in both, divided by a thin luminous line. |
 | 4 | zeno_live_according_to_nature | A plain, well-made knife that has just cut cleanly through a sheet of paper; beside it a small upright figure walks a straight path toward a painted porch with columns. |
 | 5 | epictetus_up_to_us | An arrow just leaving a bow; the bowstring is still and steady, while visible wind bends the arrow's path across a pale sky. |
@@ -43,4 +44,4 @@ Export at 1536×1024 or 1200×800 as WebP, under 400 KB.
 ## Alt text and credit
 
 Write the alt text from what the finished picture actually shows, in one sentence. A credit for generated art:
-`Illustration generated with <tool> for Continuum`, with kind `illustration`.
+`Generated with <tool> for Continuum`, with kind `illustration`.

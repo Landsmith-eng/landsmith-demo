@@ -106,6 +106,7 @@ export function createApp(db, { adminKey } = {}) {
 
   // Before writing, the user sees only the card and the question. Everything else is behind "write first".
   function fullNode(n, uid) {
+    const entry = q.entry.get(uid, n.id) ?? null;
     return {
       ...card(n),
       plain_face: n.plain_face,
@@ -113,9 +114,10 @@ export function createApp(db, { adminKey } = {}) {
       source_citation: n.source_citation,
       source_url: n.source_url,
       analysis_url: n.analysis_url,
-      misreading: n.misreading,
-      image: n.image ? JSON.parse(n.image) : null,
-      entry: q.entry.get(uid, n.id) ?? null,
+      // Both belong to the reveal: withheld until this user has written on the node, even when they walk to it.
+      misreading: entry ? n.misreading : null,
+      image: entry && n.image ? JSON.parse(n.image) : null,
+      entry,
       favorite: Boolean(q.isFavorite.get(uid, n.id)),
       reaction: q.reaction.get(uid, n.id)?.value ?? null,
       neighbours: q.neighbours.all({ id: n.id }),

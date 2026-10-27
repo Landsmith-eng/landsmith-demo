@@ -44,7 +44,14 @@ test('the image reaches the API only after the user has written', async () => {
     assert.equal(JSON.stringify(today).includes('img/nodes'), false); // closed card carries no picture
     const after = await call('/api/respond', { node_id: 'democritus_atoms_and_void', body: 'x', date: '2026-11-01' });
     assert.deepEqual(after.node.image, image);
-    const other = await call('/api/node/epicurus_absence_of_pain?date=2026-11-01');
-    assert.equal(other.node?.image ?? null, null);
+    // Walking to a daily node you have not written on yet: no picture, no misreading.
+    const ahead = await call('/api/node/epicurus_absence_of_pain?date=2026-11-01');
+    assert.equal(ahead.node.entry, null);
+    assert.equal(ahead.node.image, null);
+    assert.equal(ahead.node.misreading, null);
+    const written = await call('/api/respond', { node_id: 'epicurus_absence_of_pain', body: 'y', date: '2026-11-02' });
+    const real = content.nodes.find((n) => n.id === 'epicurus_absence_of_pain');
+    assert.deepEqual(written.node.image, real.image ?? null);
+    assert.equal(written.node.misreading, real.misreading);
   } finally { server.close(); }
 });
