@@ -47,6 +47,7 @@ idea ids are an error).
 | 5 | `classical2.js`, `global2.js`, `convergences1.js` | 15 + 9 edges | Homer to Voltaire; the global 20th century; first verified pass over the convergence-finder's candidates. Graph: 110 nodes, 285 edges |
 | 6 | `ancient3.js`, `global3.js`, `science2.js` | 20 | Sappho to Baldwin; Ptahhotep, the oldest text on the map; Shankara, Mozi, Wang Yangming; Galileo, Newton, Kuhn, Popper. Graph: 130 nodes, 348 edges |
 | 7 | `classical3.js`, `global4.js`, `modern5.js` | 20 | Herodotus to Tocqueville; the Mahabharata and Rāmānuja; Deloria, Freire, Senghor, Mariátegui, Wiredu; Pavlov to Foucault. Graph: 150 nodes, 407 edges |
+| 8 | `classical4.js`, `global5.js`, `modern6.js` | 20 | Thucydides to Wundt (Copernicus and Kepler verified); Kalidasa, Dignāga, Cordova, Martí, Nkrumah, Paz; Husserl to Butler. The roster is empty. Graph: 170 nodes, ~468 edges |
 
 ## Not yet decided
 

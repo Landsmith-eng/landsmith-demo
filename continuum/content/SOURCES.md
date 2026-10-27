@@ -227,6 +227,31 @@ Ramanuja's "that art thou" reading. Claims resting on memory: Euclid → Newton 
 (least sure); Fanon on Sartre; Wiredu on Mbiti; Skinner citing Pavlov; James's 1898 lecture; Merleau-Ponty's preface;
 Nussbaum on Aristotle and Rawls; Foucault on Nietzsche; the "no contact" claims in the converged edges.
 
+### Batch 8 (classical4.js, global5.js, modern6.js), 2026-10-27
+
+20 nodes; the last of the roster.
+
+| Node | Source | Status |
+|---|---|---|
+| thucydides_melian_dialogue | History V.89–90, 116, Crawley | Verified (Gutenberg 7142) |
+| plutarch_lives_parallel | Life of Alexander 1, Dryden/Clough | Verified (Gutenberg 674); the familiar "slight thing like a phrase" wording is Perrin's, not used |
+| chaucer_pardoners_tale | Canterbury Tales, Purves 1870 modern spelling | Verified (Gutenberg 2383) |
+| burke_little_platoon | Reflections, Works vol. III 1887 | Verified (Gutenberg 15679); Burke on Rousseau and on Aristotle verified for the edges |
+| copernicus_de_revolutionibus | Dedication to Paul III, Harvard Classics 39 (1910) | Verified (Gutenberg 13182) |
+| kepler_harmony | Preface to Dioptrice and the Astronomia Nova introduction, Carlos 1880 | Verified (Gutenberg 46036); the laws themselves summarised in the plain face |
+| wundt_first_laboratory | Introduction to Psychology, Pintner 1912 | Verified (Gutenberg 46677); Newton on Kepler and James on Wundt verified for the edges |
+| kalidasa_shakuntala | Shakuntala, Ryder 1912 | Verified (Gutenberg 16659) |
+| dignaga_perception_and_inference, cordova_native_american_philosophy, nkrumah_consciencism, paz_labyrinth_of_solitude | | **Summaries** (in copyright) |
+| marti_our_america | "Nuestra América" (1891) | **Summary**: es.wikisource blocked; no Gutenberg text |
+| husserl_back_to_the_things | Ideen I (1913) | **Summary**: the German is public domain in the US but no text was reachable |
+| adorno_minima_moralia, derrida_differance, macintyre_after_virtue, taylor_sources_of_the_self, nagel_what_is_it_like, butler_gender_performativity | | **Summaries** (in copyright); MacIntyre's closing line paraphrased, not quoted |
+
+Batch 8 claims resting on memory: Herodotus → Thucydides (that I.20–22 targets Herodotus); Thucydides → Hobbes
+(the 1629 translation); Boethius → Chaucer (the Boece); Burke → Tocqueville; Copernicus → Kuhn and → Kepler;
+Kalidasa → Tagore; Nagarjuna → Dignāga (different school, cautious); Deloria → Cordova; Sor Juana → Paz;
+Mariátegui ↔ Nkrumah `converged` (a structural parallel); Descartes → Nagel; Heidegger → Derrida; Husserl →
+Merleau-Ponty (Louvain 1939).
+
 Edge claims flagged by the researchers as resting on memory rather than a fetched text (check these):
 Upanishads → Schrödinger (What Is Life? epilogue), Schopenhauer → Schrödinger and → Einstein,
 Kierkegaard → Sartre ("anguish of Abraham"), Nietzsche → Camus and Kierkegaard → Camus ("philosophical suicide"),

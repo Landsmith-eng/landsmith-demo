@@ -1,5 +1,7 @@
 # Continuum master roster
 
+**Status 2026-10-27: every row below is on the map** (170 nodes after batch 8); the only names in grouped rows not yet written are Dharmakīrti and Aeschylus. The roster now grows only by new discovery: add a row with a curriculum tag or `*added*` and the crossover it brings, then run the next batch per `BATCHES.md`.
+
 Who belongs on the map, drawn from real college curricula rather than one person's list.
 Use it to pick the next nodes to write. Each name still needs a node with two faces and a verified source,
 same rules as `content/SOURCES.md`.
@@ -36,7 +38,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Homer | LH, SJC, DS, UC | branch | Y | — | Achilles' choice: short glorious life or long quiet one; links to Epicurus vs. Zeno |
 | Sappho | LH, DS | branch | Y | — | Love and longing; converges with the Buddha on craving |
 | Aeschylus / Sophocles | SJC, DS, UC | branch (Antigone) | Y | — | Antigone, conscience vs. law: extended by Thoreau, King |
-| Herodotus / Thucydides | SJC, DS | branch (Herodotus) | Y | — | Solon's "call no man happy until he is dead": converges with Kahneman's peak-end |
+| Herodotus / Thucydides | SJC, DS | branch | Y | — | Solon's "call no man happy until he is dead": converges with Kahneman's peak-end |
 | Heraclitus | *added* | branch | Y | — | "No man steps in the same river twice": converges with the Buddha on impermanence |
 | Democritus | *added* | line | Y | — | — |
 | Socrates (via Plato) | CC, SJC, DS, UC | branch | Y | — | — |
@@ -46,7 +48,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Epicurus, Lucretius, Zeno, Epictetus, Seneca, Marcus | SJC (Lucretius, Epictetus) | line | Y | — | — |
 | Pyrrho / Sextus Empiricus | *added* | branch (Pyrrho) | Y | — | Suspending judgment brings calm: converges with the Buddha; lands on hold beliefs loosely |
 | Euclid | SJC | branch | Y | — | Proof as a way of knowing: extended by Descartes, Spinoza (Ethics in geometric order) |
-| Plutarch | SJC | | Y | C | Lives as moral examples |
+| Plutarch | SJC | branch | Y | — | Lives as moral examples |
 | Plotinus | SJC | branch | Y | — | The One: converges with the Upanishads; extended by Augustine |
 | Hebrew Bible (Genesis, Job, Ecclesiastes) | CC, UC | branch (Eccl., Job) | Y | — | Job: why do the good suffer? Converges with the Buddha, Boethius |
 | New Testament | CC, SJC | branch (Matt.) | Y | B | Sermon on the Mount, love of enemies: extended by Tolstoy, Gandhi, King |
@@ -65,7 +67,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Rumi / Attar | AH (Sufi poetry) | branch (Rumi) | Y | — | The reed flute's longing: converges with Augustine's restless heart |
 | Ibn Khaldun | *added* | branch | Y | — | Asabiyyah: rise and fall of group cohesion; measured by modern social science |
 | Dante | LH, SJC, DS, UC | branch | Y | — | "Midway in the journey of our life": a crisis node; lands on examine daily |
-| Chaucer, Petrarch | SJC, DS | branch (Petrarch) | Y | C | Petrarch's Ascent of Mont Ventoux, reading Augustine on a mountain |
+| Chaucer, Petrarch | SJC, DS | branch | Y | — | Petrarch's Ascent of Mont Ventoux, reading Augustine on a mountain |
 | Machiavelli | CC, SJC, DS | branch | Y | — | Fortune vs. virtù: refutes the Stoic acceptance of fate |
 | Montaigne | SJC | branch | Y | — | — |
 
@@ -80,10 +82,10 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Rousseau | CC, SJC, DS | branch | Y | — | Amour-propre (comparison): measured by social-comparison research |
 | Kant | CC, DS, UC | branch | Y | — | Treat people as ends, never merely as means: converges with the Golden Rule across traditions |
 | Adam Smith | CC | branch | Y | — | Theory of Moral Sentiments, the impartial spectator: converges with the Stoics |
-| Burke / Tocqueville | DS (CC older) | branch (Tocqueville) | Y | — | Habits of the heart, associations: measured by the Harvard Study |
+| Burke / Tocqueville | DS (CC older) | branch | Y | — | Habits of the heart, associations: measured by the Harvard Study |
 | Mary Wollstonecraft | *added* | branch | Y | — | Reason has no sex: extends Locke and Rousseau, and argues against Rousseau |
 | Galileo | SJC, HSCI | branch | Y | — | Letter to the Grand Duchess Christina: science and scripture |
-| Copernicus / Kepler / Newton | HSCI | branch (Newton) | Y | — | Moving us from the center: a humbling that echoes Marcus's "view from above" |
+| Copernicus / Kepler / Newton | HSCI | branch | Y | — | Moving us from the center: a humbling that echoes Marcus's "view from above" |
 | Milton | SJC, DS | branch | Y | — | "The mind is its own place": converges with Epictetus and Marcus |
 
 ## Nineteenth century
@@ -100,7 +102,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Tolstoy | SJC, DS | branch (A Confession) | Y | — | The Death of Ivan Ilyich: lands on death in view; also his non-resistance, extended by Gandhi |
 | Dostoevsky | *added* | branch | Y | — | Grand Inquisitor: freedom as a burden; extended by Sartre |
 | William James | PSY | branch | Y | — | Habit, and the Varieties of Religious Experience: measured religion; extends Aristotle on habit |
-| Wundt / Pavlov | PSY | branch (Pavlov) | Y | — | Birth of experimental psychology; conditioning |
+| Wundt / Pavlov | PSY | branch | Y | — | Birth of experimental psychology; conditioning |
 | Goethe / Wordsworth / Flaubert | SJC, DS | branch (Goethe) | Y | — | Faust's bargain: never be satisfied (refutes Epicurean contentment) |
 
 ## Twentieth century to now
@@ -132,7 +134,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | The Buddha (Dhammapada) | AH | line | Y | — | — |
 | Nagarjuna | WP (Buddhist unit), *added* by name | branch | partly | — | Emptiness: converges with Hume's bundle self |
 | Shankara (Advaita) | WP (Indian unit), *added* by name | branch | Y | — | Non-duality: extends the Upanishads; Schrödinger echoes it |
-| Kalidasa / Indian epics (Mahabharata) | AH | branch (Mahabharata) | Y | — | Yudhishthira's riddles (a puzzle node): "What is the greatest wonder?" |
+| Kalidasa / Indian epics (Mahabharata) | AH | branch | Y | — | Yudhishthira's riddles (a puzzle node): "What is the greatest wonder?" |
 | Confucius, Zengzi | AH | branch | Y | — | — |
 | Mencius | AH | branch | Y | — | The child at the well: innate compassion; refuted by Xunzi, measured by infant-helping studies |
 | Xunzi | *added* | branch | Y | — | Human nature is bad and must be shaped: extended by Hobbes |
@@ -155,10 +157,10 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 | Bartolomé de las Casas / Valladolid debate | IND | branch | Y | — | The Valladolid debate (1550), a dilemma node: do the conquered have the same rights? Extends Aquinas |
 | Haudenosaunee Great Law (Seventh Generation principle) | *added* | branch | partly | — | Decide for seven generations ahead: lands on work that outlasts you |
 | Vine Deloria Jr. | IND | branch | N | — | God Is Red: space vs. time traditions; refutes linear Western history |
-| V. F. Cordova | IND | | N | C | Native American worldview as philosophy |
+| V. F. Cordova | IND | branch | N | — | Native American worldview as philosophy |
 | Robin Wall Kimmerer | *added* | branch | N | — | Braiding Sweetgrass, reciprocity with land: converges with the Gita's offering and Ohiyesa |
 | Sor Juana Inés de la Cruz | *added* (Latin America) | branch | Y | — | The Reply to Sor Filotea, the right to learn: converges with Wollstonecraft and Douglass |
-| José Martí / Paulo Freire | WP (Latin American unit), *added* by name | branch (Freire) | partly | — | Freire: education as freedom; extends Douglass |
+| José Martí / Paulo Freire | WP (Latin American unit), *added* by name | branch | partly | — | Freire: education as freedom; extends Douglass |
 
 ## Batch 2 (done): Heraclitus, Plato's ring of Gyges, Pyrrho, Job, Augustine, Boethius, Avicenna, Rumi, Kant, Mill, Thoreau, Douglass, Tolstoy, Mencius, Zhuangzi.
 
@@ -168,7 +170,7 @@ Priority: **A** = strong crossovers with what's already on the map, write next; 
 
 ## Batch 5 (done): Homer, Antigone, Machiavelli, Locke, Rousseau, Adam Smith, Leibniz, Voltaire, Tagore, Singer, Heidegger, Han Feizi, Fanon, bell hooks, Nishitani; plus nine verified convergence edges.
 
-## Batch 8 (running, the last of the current roster): Plutarch, Thucydides, Chaucer, Burke, Copernicus, Kepler, Wundt, Kalidasa, Cordova, Martí, Dignāga, Husserl, Adorno, Derrida, MacIntyre, Taylor, Nagel, Butler, Nkrumah, Octavio Paz.
+## Batch 8 (done, the last of the current roster): Plutarch, Thucydides, Chaucer, Burke, Copernicus, Kepler, Wundt, Kalidasa, Cordova, Martí, Dignāga, Husserl, Adorno, Derrida, MacIntyre, Taylor, Nagel, Butler, Nkrumah, Octavio Paz.
 
 ## Batch 7 (done): Herodotus, Euclid, Petrarch, Berkeley, Milton, Tocqueville, the Mahabharata, Rāmānuja, Deloria, Freire, Senghor, Mariátegui, Wiredu, Pavlov, Rogers, Russell, Peirce, Merleau-Ponty, Nussbaum, Foucault.
 
@@ -210,19 +212,19 @@ Names on that map's 107 that are on neither our graph nor the tables above. Prio
 |---|---|---|---|---|
 | Patañjali (Yoga Sutras) | Indian (branch) | branch | — | — |
 | Śāntideva (Bodhicaryāvatāra) | Indian (branch) | branch | — | — |
-| Dignāga / Dharmakīrti | Indian | N | C | Buddhist logic and perception |
+| Dignāga / Dharmakīrti | Indian (branch: Dignāga) | N | — | Buddhist logic and perception |
 | Rāmānuja | Indian (branch) | partly | — | Qualified non-dualism: refutes Shankara |
 | Han Feizi | Chinese (branch) | partly | — | Legalism: extends Xunzi, converges with Hobbes and Machiavelli |
 | Leibniz | Western (branch) | Y | — | Best of all possible worlds: refuted by Voltaire's Candide; converges with the Stoics on providence |
 | Peirce / Russell / Popper | Western (branch: all three) | partly | B | Fallibilism, falsification: lands on hold beliefs loosely; Popper extends Hume's problem of induction |
-| Husserl / Heidegger / Merleau-Ponty | Western (branch: Heidegger, Merleau-Ponty) | N | — | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
-| Adorno / Foucault / Derrida | Western (branch: Foucault) | N | C | Later |
+| Husserl / Heidegger / Merleau-Ponty | Western (branch: all three) | N | — | Being-toward-death (Heidegger): extends Montaigne and Tolstoy; lands on death in view |
+| Adorno / Foucault / Derrida | Western (branch: all three) | N | — | Later |
 | Rawls | Western (branch) | branch | — | — |
 | Parfit | Western (branch) | branch | — | — |
 | Singer | Western (branch) | N | — | The drowning child: a dilemma node; extends Mill, converges with Mencius's child at the well |
-| Nussbaum / MacIntyre / Taylor / Nagel | Western (branch: Nussbaum) | N | B | Nussbaum and MacIntyre revive Aristotle's virtue ethics; Nagel's "What is it like to be a bat?" is a puzzle node |
-| Judith Butler | Western | N | C | Extends Beauvoir |
-| Fanon / Senghor / Nkrumah | African (branch: Fanon, Senghor) | N | — | Fanon extends Hegel's recognition and refutes Sartre; converges with Du Bois |
-| Mariátegui / Octavio Paz | Latin American (branch: Mariátegui) | N | C | Later |
+| Nussbaum / MacIntyre / Taylor / Nagel | Western (branch: all four) | N | — | Nussbaum and MacIntyre revive Aristotle's virtue ethics; Nagel's "What is it like to be a bat?" is a puzzle node |
+| Judith Butler | Western (branch) | N | — | Extends Beauvoir |
+| Fanon / Senghor / Nkrumah | African (branch: all three) | N | — | Fanon extends Hegel's recognition and refutes Sartre; converges with Du Bois |
+| Mariátegui / Octavio Paz | Latin American (branch: both) | N | — | Later |
 | Keiji Nishitani | Japanese (branch) | N | — | Kyoto School: Nāgārjuna's emptiness meets Nietzsche's nihilism, by someone who read both |
 | bell hooks | American (branch) | N | — | All About Love: extends King; lands on invest in people |
