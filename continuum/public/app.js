@@ -71,7 +71,7 @@ function render(...nodes) {
 }
 
 // Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
-const TAB_BG = { practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp' };
+const TAB_BG = { practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp' };
 let currentTab = null;
 function setNav(name) {
   currentTab = name;
