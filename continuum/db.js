@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS practice_log (
   PRIMARY KEY (user_id, local_date)
 );
 
+-- Conversations with the map (Talk). messages is the API conversation as JSON, appended to and never edited.
+CREATE TABLE IF NOT EXISTS talks (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  messages TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Discovery notes: one editable note per user per idea, on any idea (the daily answer stays in journal).
 CREATE TABLE IF NOT EXISTS notes (
   user_id INTEGER NOT NULL REFERENCES users(id),

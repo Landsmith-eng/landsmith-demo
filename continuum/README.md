@@ -73,6 +73,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
   grows (three days in a row offers a minute, then five); a gap of three days steps back down with a welcome, and
   opening the app most days but practising on few of them makes the step small again. Exercises:
   `content/practice_steps.js`.
+- **Talk** (the Talk tab, and "Talk it through" at the end of every idea): a conversation with the map, typed or spoken. Claude answers from the ideas in the app (opening any idea to quote its source word for word), challenges views held firmly, backs the user when they are onto something, uses their diary, and suggests practices and reading paths as links. Replies are read aloud in the reading voice. Needs `ANTHROPIC_API_KEY` in `.env` (see `.env.example`); `CONTINUUM_TALK_DAILY_LIMIT` caps messages per person per day (default 80). Daily cards not yet reached are never shown to it.
 - **Diary of discovery** (the Diary tab): roads to explore chosen from your own notes and answers, the threads you have found between ideas you met, and every answer, note and kept line, newest first. **Your notes**, near the end of every idea, adds a note to it.
 - **Gallery**: every idea on the map, open to explore at any time, in three arrangements, with search across all of
   it (themes, questions, thinkers, both faces and court opinions). *Rooms*: wings by region, tradition or theme

@@ -439,3 +439,16 @@ html.gazing { overflow: hidden; }
   text-underline-offset: 3px; }
 .diary-date { margin: 6px 0 8px; }
 .p-note textarea { min-height: 22svh; }
+
+/* Talk */
+.talk-log { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+.talk-turn { max-width: 88%; padding: 12px 14px; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; }
+.talk-turn.from-map { align-self: flex-start; background: var(--surface, var(--bg)); border: 1px solid var(--line); font-family: var(--display); }
+.talk-turn.from-you { align-self: flex-end; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.talk-turn.thinking { color: var(--muted); font-style: italic; }
+.talk-ref { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.talk-compose { position: sticky; bottom: var(--dock); z-index: 2; background: var(--bg); padding: 10px 0 12px; border-top: 1px solid var(--line);
+  margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.talk-compose textarea { min-height: 3.2em; }
+.mic[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.tab { padding-left: 2px; padding-right: 2px; font-size: .82rem; }

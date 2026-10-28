@@ -8,6 +8,7 @@ import { themes } from './content/themes.js';
 import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT } from './talk.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS daily_pick (
   PRIMARY KEY (user_id, local_date)
 )`;
 
-export function createApp(db, { adminKey, tts = null } = {}) {
+export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80 } = {}) {
   db.exec(DAILY_PICK_TABLE);
   // Why an adaptive card was chosen (after the first line), shown on the card.
   if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
@@ -811,6 +812,103 @@ export function createApp(db, { adminKey, tts = null } = {}) {
         };
       }),
     });
+  });
+
+  // ── Talk: a conversation with the map's collective wisdom (when ANTHROPIC_API_KEY is set). ──
+  const tq = {
+    create: db.prepare('INSERT INTO talks (user_id) VALUES (?)'),
+    get: db.prepare('SELECT id, messages FROM talks WHERE id = ? AND user_id = ?'),
+    save: db.prepare("UPDATE talks SET messages = ?, updated_at = datetime('now') WHERE id = ?"),
+    latest: db.prepare('SELECT id FROM talks WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
+    today: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND kind = 'talk' AND local_date = ?"),
+  };
+  const clip = (t, n) => { const x = (t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+  // What the user may see, one line each: never an upcoming daily card or today's unwritten card.
+  // states: id -> the user's state for it (mapEntries), computed once per request.
+  const hiddenIn = (states, n) => n.type !== 'practice' && ['upcoming', 'today'].includes(states.get(n.id));
+  const talkStates = (uid, date) => new Map(mapEntries(uid, date).map((e) => [e.id, e.state]));
+  tq.practices = db.prepare("SELECT id FROM nodes WHERE type = 'practice'");
+  function talkCatalogue(states) {
+    const ids = [...[...states].filter(([, st]) => st !== 'upcoming' && st !== 'today').map(([id]) => id), ...tq.practices.all().map((p) => p.id)];
+    return [...new Set(ids)].map((id) => q.node.get(id)).filter(Boolean).sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.id.localeCompare(b.id))
+      .map((n) => [n.id, n.title, [n.thinker, n.year != null ? (n.year < 0 ? `${-n.year} BCE` : n.year) : null].filter(Boolean).join(', ') || '-',
+        n.type === 'practice' ? 'practice' : n.field, themesOf(n.id).map((t) => t.name).join('; ') || '-', clip(n.plain_face, 150)].join(' | '))
+      .join('\n');
+  }
+  function talkDiary(uid, states) {
+    const { answers, notes, kept } = discovery(uid, (id) => states.get(id) === 'upcoming');
+    return [
+      ...answers.map((a) => ({ at: a.created_at, line: `${a.local_date} answer on [[${a.id}]] ("${clip(a.prompt, 160)}"): ${clip(a.body, 500)}` })),
+      ...notes.map((n) => ({ at: n.updated_at, line: `${n.local_date} note on [[${n.id}]]: ${clip(n.body, 500)}` })),
+      ...kept.map((f) => ({ at: f.created_at, line: `${f.created_at.slice(0, 10)} kept a line from [[${f.id}]]: ${clip(firstLine(f.source_face), 200)}` })),
+    ].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 40).map((x) => x.line).join('\n');
+  }
+  // One idea, opened for the conversation partner: the same reveal rules as the app (misreadings after writing).
+  function talkIdea(uid, date, states, id) {
+    const n = q.node.get(id);
+    if (!n || hiddenIn(states, n)) return null;
+    const full = fullNode(n, uid, date);
+    const steps = practiceSteps[n.id];
+    return JSON.stringify({
+      id: n.id, title: n.title, type: n.type, thinker: n.thinker, year: n.year, field: n.field,
+      plain: n.plain_face, source: n.source_face, citation: n.source_citation, misreading: full.misreading,
+      opinions: full.opinions?.map((o) => ({ role: o.role, author: o.author, gist: o.gist, quote: o.quote })) ?? null,
+      practice_steps: steps ? { ten_seconds: steps.tiny, one_minute: steps.small, five_minutes: steps.full } : null,
+      themes: full.themes.map((t) => t.name),
+      links: full.neighbours.filter((r) => !hiddenIn(states, r))
+        .map((r) => ({ id: r.id, title: r.title, relation: r.relation, direction: r.dir === 'in' ? 'this idea came from it' : 'it came from this idea', note: r.note })),
+    });
+  }
+  const talkRefs = (states, ids) => Object.fromEntries(ids.map((id) => {
+    const n = q.node.get(id);
+    return n && !hiddenIn(states, n) ? [id, { title: n.title, type: n.type, field: n.field, thinker: n.thinker }] : null;
+  }).filter(Boolean));
+  // The user-visible transcript: their words and the replies, not the look-ups or the model's thinking.
+  const transcript = (messages) => messages.flatMap((m) => {
+    if (m.role === 'user' && typeof m.content === 'string') return [{ who: 'you', text: m.content }];
+    if (m.role === 'assistant') {
+      const text = m.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      return text ? [{ who: 'map', text }] : [];
+    }
+    return [];
+  }).reduce((out, x) => { const last = out.at(-1); if (last && last.who === x.who && x.who === 'map') last.text += ` ${x.text}`; else out.push({ ...x }); return out; }, []);
+
+  app.get('/api/talk', auth, (req, res) => {
+    const date = localDate(req.query.date);
+    const id = Number(req.query.id) || tq.latest.get(req.user.id)?.id;
+    const t = id && tq.get.get(id, req.user.id);
+    const turns = t ? transcript(JSON.parse(t.messages)) : [];
+    res.json({ enabled: Boolean(talk), id: t?.id ?? null, turns, refs: talkRefs(talkStates(req.user.id, date), referencedIds(turns.map((x) => x.text).join(' '))) });
+  });
+  app.post('/api/talk/new', auth, (req, res) => res.json({ id: Number(tq.create.run(req.user.id).lastInsertRowid) }));
+  // A message in, the reply streamed back as lines of JSON: {t:'text', d} while it is written, then {t:'done', refs}.
+  app.post('/api/talk', auth, async (req, res) => {
+    if (!talk) return res.status(404).json({ error: 'talk_off' });
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text) return res.status(400).json({ error: 'empty' });
+    if (text.length > MAX_USER_TEXT) return res.status(400).json({ error: 'too_long' });
+    if (tq.today.get(uid, date).n >= talkDailyLimit) return res.status(429).json({ error: 'daily_limit' });
+    let t = Number(req.body?.id) ? tq.get.get(Number(req.body.id), uid) : null;
+    if (!t) t = { id: Number(tq.create.run(uid).lastInsertRowid), messages: '[]' };
+    const messages = JSON.parse(t.messages);
+    messages.push({ role: 'user', content: text });
+    q.insertEvent.run(uid, 'talk', null, date);
+    res.set({ 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+    const send = (o) => res.write(`${JSON.stringify(o)}\n`);
+    send({ t: 'start', id: t.id });
+    let reply = '';
+    try {
+      const states = talkStates(uid, date);
+      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date });
+      await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
+      tq.save.run(JSON.stringify(messages), t.id);
+      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)) });
+    } catch (e) {
+      console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);
+      send({ t: 'error', error: e.status === 401 ? 'The Anthropic key did not work. The server window says more.' : 'Something went wrong reaching Claude. Try again in a moment.' });
+    }
+    res.end();
   });
 
   // ElevenLabs problems show in the server window, so they can be fixed (the phone falls back to its own voice).

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
 import { createTts } from './tts.js';
+import { createTalk } from './talk.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 // Private settings (the ElevenLabs key) live in .env next to this file, never in git. KEY=value, one per line.
@@ -29,7 +30,12 @@ const tts = createTts({
   cacheDir: fileURLToPath(new URL('./data/tts/', import.meta.url)),
 });
 
-createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY, tts }).listen(PORT, (err) => {
+const talk = createTalk({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.CONTINUUM_TALK_MODEL || undefined });
+
+createApp(db, {
+  adminKey: process.env.CONTINUUM_ADMIN_KEY, tts, talk,
+  talkDailyLimit: Number(process.env.CONTINUUM_TALK_DAILY_LIMIT) || undefined,
+}).listen(PORT, (err) => {
   if (err?.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use: another copy of Continuum is probably still running, with older code.`);
     console.error('Close it first (Ctrl+C in its window). On Windows, if you cannot find it: Get-Process node | Stop-Process');
@@ -38,6 +44,11 @@ createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY, tts }).listen(PORT, (
   if (err) throw err;
   // The picture count comes from the database, so it shows whether `npm run seed` has picked up new images.
   console.log(`Continuum on http://localhost:${PORT} · ${nodes} nodes · daily pictures: ${pictures} of 14 · reading voice: ${tts ? 'ElevenLabs' : 'phone'}`);
+  // Check the Anthropic key once at start (looking up the model costs nothing).
+  if (talk) talk.client.models.retrieve(talk.model).then(
+    () => console.log(`Talk: connected to Claude (${talk.model}).`),
+    (e) => console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''} ${e.message}). Talk is off until it does.`));
+  else console.log('Talk: off (add ANTHROPIC_API_KEY to .env to turn it on).');
   // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
   if (tts) tts.voices().then(
     (v) => console.log(`ElevenLabs: connected, ${v.length} voices on your account.`),

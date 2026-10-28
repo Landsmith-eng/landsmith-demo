@@ -241,6 +241,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       node.year != null && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('timeline', { focus: node.id }) }, 'See it on the timeline'),
       node.room && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('themes') }, 'Browse the themes'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node }) }, 'Talk it through'),
       h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today')),
   ]));
   return P;
@@ -1087,6 +1088,160 @@ function showJournal() {
   });
 }
 
+// Talk: a conversation with the map's collective wisdom. Type or speak; replies stream in, with the ideas they name as
+// links, and are read aloud in the reading voice. The conversation is kept, so it can be picked up later.
+const TALK_KEY = 'continuum.talk';
+const SPEAK_KEY = 'continuum.talk.speak';
+let talkVoice = null; // the reply being read aloud: { stop, wake }
+const stopTalkVoice = () => { if (talkVoice) { talkVoice.stop = true; talkVoice.wake?.(); } talkVoice = null; speech?.cancel(); audioEl.pause(); };
+// Reply text with [[id]] markers: the words, and each named idea as a link (a placeholder while it streams).
+function replyNodes(text, refs, done) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)) {
+    out.push(text.slice(last, m.index)); last = m.index + m[0].length;
+    const r = refs[m[1]];
+    if (r) out.push(h('a', { href: '#', class: `talk-ref field-${r.field}`, onclick: (e) => { e.preventDefault(); stopTalkVoice(); (r.type === 'practice' ? showPractice({ practice: m[1] }) : walkTo(m[1], [])); } }, r.title));
+    else if (!done) out.push('…');
+  }
+  out.push(done ? text.slice(last) : text.slice(last).replace(/\[\[[a-z0-9_]*\]?$/, ''));
+  return out;
+}
+const spokenReply = (text, refs) => text.replace(/\[\[([a-z0-9_]+)\]\]/g, (_, id) => refs[id]?.title ?? '').replace(/\s+/g, ' ').trim();
+async function speakReply(text) {
+  stopTalkVoice();
+  const run = talkVoice = { stop: false, wake: null };
+  const plan = await voicePlan();
+  if ('el' in plan) {
+    try {
+      for (const piece of chunks(text)) { if (run.stop) return; await playClip(await fetchClip(piece, plan.el), run); }
+      return;
+    } catch { if (!speech) return; }
+  }
+  for (const line of sentences(text)) { if (run.stop) return; await sayPhone(line, plan.phone ?? null, run); }
+}
+
+function showTalk({ about = null } = {}) {
+  setNav('talk');
+  stopTalkVoice();
+  return guarded(async () => {
+    const saved = Number(store.get(TALK_KEY)) || '';
+    const state = await api(`/api/talk?date=${today()}${saved ? `&id=${saved}` : ''}`);
+    if (!state.enabled) {
+      return render(h('h1', {}, 'Talk'), h('p', {}, 'Talk is a conversation with the ideas on the map: argue a point, test a belief, ask for a practice or a reading path.'),
+        h('p', { class: 'muted' }, 'It is not switched on yet. To turn it on, add ANTHROPIC_API_KEY to the .env file next to the server and restart it.'));
+    }
+    let convoId = state.id;
+    const refs = { ...state.refs };
+    const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
+    const bubble = (who, text, done = true) => {
+      const b = h('div', { class: `talk-turn ${who === 'you' ? 'from-you' : 'from-map'}` });
+      if (who === 'you') b.textContent = text; else b.replaceChildren(...replyNodes(text, refs, done));
+      log.append(b); return b;
+    };
+    state.turns.forEach((x) => bubble(x.who, x.text));
+    if (!state.turns.length) {
+      log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
+    }
+    const speakOn = () => store.get(SPEAK_KEY) !== 'off';
+    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(speakOn()) }, speakOn() ? 'Replies read aloud' : 'Replies silent');
+    speakToggle.addEventListener('click', () => {
+      store.set(SPEAK_KEY, speakOn() ? 'off' : 'on'); if (!speakOn()) stopTalkVoice();
+      speakToggle.textContent = speakOn() ? 'Replies read aloud' : 'Replies silent'; speakToggle.setAttribute('aria-pressed', String(speakOn()));
+    });
+    const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
+    fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
+
+    const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '2000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
+    if (about) ta.value = `I have just been reading "${about.title}". `;
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    const status = h('div', { class: 'muted small', role: 'status' });
+    const compose = h('div', { class: 'talk-compose' }, ta);
+    // Keep the newest words just above the composer (which sits over the bottom of the page).
+    const keepInView = (el) => {
+      const gap = el.getBoundingClientRect().bottom - (compose.getBoundingClientRect().top - 12);
+      if (gap > 0) window.scrollBy(0, gap);
+    };
+    async function submit() {
+      const text = ta.value.trim();
+      if (!text || send.disabled) return;
+      stopTalkVoice(); stopMic();
+      send.disabled = true; ta.value = ''; status.textContent = '';
+      bubble('you', text);
+      const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
+      keepInView(out);
+      let reply = '';
+      try {
+        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today() }) });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
+        }
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+            if (!line) continue;
+            const m = JSON.parse(line);
+            if (m.t === 'start') { convoId = m.id; store.set(TALK_KEY, String(m.id)); }
+            else if (m.t === 'text') {
+              reply += m.d; out.classList.remove('thinking'); out.replaceChildren(...replyNodes(reply.trimStart(), refs, false));
+              keepInView(out);
+            }
+            else if (m.t === 'done') { Object.assign(refs, m.refs); out.replaceChildren(...replyNodes(reply.trim(), refs, true)); keepInView(out); }
+            else if (m.t === 'error') throw new Error(m.error);
+          }
+        }
+        if (speakOn() && reply.trim()) speakReply(spokenReply(reply, refs));
+      } catch (e) {
+        out.classList.remove('thinking');
+        if (!reply) out.remove();
+        status.textContent = e.message;
+      } finally { send.disabled = false; }
+    }
+    send.addEventListener('click', submit);
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); submit(); } });
+
+    // Speaking: the browser's speech recognition (on Android Chrome it sends the audio to Google to transcribe).
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let rec = null;
+    const mic = Recognition && h('button', { type: 'button', class: 'btn ghost mic', 'aria-label': 'Speak', 'aria-pressed': 'false' }, 'Speak');
+    function stopMic() { if (rec) { const r = rec; rec = null; r.stop(); } if (mic) { mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Speak'; } }
+    mic?.addEventListener('click', () => {
+      if (rec) return stopMic();
+      stopTalkVoice();
+      rec = new Recognition();
+      rec.lang = navigator.language || 'en-US'; rec.interimResults = true; rec.continuous = false;
+      const before = ta.value ? `${ta.value.trim()} ` : '';
+      let finalText = '';
+      rec.onresult = (e) => {
+        let interim = ''; finalText = '';
+        for (const r of e.results) { if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; }
+        ta.value = before + finalText + interim;
+      };
+      rec.onerror = () => { status.textContent = 'The microphone did not catch that. Try again, or type.'; };
+      rec.onend = () => { const said = finalText.trim(); stopMic(); if (said) submit(); };
+      mic.setAttribute('aria-pressed', 'true'); mic.textContent = 'Listening… tap to stop';
+      rec.start();
+    });
+
+    compose.append(h('div', { class: 'row' }, mic || h('span'), send));
+    render(
+      h('h1', {}, 'Talk'),
+      h('p', { class: 'muted small' }, 'A conversation with the ideas on the map. It challenges what you hold firmly, backs you when you are onto something, and suggests practices and readings.'),
+      h('div', { class: 'theme-chips' }, speakToggle, fresh),
+      log,
+      compose,
+      status);
+    if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    if (log.lastElementChild) keepInView(log.lastElementChild);
+  });
+}
+
 // One step of the walk. `trail` is the path taken to get here, shown as breadcrumbs.
 function walkTo(id, trail) {
   return guarded(async () => {
@@ -1102,6 +1257,7 @@ document.addEventListener('click', (e) => {
   if (!nav) return;
   e.preventDefault();
   if (nav.dataset.nav === 'journal') showJournal();
+  else if (nav.dataset.nav === 'talk') showTalk();
   else if (nav.dataset.nav === 'practice') showPractice();
   else if (nav.dataset.nav === 'review') showReview(7);
   else if (nav.dataset.nav === 'gallery') showGallery('rooms');
