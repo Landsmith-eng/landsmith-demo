@@ -12,7 +12,8 @@ const fromFile = new Set();
 if (existsSync(ENV_FILE)) {
   for (const line of readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    const value = m && m[2].replace(/^(['"])(.*)\1$/, '$2');
+    // Tolerate a key copied out of a curl example: surrounding quotes, and a trailing '" \' line continuation.
+    const value = m && m[2].replace(/^(['"])(.*)\1$/, '$2').replace(/^["']/, '').replace(/["'\s\\]+$/, '');
     if (m && value && !line.trimStart().startsWith('#')) { process.env[m[1]] = value; fromFile.add(m[1]); }
   }
 }
