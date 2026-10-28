@@ -100,6 +100,20 @@ export function createApp(db, { adminKey, tts = null } = {}) {
       WHERE j.user_id = ? AND n.seq IS NOT NULL ORDER BY n.seq`),
   };
 
+  // The diary of discovery: notes, and what they connect to.
+  const dq = {
+    noteOn: db.prepare('SELECT body FROM notes WHERE user_id = ? AND node_id = ?'),
+    saveNote: db.prepare(`INSERT INTO notes (user_id, node_id, body, local_date) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id, node_id) DO UPDATE SET body = excluded.body, local_date = excluded.local_date, updated_at = datetime('now')`),
+    deleteNote: db.prepare('DELETE FROM notes WHERE user_id = ? AND node_id = ?'),
+    notes: db.prepare(`SELECT n.id, n.title, n.thinker, n.field, t.body, t.local_date, t.updated_at FROM notes t JOIN nodes n ON n.id = t.node_id
+      WHERE t.user_id = ? ORDER BY t.updated_at DESC`),
+    answers: db.prepare(`SELECT n.id, n.title, n.thinker, n.field, n.prompt, j.body, j.local_date, j.created_at FROM journal j
+      JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? ORDER BY j.created_at DESC`),
+    walked: db.prepare("SELECT DISTINCT node_id AS id FROM events WHERE user_id = ? AND kind = 'walk' AND node_id IS NOT NULL"),
+    edges: db.prepare('SELECT from_id, to_id, relation, note FROM edges'),
+  };
+
   // Room backgrounds: public/img/rooms/<room id>.webp (or .jpg, .png). Decorative, so no alt text; picked up at start.
   const ROOM_IMG_DIR = new URL('./public/img/rooms/', import.meta.url);
   const roomBg = new Map();
@@ -167,6 +181,7 @@ export function createApp(db, { adminKey, tts = null } = {}) {
       misreading: entry ? n.misreading : null,
       image: entry && n.image ? JSON.parse(n.image) : null,
       entry,
+      note: dq.noteOn.get(uid, n.id)?.body ?? null,
       favorite: Boolean(q.isFavorite.get(uid, n.id)),
       reaction: q.reaction.get(uid, n.id)?.value ?? null,
       neighbours: q.neighbours.all({ id: n.id }),
@@ -249,6 +264,107 @@ export function createApp(db, { adminKey, tts = null } = {}) {
 
   app.get('/api/journal', auth, (req, res) => {
     res.json({ journal: q.journal.all(req.user.id), favorites: q.favorites.all(req.user.id) });
+  });
+
+  // A discovery note on any idea: one per idea, editable; saving an empty note removes it.
+  app.post('/api/note', auth, (req, res) => {
+    const { node_id: nodeId, body } = req.body ?? {};
+    const date = localDate(req.body?.date);
+    if (!q.node.get(nodeId)) return res.status(404).json({ error: 'not_found' });
+    const text = typeof body === 'string' ? body.trim() : '';
+    if (text.length > MAX_BODY) return res.status(400).json({ error: 'too_long' });
+    if (text) dq.saveNote.run(req.user.id, nodeId, text, date); else dq.deleteNote.run(req.user.id, nodeId);
+    res.json({ note: text || null });
+  });
+
+  // The diary of discovery: everything the user has written, the links they have found between the ideas they met,
+  // and new roads, chosen from their own notes. Daily cards not yet reached are never suggested or named.
+  const THREAD = {
+    taught: ['a', 'taught', 'b'], extended: ['b', 'built on', 'a'], refuted: ['b', 'argued against', 'a'],
+    converged: ['a', 'and', 'b', 'reached the same idea separately'], measured: ['b', 'put to the test', 'a'],
+    secularized: ['b', 'kept the practice of', 'a'], lands_on: ['a', 'lands on the practice', 'b'], echoes: ['b', 'echoes', 'a'],
+  };
+  const STOP = new Set(('about above after again against among because before being below between could didn doesn during every '
+    + 'from have having into itself just like make more most much myself never only other ought ourselves over really same '
+    + 'should since some such than that their them themselves then there these they thing things think this those through '
+    + 'under until very what when where which while whom whose will with would your yours yourself always maybe still '
+    + 'something someone anything nothing everything people person world life lives being kind sort part seems seem today '
+    + 'idea ideas whole first last also even well good great little lot back come comes take takes makes made know knows').split(' '));
+  // Words of five letters or more, minus common ones, as stem -> the word as written ("choices" and "choice" match).
+  const words = (text) => {
+    const out = new Map();
+    for (const w of text.toLowerCase().match(/\p{L}{5,}/gu) ?? []) {
+      const stem = w.replace(/(ies|es|s)$/, (m) => (m === 'ies' ? 'y' : ''));
+      if (!STOP.has(w) && !STOP.has(stem) && stem.length >= 4 && !out.has(stem)) out.set(stem, w);
+    }
+    return out;
+  };
+
+  app.get('/api/diary', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.query.date);
+    const entries = mapEntries(uid, date);
+    const state = new Map(entries.map((e) => [e.id, e]));
+    const answers = dq.answers.all(uid);
+    const notes = dq.notes.all(uid);
+    const kept = q.favorites.all(uid);
+    // What they have met, and how much it seems to matter: wrote or noted (3), kept (2), walked (1).
+    const met = new Map();
+    const bump = (id, w) => { if (state.get(id)?.state !== 'upcoming') met.set(id, Math.max(met.get(id) ?? 0, w)); };
+    for (const r of dq.walked.all(uid)) bump(r.id, 1);
+    for (const r of kept) bump(r.id, 2);
+    for (const r of [...answers, ...notes]) bump(r.id, 3);
+    const title = (id) => q.node.get(id)?.title;
+    const edges = dq.edges.all();
+
+    // Threads: links between two ideas they have met, the ones they wrote about first.
+    const threads = edges.filter((e) => met.has(e.from_id) && met.has(e.to_id))
+      .sort((x, y) => (met.get(y.from_id) + met.get(y.to_id)) - (met.get(x.from_id) + met.get(x.to_id)))
+      .slice(0, 8).map((e) => {
+        const [first, verb, second, after] = THREAD[e.relation] ?? ['a', 'connects to', 'b'];
+        const side = (k) => { const id = k === 'a' ? e.from_id : e.to_id; return { id, title: title(id) }; };
+        return { first: side(first), verb, second: side(second), after: after ?? null, note: e.note };
+      });
+
+    // Roads: ideas not yet opened, scored by links to what they met, by the themes of what they wrote about, and by
+    // the words they used in their own notes and answers. Each comes with the reason, in their terms.
+    const writings = [...notes.map((n) => ({ ...n, kind: 'note' })), ...answers.map((a) => ({ ...a, kind: 'answer' }))];
+    const vocab = new Map(); // stem -> { word as they wrote it, the writing it came from (most recent first) }
+    for (const w of writings) for (const [stem, word] of words(w.body)) if (!vocab.has(stem)) vocab.set(stem, { word, from: w });
+    const themeWeight = new Map();
+    for (const w of writings) for (const t of themesOf(w.id)) themeWeight.set(t.id, (themeWeight.get(t.id) ?? 0) + 1);
+    const ranked = entries.filter((e) => e.state === 'unseen' && !met.has(e.id)).map((e) => {
+      const n = q.node.get(e.id);
+      let score = 0; const links = [];
+      for (const ed of edges) {
+        const other = ed.from_id === e.id ? ed.to_id : ed.to_id === e.id ? ed.from_id : null;
+        if (other && met.has(other)) { score += met.get(other) >= 3 ? 2 : 1; links.push(other); }
+      }
+      const shared = themesOf(e.id).filter((t) => themeWeight.has(t.id)).sort((x, y) => themeWeight.get(y.id) - themeWeight.get(x.id));
+      score += 1.5 * Math.min(2, shared.length);
+      const own = words(`${n.title} ${n.plain_face}`);
+      const hits = [...vocab.keys()].filter((w) => own.has(w));
+      score += 2.5 * Math.min(2, hits.length); // their own words count most
+      let why = null;
+      const linked = [...new Set(links)].sort((x, y) => met.get(y) - met.get(x));
+      if (hits.length) {
+        const { word, from } = vocab.get(hits[0]);
+        why = `You wrote "${word}" in your ${from.kind} on "${from.title}". This idea takes that word somewhere new.`;
+      } else if (linked.length >= 2) why = `It connects "${title(linked[0])}" and "${title(linked[1])}", two ideas you have met.`;
+      else if (linked.length) why = `It is linked to "${title(linked[0])}", which you ${met.get(linked[0]) >= 3 ? 'wrote about' : 'met'}.`;
+      else if (shared.length) why = `Another answer to "${shared[0].name}", a question your writing keeps returning to.`;
+      return { id: e.id, title: e.title, thinker: e.thinker, year: e.year, field: e.field, type: e.type, score, why, byWords: hits.length > 0 };
+    }).filter((r) => r.score > 0 && r.why).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
+    // Lead with the best road found through their own words, then the strongest of the rest.
+    const lead = ranked.find((r) => r.byWords);
+    const roads = [lead, ...ranked.filter((r) => r !== lead)].filter(Boolean).slice(0, 3).map(({ byWords, ...r }) => r);
+
+    // Entries: answers, notes and kept lines, newest first.
+    const items = [
+      ...answers.map((a) => ({ kind: 'answer', id: a.id, title: a.title, thinker: a.thinker, field: a.field, prompt: a.prompt, body: a.body, date: a.local_date, at: a.created_at })),
+      ...notes.map((n) => ({ kind: 'note', id: n.id, title: n.title, thinker: n.thinker, field: n.field, body: n.body, date: n.local_date, at: n.updated_at })),
+      ...kept.map((f) => ({ kind: 'kept', id: f.id, title: f.title, thinker: f.thinker, field: f.field, body: firstLine(f.source_face) || f.title, date: f.created_at.slice(0, 10), at: f.created_at })),
+    ].sort((x, y) => (y.date + y.at).localeCompare(x.date + x.at));
+    res.json({ counts: { met: met.size, notes: notes.length, answers: answers.length, kept: kept.length }, roads, threads, entries: items });
   });
 
   // "Keep this line": a favourite is a source passage the user wants to find again.

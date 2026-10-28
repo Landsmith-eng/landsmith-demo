@@ -430,3 +430,12 @@ html:has(#wallpaper.on:not(.nolook)) .look { display: inline-flex; }
   border: 1px solid rgba(255,255,255,.35); background: rgba(13,16,14,.45); color: #eef2ec; font-size: .85rem; }
 html.gazing { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .gaze, .gaze img { transition: none; } }
+
+/* The diary of discovery */
+.diary-block { margin-top: 8px; }
+.diary-block .compass-item { margin-top: 12px; }
+.thread { margin: 0 0 4px; line-height: 1.5; }
+.thread-link { padding: 0; color: var(--ink); font-family: var(--display); text-decoration: underline; text-decoration-color: var(--line);
+  text-underline-offset: 3px; text-align: left; }
+.diary-date { margin: 6px 0 8px; }
+.p-note textarea { min-height: 22svh; }

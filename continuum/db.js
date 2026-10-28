@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS practice_log (
   PRIMARY KEY (user_id, local_date)
 );
 
+-- Discovery notes: one editable note per user per idea, on any idea (the daily answer stays in journal).
+CREATE TABLE IF NOT EXISTS notes (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  body TEXT NOT NULL,
+  local_date TEXT NOT NULL,            -- the day it was last written
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, node_id)
+);
+
 CREATE TABLE IF NOT EXISTS reactions (
   user_id INTEGER NOT NULL REFERENCES users(id),
   node_id TEXT NOT NULL REFERENCES nodes(id),

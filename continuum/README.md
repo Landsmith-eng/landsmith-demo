@@ -54,7 +54,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
   shows its credit, as its licence usually requires. Every picture's source stays recorded in `content/images.js`.
   Drop the file in `public/img/nodes/` named by node id and fill in alt text, kind and credit in `content/images.js`;
   `npm run check` reports a missing file, alt text or credit. Illustrate the analogy, not the thinker.
-- **Keep this line** (☆ on the source face) saves a favourite; kept lines collect at the top of the Journal.
+- **Keep this line** (☆ on the source face) saves a favourite; kept lines collect in the Diary.
 - **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
   run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
 - **Concept-first**: rooms, themes, search and related ideas lead with the idea, not the thinker; the name materializes
@@ -73,7 +73,7 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
   grows (three days in a row offers a minute, then five); a gap of three days steps back down with a welcome, and
   opening the app most days but practising on few of them makes the step small again. Exercises:
   `content/practice_steps.js`.
-- **Journal**: each answer is pinned to its node, with its reaction.
+- **Diary of discovery** (the Diary tab): roads to explore chosen from your own notes and answers, the threads you have found between ideas you met, and every answer, note and kept line, newest first. **Your notes**, near the end of every idea, adds a note to it.
 - **Gallery**: every idea on the map, open to explore at any time, in three arrangements, with search across all of
   it (themes, questions, thinkers, both faces and court opinions). *Rooms*: wings by region, tradition or theme
   (`content/rooms.js`), with a swipeable room index and *Wander*. *Timeline*: date order by era. *Themes*: the index

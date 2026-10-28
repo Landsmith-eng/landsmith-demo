@@ -100,7 +100,7 @@ function progress(done, total) {
     Array.from({ length: total }, (_, i) => h('span', { class: i < done ? 'on' : '' })));
 }
 
-// "Keep this line": toggles a favourite; kept lines collect at the top of the Journal.
+// "Keep this line": toggles a favourite; kept lines collect in the Diary.
 function favoriteButton(node) {
   const btn = h('button', { type: 'button', class: 'chip keep', 'aria-pressed': String(Boolean(node.favorite)) });
   const paint = () => { btn.textContent = node.favorite ? '★ Kept' : '☆ Keep'; btn.setAttribute('aria-pressed', String(Boolean(node.favorite))); };
@@ -231,6 +231,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       node.source_face && reactionRow(node, trail),
     ]));
   }
+  P.push(notePanel(node));
   for (const [label, test] of GROUPS) {
     const rows = node.neighbours.filter(test);
     if (rows.length) P.push(panel('related', label, [h('div', { class: 'eyebrow' }, label), ...rows.map((r) => bubble(r, go(r.id)))]));
@@ -247,6 +248,29 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today')),
   ]));
   return P;
+}
+
+// A discovery note on this idea, kept in the diary. One per idea; it can be changed any time.
+function notePanel(node) {
+  const ta = h('textarea', { id: `note-${node.id}`, maxlength: '5000', rows: '4',
+    placeholder: 'What did you notice? A connection, a doubt, a question to come back to.' });
+  ta.value = node.note ?? '';
+  const status = h('span', { class: 'muted small', role: 'status' }, node.note ? 'In your diary' : '');
+  const save = h('button', { type: 'button', class: 'btn' }, node.note ? 'Update note' : 'Save to diary');
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      const r = await api('/api/note', { method: 'POST', body: { node_id: node.id, body: ta.value, date: today() } });
+      node.note = r.note;
+      status.textContent = r.note ? 'Saved to your diary' : 'Note removed';
+      save.textContent = r.note ? 'Update note' : 'Save to diary';
+    } catch { status.textContent = 'Could not save. Try again.'; } finally { save.disabled = false; }
+  });
+  return panel('note', 'Your notes', [
+    h('div', { class: 'eyebrow' }, 'Your notes'),
+    h('label', { class: 'prompt unspoken', for: ta.id }, 'A note for your diary of discovery'),
+    ta, h('div', { class: 'row' }, status, save),
+  ]);
 }
 
 // Where to go next: one suggestion from the user's own curiosity, and, when their pattern looks one-sided, a gentle
@@ -335,7 +359,7 @@ function showPractice({ practice = null, size = null } = {}) {
           [plan.anchor.thinker, plan.anchor.title].filter(Boolean).join(' · ')),
       ]),
       panel('question', 'The practice', [
-        h('div', { class: 'eyebrow' }, plan.arrive[sz]), exercise, h('div', { class: 'timer' }, ring, begin),
+        h('div', { class: 'eyebrow spoken' }, plan.arrive[sz]), exercise, h('div', { class: 'timer' }, ring, begin),
       ]),
       panel('yours', 'Before you go', [
         h('div', { class: 'eyebrow' }, 'Before you go'), h('label', { class: 'prompt' }, steps?.intention ?? 'One thing to carry with you'),
@@ -356,7 +380,7 @@ const rail = document.getElementById('rail');
 const dockLinks = document.getElementById('docklinks');
 let stageObserver = null;
 // How strongly the motif shows behind each kind of part: full on arrival, faint behind anything you read.
-const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .18, opinion: .18, yours: .3, related: .45, end: .9, question: .3 };
+const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .18, opinion: .18, yours: .3, note: .3, related: .45, end: .9, question: .3 };
 
 // The background picture: blurred and dim while a part is centred for reading, coming into focus as you scroll
 // between parts. Before writing (a closed card) it never comes fully into focus, so it cannot give the idea away.
@@ -419,16 +443,17 @@ async function voicePlan() {
   if (await ttsEnabled()) return { el: null }; // the server's default ElevenLabs voice
   return { phone: null }; // the phone's default voice
 }
-// What a listener should hear from one part: its words, without buttons, links, inputs, hints or decoration.
+// What a listener should hear from one part: the substance only (titles, plain words, the source, questions, their
+// own writing). Labels and outline lines ("Today · 1 of 14", "In plain words", "Scroll to begin"), small print,
+// buttons, links and citations are skipped. The thinker's name is said; the year is not.
 function spokenText(p) {
   const c = p.cloneNode(true);
-  // Related ideas are buttons: say each idea's title (and its note), not the button chrome.
-  c.querySelectorAll('button.bubble').forEach((bt) => bt.replaceWith(h('p', {},
-    bt.querySelector('.b-title')?.textContent ?? '', bt.querySelector('.b-note') ? `: ${bt.querySelector('.b-note').textContent}` : '')));
-  c.querySelectorAll('a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer').forEach((e) => e.remove());
+  c.querySelectorAll('button.bubble').forEach((bt) => bt.replaceWith(h('p', {}, bt.querySelector('.b-title')?.textContent ?? '')));
+  c.querySelectorAll('.name-reveal').forEach((n) => n.replaceWith(h('p', {}, n.textContent.split('·')[0].trim())));
+  c.querySelectorAll('.eyebrow:not(.spoken), .who, .muted, .unspoken, .progress, a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer').forEach((e) => e.remove());
   c.querySelectorAll('div, h1, h2, h3, p, li, blockquote, label').forEach((e) => { e.prepend(' '); e.append('. '); });
   return c.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').replace(/([.…]\s*){2,}/g, '. ').replace(/([!?:;,])\s*\.\s/g, '$1 ')
-    .replace(/^\s*\.\s*/, '').trim();
+    .replace(/\s+([.,!?;:])/g, '$1').replace(/^\s*\.\s*/, '').trim();
 }
 const sentences = (text) => text.match(/[^.!?…]+[.!?…]+["”’)]*|[^.!?…]+$/g)?.map((t) => t.trim()).filter((t) => /[\p{L}\d]/u.test(t)) ?? [];
 // Pieces of at most ~2,000 characters, cut at sentence ends (the server takes up to 2,500).
@@ -770,7 +795,7 @@ function completeView(data) {
     h('p', {}, 'Everything you wrote is in your journal. The map is still open: walk it from any entry.'),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
       h('button', { type: 'button', class: 'btn', onclick: () => showReview(0) }, 'See where it led'),
-      h('button', { type: 'button', class: 'btn ghost', onclick: showJournal }, 'Open your journal')));
+      h('button', { type: 'button', class: 'btn ghost', onclick: showJournal }, 'Open your diary')));
 }
 
 // The review: what you wrote, where you walked, what it landed on. days = 7 for the week, 0 for everything.
@@ -996,26 +1021,40 @@ function showToday() {
   });
 }
 
+// The diary of discovery: new roads chosen from the user's own writing, the threads they have found between ideas they
+// met, and everything they wrote or kept, newest first.
+const ENTRY_LABEL = { answer: 'Your answer', note: 'Your note', kept: 'A line you kept' };
 function showJournal() {
   setNav('journal');
   return guarded(async () => {
-    const { journal, favorites } = await api('/api/journal');
-    const kept = favorites.length
-      ? h('div', { style: 'margin-bottom:24px' }, h('h2', { style: 'margin-top:0' }, 'Kept lines'),
-          h('ul', { class: 'path' }, favorites.map((f) => h('li', {},
-            h('blockquote', { class: 'kept' }, (f.source_face ?? '').split(/\s*…\s*|\n\n/)[0]),
-            h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => walkTo(f.id, []) }, [f.thinker, f.title].filter(Boolean).join(' · '))))))
-      : null;
-    render(
-      h('h1', {}, 'Your journal'),
-      kept,
-      journal.length
-        ? h('ul', { class: 'path' }, journal.map((p) => h('li', {},
-            h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => walkTo(p.id, []) },
-              h('span', { class: 't' }, p.title)),
-            h('div', { class: 'muted small' }, [p.thinker, p.local_date, p.reaction && REACTION_LABEL[p.reaction]].filter(Boolean).join(' · ')),
-            h('p', {}, p.body))))
-        : h('p', { class: 'muted' }, 'Nothing yet. Each day\'s answer is kept here, pinned to its idea.'));
+    const d = await api(`/api/diary?date=${today()}`);
+    const open = (id) => () => walkTo(id, []);
+    const c = d.counts;
+    const summary = c.met
+      ? `${c.met} ${c.met === 1 ? 'idea' : 'ideas'} met · ${c.answers} ${c.answers === 1 ? 'answer' : 'answers'} · ${c.notes} ${c.notes === 1 ? 'note' : 'notes'} · ${c.kept} kept`
+      : 'Your discoveries gather here: each day\'s answer, the notes you leave on any idea, the lines you keep.';
+    const roads = d.roads.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'Roads to explore'),
+      h('p', { class: 'muted small' }, 'Chosen from what you wrote and the ideas you have met.'),
+      d.roads.map((r) => h('div', { class: 'compass-item' }, h('p', { class: 'muted small' }, r.why), bubble(r, open(r.id), null))));
+    const link = (side) => h('button', { type: 'button', class: 'link thread-link', onclick: open(side.id) }, side.title);
+    const threads = d.threads.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'Threads you have found'),
+      h('ul', { class: 'path' }, d.threads.map((t) => h('li', {},
+        h('p', { class: 'thread' }, link(t.first), ` ${t.verb} `, link(t.second), t.after ? ` ${t.after}` : '', '.'),
+        t.note && h('p', { class: 'muted small' }, t.note)))));
+    let lastDate = null;
+    const entries = d.entries.length
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Entries'), h('ul', { class: 'path' }, d.entries.map((e) => {
+        const day = e.date !== lastDate && h('div', { class: 'eyebrow diary-date' }, e.date); lastDate = e.date;
+        return h('li', {}, day,
+          h('div', { class: 'muted small' }, ENTRY_LABEL[e.kind]),
+          h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: open(e.id) }, h('span', { class: 't' }, e.title)),
+          e.prompt && h('p', { class: 'muted small' }, e.prompt),
+          e.kind === 'kept' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body));
+      })))
+      : h('p', { class: 'muted' }, 'Nothing yet. Write today\'s answer, or leave a note on any idea you walk to: "Your notes" is near the end of every idea.');
+    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), roads, threads, entries);
   });
 }
 
