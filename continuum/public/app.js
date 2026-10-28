@@ -95,10 +95,6 @@ const TYPE_LABEL = {
   puzzle: 'Puzzle', text: 'Text', practice: 'Practice', work: 'Artwork', case: 'Court case', event: 'In the news',
 };
 
-function progress(done, total) {
-  return h('div', { class: 'progress', role: 'img', 'aria-label': `${done} of ${total} nodes` },
-    Array.from({ length: total }, (_, i) => h('span', { class: i < done ? 'on' : '' })));
-}
 
 // "Keep this line": toggles a favourite; kept lines collect in the Diary.
 function favoriteButton(node) {
@@ -763,36 +759,40 @@ function writeView(data) {
   setNav('today');
   renderStage(node, [
     panel('arrival', 'Today\'s idea', [
-      h('div', { class: 'eyebrow' }, `Today · ${data.done} of ${data.total} so far`),
-      progress(data.done, data.total),
+      h('div', { class: 'eyebrow' }, journeyLine(data.journey)),
       h('div', { class: 'who' }, typeLine(node)),
       h('h1', {}, node.title),
       nameReveal(node),
+      node.why && h('p', { class: 'muted small why' }, node.why),
       hint('Scroll to the question'),
     ]),
     panel('question', 'The question', [form]),
   ], { background: node.backdrop ?? null, backgroundMax: .45 });
 }
 
+// The top of Today's card: the user's own walk, not a fixed count. "Day 6 of your walk · 23 ideas met · 3 days in a row"
+function journeyLine(j) {
+  if (!j) return 'Today';
+  return [`Day ${j.day} of your walk`, j.met && `${j.met} ${j.met === 1 ? 'idea' : 'ideas'} met`,
+    j.streak >= 2 && `${j.streak} days in a row`].filter(Boolean).join(' · ');
+}
+
 function doneView(data, { reveal = false } = {}) {
-  const finished = data.done >= data.total;
-  const msg = finished
-    ? `That was the last of the ${data.total}. Your journal has the whole journey.`
+  const msg = data.done === data.total && data.node.daily
+    ? `That was the last of the first ${data.total}. From tomorrow, each day's idea is chosen from your own discoveries.`
     : 'That\'s today\'s card. Walk as far as you like; a new card arrives tomorrow.';
   setNav('today');
   showConcept(data.node, [], {
-    intro: h('div', {}, h('div', { class: 'eyebrow' }, `Today · ${data.done} of ${data.total}`), progress(data.done, data.total),
-      h('p', { class: 'muted small' }, msg)),
+    intro: h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg)),
     startAt: reveal ? 1 : 0,
   });
 }
 
 function completeView(data) {
   render(
-    h('div', { class: 'eyebrow' }, `${data.total} of ${data.total}`),
-    progress(data.total, data.total),
-    h('h1', {}, 'You walked the whole line.'),
-    h('p', {}, 'Everything you wrote is in your journal. The map is still open: walk it from any entry.'),
+    h('div', { class: 'eyebrow' }, journeyLine(data.journey)),
+    h('h1', {}, 'You have written on every idea on the map.'),
+    h('p', {}, 'Everything you wrote is in your diary. New ideas are added as the map grows; until then, walk it from any entry.'),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
       h('button', { type: 'button', class: 'btn', onclick: () => showReview(0) }, 'See where it led'),
       h('button', { type: 'button', class: 'btn ghost', onclick: showJournal }, 'Open your diary')));
@@ -1037,7 +1037,7 @@ function showJournal() {
       h('h2', {}, 'Roads to explore'),
       h('p', { class: 'muted small' }, 'Chosen from what you wrote and the ideas you have met.'),
       d.roads.map((r) => h('div', { class: 'compass-item' }, h('p', { class: 'muted small' }, r.why), bubble(r, open(r.id), null))));
-    const link = (side) => h('button', { type: 'button', class: 'link thread-link', onclick: open(side.id) }, side.title);
+    const link = (side) => h('a', { href: '#', class: 'thread-link', onclick: (e) => { e.preventDefault(); open(side.id)(); } }, side.title);
     const threads = d.threads.length && h('section', { class: 'diary-block' },
       h('h2', {}, 'Threads you have found'),
       h('ul', { class: 'path' }, d.threads.map((t) => h('li', {},

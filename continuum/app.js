@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS daily_pick (
 
 export function createApp(db, { adminKey, tts = null } = {}) {
   db.exec(DAILY_PICK_TABLE);
+  // Why an adaptive card was chosen (after the first line), shown on the card.
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
   const app = express();
   app.use(express.json({ limit: '32kb' }));
 
@@ -30,8 +32,8 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     userByToken: db.prepare('SELECT id, name, created_at FROM users WHERE token = ?'),
     lineCount: db.prepare('SELECT COUNT(*) AS n FROM nodes WHERE seq IS NOT NULL'),
     node: db.prepare('SELECT * FROM nodes WHERE id = ?'),
-    pickFor: db.prepare('SELECT node_id FROM daily_pick WHERE user_id = ? AND local_date = ?'),
-    savePick: db.prepare('INSERT INTO daily_pick (user_id, local_date, node_id) VALUES (?, ?, ?)'),
+    pickFor: db.prepare('SELECT node_id, why FROM daily_pick WHERE user_id = ? AND local_date = ?'),
+    savePick: db.prepare('INSERT INTO daily_pick (user_id, local_date, node_id, why) VALUES (?, ?, ?, ?)'),
     dropPick: db.prepare('DELETE FROM daily_pick WHERE user_id = ? AND local_date = ?'),
     lastWritten: db.prepare('SELECT node_id FROM journal WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'),
     // Daily pick (concept doc): an unvisited neighbour of yesterday's node, else the next node in the starter line.
@@ -114,6 +116,20 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     edges: db.prepare('SELECT from_id, to_id, relation, note FROM edges'),
   };
 
+  const aq = {
+    // Ideas that can be a daily card after the first line: not written on yet, not a practice, with a question.
+    pool: db.prepare(`SELECT n.id, n.room, EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id) AS walked
+      FROM nodes n WHERE n.type != 'practice' AND n.prompt IS NOT NULL AND n.prompt != ''
+        AND NOT EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id) ORDER BY n.id`),
+    adaptiveCount: db.prepare('SELECT COUNT(*) AS n FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.seq IS NULL'),
+    writtenRooms: db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.room IS NOT NULL'),
+    writtenDays: db.prepare('SELECT DISTINCT local_date FROM journal WHERE user_id = ? ORDER BY local_date DESC'),
+    metCount: db.prepare(`SELECT COUNT(*) AS n FROM (
+      SELECT node_id FROM journal WHERE user_id = :uid UNION SELECT node_id FROM favorites WHERE user_id = :uid
+      UNION SELECT node_id FROM notes WHERE user_id = :uid
+      UNION SELECT node_id FROM events WHERE user_id = :uid AND kind = 'walk' AND node_id IS NOT NULL)`),
+  };
+
   // Room backgrounds: public/img/rooms/<room id>.webp (or .jpg, .png). Decorative, so no alt text; picked up at start.
   const ROOM_IMG_DIR = new URL('./public/img/rooms/', import.meta.url);
   const roomBg = new Map();
@@ -159,13 +175,38 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     if (saved && !q.entry.get(uid, saved.node_id)) return saved.node_id;
     if (saved) q.dropPick.run(uid, date);
     const last = q.lastWritten.get(uid);
-    const pick = (last && q.neighbourPick.get({ last: last.node_id, uid })) || q.linePick.get(uid);
+    const pick = (last && q.neighbourPick.get({ last: last.node_id, uid })) || q.linePick.get(uid) || adaptivePick(uid, date);
     if (!pick) return null;
-    q.savePick.run(uid, date, pick.id);
+    q.savePick.run(uid, date, pick.id, pick.why ?? null);
     return pick.id;
   }
 
-  const card = (n) => ({ id: n.id, type: n.type, field: n.field, title: n.title, thinker: n.thinker, year: n.year, prompt: n.prompt });
+  // After the first line: each day's card comes from the whole map, steered by the user's own discoveries (the same
+  // scoring as the diary's roads), preferring ideas they have not yet read. Every fifth adaptive day is a gentle
+  // challenge instead: an idea from a room they have never written in.
+  function adaptivePick(uid, date) {
+    const pool = aq.pool.all({ uid });
+    if (!pool.length) return null;
+    const d = discovery(uid, () => false);
+    const fresh = pool.filter((n) => !n.walked);
+    const adaptiveDays = aq.adaptiveCount.get(uid).n;
+    if (adaptiveDays % 5 === 4) {
+      const wroteIn = new Set(aq.writtenRooms.all(uid).map((r) => r.room));
+      const away = (fresh.length ? fresh : pool).filter((n) => n.room && !wroteIn.has(n.room));
+      if (away.length) {
+        const n = away[hash(`${uid}|${date}|away`) % away.length];
+        return { id: n.id, why: `A gentle challenge: you have not yet written in ${roomName.get(n.room) ?? 'this room'}. The same questions look different from here.` };
+      }
+    }
+    for (const list of [fresh, pool]) {
+      const best = d.rank(list.map((n) => n.id))[0];
+      if (best) return { id: best.id, why: best.why };
+    }
+    const list = fresh.length ? fresh : pool;
+    return { id: list[hash(`${uid}|${date}`) % list.length].id, why: null };
+  }
+
+  const card = (n) => ({ id: n.id, type: n.type, field: n.field, title: n.title, thinker: n.thinker, year: n.year, prompt: n.prompt, daily: n.seq != null });
 
   // Before writing, the user sees only the card and the question. Everything else is behind "write first".
   function fullNode(n, uid, date = localDate()) {
@@ -205,6 +246,16 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     next();
   }
 
+  // The user's walk so far: which day of it this is (days they wrote, counting today), ideas met, and the current run
+  // of consecutive writing days (ending today, or yesterday if today is not written yet).
+  function journey(uid, date, writtenToday) {
+    const days = aq.writtenDays.all(uid).map((r) => r.local_date);
+    let streak = 0;
+    for (let d = writtenToday ? date : shiftDay(date, -1); days.includes(d); d = shiftDay(d, -1)) streak++;
+    return { day: days.length + (writtenToday ? 0 : 1), met: aq.metCount.get({ uid }).n, streak };
+  }
+  const shiftDay = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
   app.get('/api/today', auth, (req, res) => {
     const date = localDate(req.query.date);
     const uid = req.user.id;
@@ -221,10 +272,10 @@ export function createApp(db, { adminKey, tts = null } = {}) {
       const n = pick ? q.node.get(pick) : null;
       // The closed card carries only the picture's address, shown faded behind the title as atmosphere.
       // The picture itself, with alt text and credit, belongs to the reveal after writing.
-      node = n ? { ...card(n), backdrop: n.image ? JSON.parse(n.image).src : null } : null;
+      node = n ? { ...card(n), backdrop: n.image ? JSON.parse(n.image).src : null, why: q.pickFor.get(uid, date)?.why ?? null } : null;
     }
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
-    res.json({ name: req.user.name, state, done, total, node });
+    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)) });
   });
 
   app.post('/api/respond', auth, (req, res) => {
@@ -277,8 +328,7 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     res.json({ note: text || null });
   });
 
-  // The diary of discovery: everything the user has written, the links they have found between the ideas they met,
-  // and new roads, chosen from their own notes. Daily cards not yet reached are never suggested or named.
+  // Thread sentences for the diary: which side of the link comes first, and the verb.
   const THREAD = {
     taught: ['a', 'taught', 'b'], extended: ['b', 'built on', 'a'], refuted: ['b', 'argued against', 'a'],
     converged: ['a', 'and', 'b', 'reached the same idea separately'], measured: ['b', 'put to the test', 'a'],
@@ -300,46 +350,34 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     return out;
   };
 
-  app.get('/api/diary', auth, (req, res) => {
-    const uid = req.user.id; const date = localDate(req.query.date);
-    const entries = mapEntries(uid, date);
-    const state = new Map(entries.map((e) => [e.id, e]));
+  // What the user has met and written, and a ranking of other ideas by how well they follow from it: links to what
+  // they met, the themes of what they wrote about, and the words they used in their own notes and answers. Each
+  // ranked idea comes with the reason, in their terms. hidden(id) = a daily card not reached yet (never counted).
+  function discovery(uid, hidden) {
     const answers = dq.answers.all(uid);
     const notes = dq.notes.all(uid);
     const kept = q.favorites.all(uid);
-    // What they have met, and how much it seems to matter: wrote or noted (3), kept (2), walked (1).
+    // How much each idea they met seems to matter: wrote or noted (3), kept (2), walked (1).
     const met = new Map();
-    const bump = (id, w) => { if (state.get(id)?.state !== 'upcoming') met.set(id, Math.max(met.get(id) ?? 0, w)); };
+    const bump = (id, w) => { if (!hidden(id)) met.set(id, Math.max(met.get(id) ?? 0, w)); };
     for (const r of dq.walked.all(uid)) bump(r.id, 1);
     for (const r of kept) bump(r.id, 2);
     for (const r of [...answers, ...notes]) bump(r.id, 3);
     const title = (id) => q.node.get(id)?.title;
     const edges = dq.edges.all();
-
-    // Threads: links between two ideas they have met, the ones they wrote about first.
-    const threads = edges.filter((e) => met.has(e.from_id) && met.has(e.to_id))
-      .sort((x, y) => (met.get(y.from_id) + met.get(y.to_id)) - (met.get(x.from_id) + met.get(x.to_id)))
-      .slice(0, 8).map((e) => {
-        const [first, verb, second, after] = THREAD[e.relation] ?? ['a', 'connects to', 'b'];
-        const side = (k) => { const id = k === 'a' ? e.from_id : e.to_id; return { id, title: title(id) }; };
-        return { first: side(first), verb, second: side(second), after: after ?? null, note: e.note };
-      });
-
-    // Roads: ideas not yet opened, scored by links to what they met, by the themes of what they wrote about, and by
-    // the words they used in their own notes and answers. Each comes with the reason, in their terms.
     const writings = [...notes.map((n) => ({ ...n, kind: 'note' })), ...answers.map((a) => ({ ...a, kind: 'answer' }))];
     const vocab = new Map(); // stem -> { word as they wrote it, the writing it came from (most recent first) }
     for (const w of writings) for (const [stem, word] of words(w.body)) if (!vocab.has(stem)) vocab.set(stem, { word, from: w });
     const themeWeight = new Map();
     for (const w of writings) for (const t of themesOf(w.id)) themeWeight.set(t.id, (themeWeight.get(t.id) ?? 0) + 1);
-    const ranked = entries.filter((e) => e.state === 'unseen' && !met.has(e.id)).map((e) => {
-      const n = q.node.get(e.id);
+    const rank = (ids) => ids.filter((id) => !met.has(id)).map((id) => {
+      const n = q.node.get(id);
       let score = 0; const links = [];
       for (const ed of edges) {
-        const other = ed.from_id === e.id ? ed.to_id : ed.to_id === e.id ? ed.from_id : null;
+        const other = ed.from_id === id ? ed.to_id : ed.to_id === id ? ed.from_id : null;
         if (other && met.has(other)) { score += met.get(other) >= 3 ? 2 : 1; links.push(other); }
       }
-      const shared = themesOf(e.id).filter((t) => themeWeight.has(t.id)).sort((x, y) => themeWeight.get(y.id) - themeWeight.get(x.id));
+      const shared = themesOf(id).filter((t) => themeWeight.has(t.id)).sort((x, y) => themeWeight.get(y.id) - themeWeight.get(x.id));
       score += 1.5 * Math.min(2, shared.length);
       const own = words(`${n.title} ${n.plain_face}`);
       const hits = [...vocab.keys()].filter((w) => own.has(w));
@@ -352,9 +390,30 @@ export function createApp(db, { adminKey, tts = null } = {}) {
       } else if (linked.length >= 2) why = `It connects "${title(linked[0])}" and "${title(linked[1])}", two ideas you have met.`;
       else if (linked.length) why = `It is linked to "${title(linked[0])}", which you ${met.get(linked[0]) >= 3 ? 'wrote about' : 'met'}.`;
       else if (shared.length) why = `Another answer to "${shared[0].name}", a question your writing keeps returning to.`;
-      return { id: e.id, title: e.title, thinker: e.thinker, year: e.year, field: e.field, type: e.type, score, why, byWords: hits.length > 0 };
+      return { id, title: n.title, thinker: n.thinker, year: n.year, field: n.field, type: n.type, score, why, byWords: hits.length > 0 };
     }).filter((r) => r.score > 0 && r.why).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
-    // Lead with the best road found through their own words, then the strongest of the rest.
+    return { answers, notes, kept, met, edges, title, rank };
+  }
+
+  // The diary of discovery: everything the user has written, the links they have found between the ideas they met,
+  // and new roads, chosen from their own notes. Daily cards not yet reached are never suggested or named.
+  app.get('/api/diary', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.query.date);
+    const entries = mapEntries(uid, date);
+    const state = new Map(entries.map((e) => [e.id, e.state]));
+    const { answers, notes, kept, met, edges, title, rank } = discovery(uid, (id) => state.get(id) === 'upcoming');
+
+    // Threads: links between two ideas they have met, the ones they wrote about first.
+    const threads = edges.filter((e) => met.has(e.from_id) && met.has(e.to_id))
+      .sort((x, y) => (met.get(y.from_id) + met.get(y.to_id)) - (met.get(x.from_id) + met.get(x.to_id)))
+      .slice(0, 8).map((e) => {
+        const [first, verb, second, after] = THREAD[e.relation] ?? ['a', 'connects to', 'b'];
+        const side = (k) => { const id = k === 'a' ? e.from_id : e.to_id; return { id, title: title(id) }; };
+        return { first: side(first), verb, second: side(second), after: after ?? null, note: e.note };
+      });
+
+    // Roads: ideas not yet opened. Lead with the best one found through their own words, then the strongest others.
+    const ranked = rank(entries.filter((e) => e.state === 'unseen').map((e) => e.id));
     const lead = ranked.find((r) => r.byWords);
     const roads = [lead, ...ranked.filter((r) => r !== lead)].filter(Boolean).slice(0, 3).map(({ byWords, ...r }) => r);
 

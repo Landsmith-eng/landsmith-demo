@@ -163,7 +163,7 @@ test('daily pick prefers neighbours the user has not already read on a walk', as
   assert.equal(r.json.node.id, 'buddha_craving_root_of_suffering');
 });
 
-test('missed days skip nothing; all 14 nodes come up exactly once, then complete', async () => {
+test('missed days skip nothing; all 14 nodes come up exactly once, then the walk goes on, chosen from the map', async () => {
   const seen = new Set(['democritus_atoms_and_void', 'epicurus_absence_of_pain']);
   for (let d = 3; d <= 14; d++) {
     const date = `2026-11-${String(d * 2).padStart(2, '0')}`; // every other day
@@ -174,8 +174,15 @@ test('missed days skip nothing; all 14 nodes come up exactly once, then complete
     assert.equal((await write(r.json.node.id, date, `day ${d}`)).status, 200);
   }
   assert.equal(seen.size, 14);
+  // Day 15: not the end. A card from beyond the first line, never one already written, with the day counted.
   const r = await call('/api/today?date=2026-12-01');
-  assert.equal(r.json.state, 'complete');
+  assert.equal(r.json.state, 'write');
+  assert.ok(!seen.has(r.json.node.id));
+  assert.ok(r.json.node.prompt);
+  assert.equal(r.json.journey.day, 15);
+  assert.ok(r.json.journey.met >= 14);
+  // The same card all day.
+  assert.equal((await call('/api/today?date=2026-12-01')).json.node.id, r.json.node.id);
   assert.equal((await call('/api/journal')).json.journal.length, 14);
 });
 

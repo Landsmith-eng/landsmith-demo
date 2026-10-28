@@ -435,7 +435,7 @@ html.gazing { overflow: hidden; }
 .diary-block { margin-top: 8px; }
 .diary-block .compass-item { margin-top: 12px; }
 .thread { margin: 0 0 4px; line-height: 1.5; }
-.thread-link { padding: 0; color: var(--ink); font-family: var(--display); text-decoration: underline; text-decoration-color: var(--line);
-  text-underline-offset: 3px; text-align: left; }
+.thread-link { color: var(--ink); font-family: var(--display); text-decoration: underline; text-decoration-color: var(--muted);
+  text-underline-offset: 3px; }
 .diary-date { margin: 6px 0 8px; }
 .p-note textarea { min-height: 22svh; }

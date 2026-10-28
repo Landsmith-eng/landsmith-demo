@@ -61,3 +61,39 @@ test('diary: notes on any idea, threads between ideas met, and roads chosen from
     assert.equal((await call('/api/note', { node_id: 'nope', body: 'x' })).status, 404);
   } finally { server.close(); }
 });
+
+test('after the first 14: adaptive daily cards with a reason, a gentle challenge every fifth day, and the walk counted', async () => {
+  const { db, server, call } = await boot();
+  try {
+    const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
+    let n = 0;
+    for (; n < 14; n++) {
+      const t = (await call(`/api/today?date=${day(n)}`)).json;
+      assert.equal(t.journey.day, n + 1);
+      assert.equal(t.journey.streak, n);
+      await call('/api/respond', { node_id: t.node.id, body: 'Fear of losing what I love.', date: day(n) });
+    }
+    const line = new Set(db.prepare('SELECT id FROM nodes WHERE seq IS NOT NULL').all().map((r) => r.id));
+    const picks = [];
+    for (let k = 0; k < 5; k++, n++) {
+      const t = (await call(`/api/today?date=${day(n)}`)).json;
+      assert.equal(t.state, 'write');
+      assert.ok(!line.has(t.node.id) && !picks.includes(t.node.id));
+      assert.ok(t.node.why, `day ${n + 1} has a reason`);
+      assert.equal(t.journey.day, n + 1);
+      assert.equal(t.journey.streak, n);
+      picks.push(t.node.id);
+      if (k === 4) {
+        assert.match(t.node.why, /gentle challenge/);
+        const room = db.prepare('SELECT room FROM nodes WHERE id = ?').get(t.node.id).room;
+        const wroteIn = db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id').all().map((r) => r.room);
+        assert.ok(!wroteIn.includes(room));
+      } else assert.doesNotMatch(t.node.why, /gentle challenge/);
+      assert.equal((await call('/api/respond', { node_id: t.node.id, body: 'Some thoughts on fear.', date: day(n) })).status, 200);
+    }
+    // A missed day breaks the run but not the count.
+    const t = (await call(`/api/today?date=${day(n + 1)}`)).json;
+    assert.equal(t.journey.day, 20);
+    assert.equal(t.journey.streak, 0);
+  } finally { server.close(); }
+});
