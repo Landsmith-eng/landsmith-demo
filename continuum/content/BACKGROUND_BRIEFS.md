@@ -76,3 +76,19 @@ spares are kept for new rooms or to rotate with a room's own plate.
 | Spare: change | A river delta seen from a hill at dusk, braided channels catching the last light, a few fish jumping. Inspired by Thomas Moran's watercolours (1870s). |
 | Spare: patience | A spider web heavy with dew between two grass stems at sunrise, a valley soft behind it. Inspired by Albrecht Dürer's "Great Piece of Turf" (1503). |
 | Spare: return | A small boat pulled up on a quiet shore at evening, a lantern on its bench, stars appearing. Inspired by Caspar David Friedrich's coastal scenes (c. 1820). |
+
+## Daily life, observed (blurred figures)
+
+The look of the market plate: ordinary places, people softly blurred in motion with no visible faces, one still
+animal or object in sharp focus. Spares for any tab or room, or to rotate with Culture and Now.
+
+| Name | Background prompt (after the style block) |
+|---|---|
+| Station | A railway platform in morning steam, travellers blurred as they hurry past, a pigeon standing still on a bench. After Monet's "Gare Saint-Lazare" (1877). |
+| Bridge in rain | A city bridge in rain at dusk, figures with umbrellas blurred in motion, a dog sitting patiently by a lamp post. After Caillebotte's "Paris Street; Rainy Day" (1877). |
+| Fish market | A harbour fish market at dawn, sellers and buyers blurred, silver fish on wet stone in the foreground, gulls overhead. After Hiroshige's harbour prints (1850s). |
+| Café terrace | A café terrace at night under a striped awning, diners blurred, a cat asleep under one chair, stars over the rooftops. After Van Gogh's "Café Terrace at Night" (1888). |
+| Laundry yard | A courtyard of washing lines in sun and wind, figures blurred between the sheets, a cat watching from a step. After Berthe Morisot's "Hanging the Laundry out to Dry" (1875). |
+| Tram stop | A tram stop in a snowy street at evening, passengers blurred, a sparrow on the shelter rail. After Hiroshige's snow scenes and Hammershøi's grey light (c. 1900). |
+| Library steps | Wide library steps in late afternoon, readers blurred going up and down, a pigeon pecking crumbs in a patch of sun. After Canaletto's city squares (18th century). |
+| Bakery window | A bakery window at dawn, the street blurred with early walkers reflected in the glass, loaves and one warm lamp inside, a cat on the sill. After Vermeer's light. |
