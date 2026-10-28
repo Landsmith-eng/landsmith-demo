@@ -1,6 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
+import { createTts } from './tts.js';
+import { existsSync, readFileSync } from 'node:fs';
+
+// Private settings (the ElevenLabs key) live in .env next to this file, never in git. KEY=value, one per line.
+const ENV_FILE = fileURLToPath(new URL('./.env', import.meta.url));
+if (existsSync(ENV_FILE)) {
+  for (const line of readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !line.trimStart().startsWith('#') && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+}
 
 const PORT = Number(process.env.PORT ?? 8878);
 const DB_PATH = process.env.CONTINUUM_DB ?? fileURLToPath(new URL('./data/continuum.db', import.meta.url));
@@ -11,7 +22,14 @@ const { nodes, pictures } = db.prepare(
 if (nodes === 0) console.warn('No content loaded. Run `npm run seed` first.');
 
 // Express 5 passes a listen error (such as the port being taken) to this callback.
-createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY }).listen(PORT, (err) => {
+const tts = createTts({
+  apiKey: process.env.ELEVENLABS_API_KEY,
+  voiceId: process.env.ELEVENLABS_VOICE_ID || undefined,
+  model: process.env.ELEVENLABS_MODEL || undefined,
+  cacheDir: fileURLToPath(new URL('./data/tts/', import.meta.url)),
+});
+
+createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY, tts }).listen(PORT, (err) => {
   if (err?.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use: another copy of Continuum is probably still running, with older code.`);
     console.error('Close it first (Ctrl+C in its window). On Windows, if you cannot find it: Get-Process node | Stop-Process');
@@ -19,5 +37,5 @@ createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY }).listen(PORT, (err) 
   }
   if (err) throw err;
   // The picture count comes from the database, so it shows whether `npm run seed` has picked up new images.
-  console.log(`Continuum on http://localhost:${PORT} · ${nodes} nodes · daily pictures: ${pictures} of 14`);
+  console.log(`Continuum on http://localhost:${PORT} · ${nodes} nodes · daily pictures: ${pictures} of 14 · reading voice: ${tts ? 'ElevenLabs' : 'phone'}`);
 });

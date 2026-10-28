@@ -411,6 +411,8 @@ html.can-speak.staged .listen, html.can-speak.staged .voice { display: inline-fl
   border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--ink); margin-top: 8px; }
 .voices-sheet .voice-row[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .voices-sheet .voice-row small { color: var(--muted); }
+.toast { position: fixed; z-index: 12; left: 16px; right: 16px; top: calc(56px + env(safe-area-inset-top)); max-width: 600px; margin: 0 auto;
+  padding: 10px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: .9rem; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
 html.gazing .corner { display: none; }
 html:has(#wallpaper.on:not(.nolook)) .look { display: inline-flex; }
 .gaze { position: fixed; inset: 0; z-index: 10; overflow: hidden; background: #0d100e; touch-action: none; cursor: grab;

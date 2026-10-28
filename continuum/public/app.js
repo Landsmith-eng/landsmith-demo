@@ -395,93 +395,173 @@ addEventListener('scroll', queueWall, { passive: true });
 addEventListener('resize', queueWall);
 new ResizeObserver(queueWall).observe(view);
 
-// Listen: the device's own voice reads the stage aloud, part by part, from the part in view to the end, scrolling
-// gently to each part as it goes (so the picture comes into focus between parts). Tap again to stop.
+// Listen: the stage read aloud, part by part, from the part in view to the end, scrolling gently to each part as it
+// goes (so the picture comes into focus between parts). Tap again to stop. The voice is ElevenLabs when the server has
+// a key (natural, saved once per part), otherwise the phone's own text-to-speech.
 const listenBtn = document.getElementById('listen');
+const voiceBtn = document.getElementById('voice');
 const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
 if (speech) document.documentElement.classList.add('can-speak');
-let reading = null; // { stop: boolean }
-// The voice: the phone's default (whatever engine the user set up in their system settings) unless they chose
-// one of the browser's voices here.
-const VOICE_KEY = 'continuum.voice';
-const pickVoice = () => {
-  const name = store.get(VOICE_KEY);
-  return (name && speech.getVoices().find((v) => v.name === name)) || null;
+let reading = null; // { stop, wake } for the run in progress
+let ttsOn = null;   // null = not asked yet
+const ttsEnabled = async () => {
+  if (ttsOn === null) ttsOn = await api('/api/tts').then((r) => r.enabled).catch(() => null); // not signed in yet: ask again later
+  if (ttsOn) document.documentElement.classList.add('can-speak');
+  return Boolean(ttsOn);
 };
-const voiceBtn = document.getElementById('voice');
-voiceBtn.addEventListener('click', () => chooseVoice());
-function chooseVoice() {
-  stopReading();
-  const sample = 'Some things are up to us, and some are not.';
-  const current = store.get(VOICE_KEY);
-  const all = speech.getVoices();
-  const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
-  const voices = [...all.filter((v) => v.lang.toLowerCase().startsWith(lang)), ...all.filter((v) => !v.lang.toLowerCase().startsWith(lang))];
-  const row = (label, note, name) => h('button', {
-    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String((current ?? '') === (name ?? '')),
-    onclick: (e) => {
-      if (name) store.set(VOICE_KEY, name); else store.del(VOICE_KEY);
-      sheet.querySelectorAll('.voice-row').forEach((r) => r.setAttribute('aria-checked', String(r === e.currentTarget)));
-      speech.cancel(); say(sample, name ? all.find((v) => v.name === name) : null);
-    },
-  }, h('span', {}, label), h('small', {}, note));
-  const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
-    h('h2', {}, 'Reading voice'),
-    h('p', { class: 'muted small' }, 'Tap a voice to hear it. "Phone default" uses the voice set in your phone\'s text-to-speech settings.'),
-    row('Phone default', 'recommended', null),
-    voices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, v.name)),
-    h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
-  const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
-  const close = () => { speech.cancel(); box.remove(); voiceBtn.focus(); };
-  document.body.append(box);
-  sheet.querySelector('.voice-row[aria-checked="true"]')?.focus();
+// The choice, kept on this device: 'el:<voice id>' (an ElevenLabs voice), a phone voice's name, or nothing (default).
+const VOICE_KEY = 'continuum.voice';
+async function voicePlan() {
+  const choice = store.get(VOICE_KEY);
+  if (choice?.startsWith('el:') && await ttsEnabled()) return { el: choice.slice(3) };
+  const phone = choice && !choice.startsWith('el:') && speech?.getVoices().find((v) => v.name === choice);
+  if (phone) return { phone };
+  if (await ttsEnabled()) return { el: null }; // the server's default ElevenLabs voice
+  return { phone: null }; // the phone's default voice
 }
-// What a listener should hear from one part: its words, without buttons, inputs, hints or decoration.
+// What a listener should hear from one part: its words, without buttons, links, inputs, hints or decoration.
 function spokenText(p) {
   const c = p.cloneNode(true);
+  // Related ideas are buttons: say each idea's title (and its note), not the button chrome.
+  c.querySelectorAll('button.bubble').forEach((bt) => bt.replaceWith(h('p', {},
+    bt.querySelector('.b-title')?.textContent ?? '', bt.querySelector('.b-note') ? `: ${bt.querySelector('.b-note').textContent}` : '')));
   c.querySelectorAll('a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer').forEach((e) => e.remove());
   c.querySelectorAll('div, h1, h2, h3, p, li, blockquote, label').forEach((e) => { e.prepend(' '); e.append('. '); });
   return c.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').replace(/([.…]\s*){2,}/g, '. ').replace(/([!?:;,])\s*\.\s/g, '$1 ')
     .replace(/^\s*\.\s*/, '').trim();
 }
-// Short pieces: some browsers cut off a single long utterance.
 const sentences = (text) => text.match(/[^.!?…]+[.!?…]+["”’)]*|[^.!?…]+$/g)?.map((t) => t.trim()).filter((t) => /[\p{L}\d]/u.test(t)) ?? [];
-function say(text, voice) {
+// Pieces of at most ~2,000 characters, cut at sentence ends (the server takes up to 2,500).
+function chunks(text) {
+  const out = []; let cur = '';
+  for (const s of sentences(text)) { if (cur && (cur + ' ' + s).length > 2000) { out.push(cur); cur = s; } else cur = cur ? `${cur} ${s}` : s; }
+  return cur ? [...out, cur] : out;
+}
+
+// The phone's voice, one sentence at a time (some browsers cut off a long utterance).
+function sayPhone(text, voice, run) {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.rate = .95; u.pitch = 1;
+    u.rate = .95;
     u.onend = u.onerror = () => resolve();
+    if (run) run.wake = resolve;
     speech.speak(u);
   });
 }
+// ElevenLabs: the server returns MP3 for a piece of text; one audio element plays the pieces in turn.
+const audioEl = new Audio();
+async function fetchClip(text, voiceId) {
+  const res = await fetch('/api/tts', {
+    method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
+  });
+  if (!res.ok) throw new Error(`tts_${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
+function playClip(url, run) {
+  return new Promise((resolve) => {
+    const done = () => { URL.revokeObjectURL(url); resolve(); };
+    audioEl.onended = audioEl.onerror = done;
+    if (run) run.wake = done;
+    audioEl.src = url;
+    audioEl.play().catch(done);
+  });
+}
+
 async function readStage() {
   const panels = [...document.querySelectorAll('.stage .panel')];
   if (!panels.length) return;
   const mid = innerHeight / 2;
   let start = panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; });
   if (start < 0) start = 0;
-  const run = reading = { stop: false };
+  const run = reading = { stop: false, wake: null };
   listenBtn.setAttribute('aria-pressed', 'true'); listenBtn.querySelector('span').textContent = 'Stop';
-  const voice = pickVoice();
+  let plan = await voicePlan();
+  // ElevenLabs: fetch each part's audio ahead, so the next part is ready when this one ends.
+  const ahead = new Map();
+  const clipsFor = (i) => {
+    if (!ahead.has(i)) ahead.set(i, Promise.all(chunks(spokenText(panels[i])).map((t) => fetchClip(t, plan.el))));
+    return ahead.get(i);
+  };
   for (let i = start; i < panels.length && !run.stop; i++) {
     if (i > start) {
       panels[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
       await new Promise((r) => setTimeout(r, 900));
     }
-    for (const line of sentences(spokenText(panels[i]))) { if (run.stop) break; await say(line, voice); }
+    if ('el' in plan) {
+      try {
+        const clips = await clipsFor(i);
+        if (i + 1 < panels.length) clipsFor(i + 1).catch(() => {});
+        for (const url of clips) { if (run.stop) break; await playClip(url, run); }
+      } catch {
+        if (!speech) break;
+        notice('The natural voice is not available right now (check the ElevenLabs key or credits). Using the phone\'s voice.');
+        plan = { phone: null }; i--; continue;
+      }
+    } else {
+      for (const line of sentences(spokenText(panels[i]))) { if (run.stop) break; await sayPhone(line, plan.phone, run); }
+    }
     if (!run.stop) await new Promise((r) => setTimeout(r, 500));
   }
   if (reading === run) stopReading();
 }
 function stopReading() {
   if (!reading) return;
-  reading.stop = true; reading = null; speech?.cancel();
+  const run = reading; run.stop = true; reading = null;
+  speech?.cancel(); audioEl.pause(); run.wake?.();
   listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
 }
+// A short message at the top of the screen that fades away.
+function notice(text) {
+  const n = h('div', { class: 'toast', role: 'status' }, text);
+  document.body.append(n); setTimeout(() => n.remove(), 6000);
+}
 listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
-speech?.getVoices(); // starts loading the voice list
-addEventListener('pagehide', () => speech?.cancel());
+voiceBtn.addEventListener('click', () => chooseVoice());
+speech?.getVoices(); // starts loading the phone's voice list
+addEventListener('pagehide', () => { speech?.cancel(); audioEl.pause(); });
+
+async function chooseVoice() {
+  stopReading();
+  const sample = 'Some things are up to us, and some are not.';
+  const current = store.get(VOICE_KEY) ?? '';
+  const el = await ttsEnabled() ? await api('/api/tts/voices').catch(() => null) : null;
+  const all = speech?.getVoices() ?? [];
+  const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  const phoneVoices = [...all.filter((v) => v.lang.toLowerCase().startsWith(lang)), ...all.filter((v) => !v.lang.toLowerCase().startsWith(lang))];
+  let previewing = null;
+  const preview = async (key) => {
+    speech?.cancel(); audioEl.pause(); previewing?.wake?.();
+    const run = previewing = { wake: null };
+    if (key.startsWith('el:') || (!key && el)) {
+      try { await playClip(await fetchClip(sample, key.slice(3) || null), run); } catch { notice('That voice could not be played. Check the ElevenLabs key or credits.'); }
+    } else if (speech) sayPhone(sample, all.find((v) => v.name === key) ?? null, run);
+  };
+  const row = (label, note, key) => h('button', {
+    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String(current === key),
+    onclick: (e) => {
+      if (key) store.set(VOICE_KEY, key); else store.del(VOICE_KEY);
+      sheet.querySelectorAll('.voice-row').forEach((r) => r.setAttribute('aria-checked', String(r === e.currentTarget)));
+      preview(key);
+    },
+  }, h('span', {}, label), h('small', {}, note));
+  const defaultName = el?.voices.find((v) => v.id === el.default)?.name;
+  const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
+    h('h2', {}, 'Reading voice'),
+    h('p', { class: 'muted small' }, 'Tap a voice to hear it.'),
+    row('Default', el ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
+    el && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Natural voices · ElevenLabs'),
+    el?.voices.map((v) => row(v.name, v.note, `el:${v.id}`)),
+    phoneVoices.length && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Phone voices'),
+    phoneVoices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, v.name)),
+    h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
+  const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
+  const close = () => { speech?.cancel(); audioEl.pause(); previewing?.wake?.(); box.remove(); voiceBtn.focus(); };
+  document.body.append(box);
+  sheet.querySelector('.voice-row[aria-checked="true"]')?.focus();
+}
+ttsEnabled();
 
 // Look: step inside the background picture for a pause. Drag to wander, pinch or scroll to look closer, tap to
 // return. Left alone, the view drifts slowly across the picture, the way an eye rests on a painting.

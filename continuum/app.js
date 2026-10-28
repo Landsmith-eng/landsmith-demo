@@ -7,6 +7,7 @@ import { rooms } from './content/rooms.js';
 import { themes } from './content/themes.js';
 import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
+import { MAX_TEXT as TTS_MAX } from './tts.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -20,7 +21,7 @@ CREATE TABLE IF NOT EXISTS daily_pick (
   PRIMARY KEY (user_id, local_date)
 )`;
 
-export function createApp(db, { adminKey } = {}) {
+export function createApp(db, { adminKey, tts = null } = {}) {
   db.exec(DAILY_PICK_TABLE);
   const app = express();
   app.use(express.json({ limit: '32kb' }));
@@ -635,6 +636,25 @@ export function createApp(db, { adminKey } = {}) {
         };
       }),
     });
+  });
+
+  // ── Reading aloud with ElevenLabs (when ELEVENLABS_API_KEY is set). The key never leaves the server. ──
+  app.get('/api/tts', auth, (req, res) => res.json({ enabled: Boolean(tts), voice_id: tts?.voiceId ?? null }));
+  app.get('/api/tts/voices', auth, async (req, res) => {
+    if (!tts) return res.status(404).json({ error: 'tts_off' });
+    try { res.json({ voices: await tts.voices(), default: tts.voiceId }); } catch (e) { res.status(502).json({ error: e.message }); }
+  });
+  app.post('/api/tts', auth, async (req, res) => {
+    if (!tts) return res.status(404).json({ error: 'tts_off' });
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text) return res.status(400).json({ error: 'empty_text' });
+    if (text.length > TTS_MAX) return res.status(400).json({ error: 'too_long' });
+    const voice = req.body?.voice_id ?? tts.voiceId;
+    if (!tts.validVoice(voice)) return res.status(400).json({ error: 'bad_voice' });
+    try {
+      const { audio, cached } = await tts.speak(text, voice);
+      res.set({ 'content-type': 'audio/mpeg', 'cache-control': 'private, max-age=86400', 'x-tts-cache': cached ? 'hit' : 'miss' }).send(audio);
+    } catch (e) { res.status(502).json({ error: e.message }); }
   });
 
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
