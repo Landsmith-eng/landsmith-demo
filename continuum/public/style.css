@@ -384,4 +384,12 @@ html.staged:has(.dock-links:not(:empty)) { --links: 44px; }
   opacity: calc(.16 + var(--focus, 0) * .64); filter: blur(calc((1 - var(--focus, 0)) * 16px)) saturate(calc(.7 + var(--focus, 0) * .3));
   transform: scale(calc(1.06 - var(--focus, 0) * .06)); transition: opacity .25s linear, filter .25s linear, transform .25s linear; }
 #wallpaper::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) calc(70% - var(--focus, 0) * 55%), transparent); }
+/* Plain pages: a sharp copy of the picture shows through below the content (--clear-from = where the content ends). */
+#wallpaper img.clear { display: none; }
+#wallpaper.plain img.clear { display: block; position: absolute; inset: 0; opacity: .85; filter: none; transform: none; transition: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px));
+  mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px)); }
+#wallpaper.plain::after { background: linear-gradient(to bottom,
+  color-mix(in srgb, var(--bg) 51%, transparent) calc(var(--clear-from, 100vh) + 16px),
+  color-mix(in srgb, var(--bg) 12%, transparent) calc(var(--clear-from, 100vh) + 220px)); }
 @media (prefers-reduced-motion: reduce) { #wallpaper img { transition: none; } }

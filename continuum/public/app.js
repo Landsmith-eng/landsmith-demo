@@ -61,7 +61,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .35); }
+  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .35, { plain: true }); }
   const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
     `Test date: ${testDate()} (real date ${realToday()}). `,
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
@@ -354,17 +354,22 @@ const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .1
 // between parts. Before writing (a closed card) it never comes fully into focus, so it cannot give the idea away.
 const wallpaper = document.getElementById('wallpaper');
 let wallMax = 1;
-function setWallpaper(src, maxFocus = 1) {
+// On a plain page (a tab) the picture is dim behind the text but clear in the empty space below it.
+function setWallpaper(src, maxFocus = 1, { plain = false } = {}) {
   wallMax = maxFocus;
-  const img = wallpaper.querySelector('img');
+  wallpaper.classList.toggle('plain', plain);
   if (!src) { wallpaper.classList.remove('on'); return; }
-  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  for (const img of wallpaper.querySelectorAll('img')) if (img.getAttribute('src') !== src) img.setAttribute('src', src);
   wallpaper.classList.add('on'); focusWall();
 }
 let wallTick = 0;
 function focusWall() {
   wallTick = 0;
   if (!wallpaper.classList.contains('on')) return;
+  if (wallpaper.classList.contains('plain')) {
+    const bottom = Math.max(0, ...[...view.children].map((c) => c.getBoundingClientRect().bottom));
+    wallpaper.style.setProperty('--clear-from', `${Math.round(Math.min(bottom, innerHeight))}px`);
+  }
   const panels = [...document.querySelectorAll('.stage .panel')];
   const mid = innerHeight / 2;
   let between = 1;
@@ -376,7 +381,10 @@ function focusWall() {
   const f = Math.min(1, between) * wallMax; // 0 = a part is centred (reading), 1 = halfway between two parts
   wallpaper.style.setProperty('--focus', f.toFixed(3));
 }
-addEventListener('scroll', () => { if (!wallTick) wallTick = requestAnimationFrame(focusWall); }, { passive: true });
+const queueWall = () => { if (!wallTick) wallTick = requestAnimationFrame(focusWall); };
+addEventListener('scroll', queueWall, { passive: true });
+addEventListener('resize', queueWall);
+new ResizeObserver(queueWall).observe(view);
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   const wrap = h('div', { class: `stage field-${node.field}` }, panels);
