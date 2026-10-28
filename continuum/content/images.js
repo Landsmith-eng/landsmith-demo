@@ -57,7 +57,7 @@ export const images = {
   buddha_craving_root_of_suffering: {
     file: 'buddha_craving_root_of_suffering.webp',
     kind: 'illustration',
-    alt: 'A still, misty pond with lotus leaves and a single bud at the edges.',
+    alt: 'A misty pond after rain, rings of ripples spreading, lotus leaves and a single golden bud at the edges.',
     credit: 'Generated with Perplexity for Continuum',
   },
   marcus_pain_is_your_estimate: {
