@@ -401,13 +401,41 @@ const listenBtn = document.getElementById('listen');
 const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
 if (speech) document.documentElement.classList.add('can-speak');
 let reading = null; // { stop: boolean }
+// The voice: the phone's default (whatever engine the user set up in their system settings) unless they chose
+// one of the browser's voices here.
+const VOICE_KEY = 'continuum.voice';
 const pickVoice = () => {
-  const voices = speech.getVoices().filter((v) => /^en(-|_|$)/i.test(v.lang));
-  const lang = (navigator.language || 'en-US').toLowerCase();
-  return voices.find((v) => /natural|neural|premium|enhanced/i.test(v.name) && v.lang.toLowerCase() === lang)
-    ?? voices.find((v) => /google/i.test(v.name) && v.lang.toLowerCase() === lang)
-    ?? voices.find((v) => v.lang.toLowerCase() === lang) ?? voices[0] ?? null;
+  const name = store.get(VOICE_KEY);
+  return (name && speech.getVoices().find((v) => v.name === name)) || null;
 };
+const voiceBtn = document.getElementById('voice');
+voiceBtn.addEventListener('click', () => chooseVoice());
+function chooseVoice() {
+  stopReading();
+  const sample = 'Some things are up to us, and some are not.';
+  const current = store.get(VOICE_KEY);
+  const all = speech.getVoices();
+  const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  const voices = [...all.filter((v) => v.lang.toLowerCase().startsWith(lang)), ...all.filter((v) => !v.lang.toLowerCase().startsWith(lang))];
+  const row = (label, note, name) => h('button', {
+    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String((current ?? '') === (name ?? '')),
+    onclick: (e) => {
+      if (name) store.set(VOICE_KEY, name); else store.del(VOICE_KEY);
+      sheet.querySelectorAll('.voice-row').forEach((r) => r.setAttribute('aria-checked', String(r === e.currentTarget)));
+      speech.cancel(); say(sample, name ? all.find((v) => v.name === name) : null);
+    },
+  }, h('span', {}, label), h('small', {}, note));
+  const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
+    h('h2', {}, 'Reading voice'),
+    h('p', { class: 'muted small' }, 'Tap a voice to hear it. "Phone default" uses the voice set in your phone\'s text-to-speech settings.'),
+    row('Phone default', 'recommended', null),
+    voices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, v.name)),
+    h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
+  const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
+  const close = () => { speech.cancel(); box.remove(); voiceBtn.focus(); };
+  document.body.append(box);
+  sheet.querySelector('.voice-row[aria-checked="true"]')?.focus();
+}
 // What a listener should hear from one part: its words, without buttons, inputs, hints or decoration.
 function spokenText(p) {
   const c = p.cloneNode(true);
