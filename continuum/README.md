@@ -57,6 +57,22 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 - **Keep this line** (☆ on the source face) saves a favourite; kept lines collect at the top of the Journal.
 - **Deeper: Stanford Encyclopedia** link on the source face where an SEP entry exists (`content/analysis_links.js`;
   run `node scripts/check-links.js analysis` with network access to confirm every URL answers).
+- **Concept-first**: rooms, themes, search and related ideas lead with the idea, not the thinker; the name materializes
+  on stage a moment after the idea's title.
+- **Backgrounds**: one picture behind the whole stage, blurred and dim while a part is centred for reading, coming
+  into focus as you scroll between parts. A daily idea uses its own picture once written on (never fully in focus
+  before); every other idea uses its room's picture (`public/img/rooms/<room id>.webp`). Prompts:
+  `content/BACKGROUND_BRIEFS.md`.
+- **Compass**: each concept's last part suggests where to go next from the user's own curiosity (the themes they keep,
+  write on and walk to) and, when their pattern looks one-sided, a gentle challenge with the reason shown: holding
+  their ground on several readings in a row (a critic of that idea, or a very different answer to the same
+  question), or walking mostly in one room or field. Signals are only what they do in the app, never their writing.
+- **Practice**: a small daily exercise (Practice tab), chosen from the practices that the user's kept lines land on
+  (then what they wrote on and walked to; otherwise the day's practice), anchored on one of their kept lines. Each
+  session is arrive, the kept line, the exercise with a breathing timer, an intention. It starts at ten seconds and
+  grows (three days in a row offers a minute, then five); a gap of three days steps back down with a welcome, and
+  opening the app most days but practising on few of them makes the step small again. Exercises:
+  `content/practice_steps.js`.
 - **Journal**: each answer is pinned to its node, with its reaction.
 - **Gallery**: every idea on the map, open to explore at any time, in three arrangements, with search across all of
   it (themes, questions, thinkers, both faces and court opinions). *Rooms*: wings by region, tradition or theme
@@ -125,6 +141,9 @@ All `/api/*` calls need header `x-continuum-token`.
 - `POST /api/favorite { node_id, on }` → `{ favorite }` (omit `on` or `true` to keep, `false` to let go)
 - `POST /api/reaction { node_id, value: changed|somewhat|unchanged, date }` → `{ reaction }`. 409 `write_first` until you have written on that node.
 - `GET /api/timeline?date=` → `{ nodes }`: every idea in date order with `state` (written, visited, today, upcoming, unseen); upcoming daily ideas have `title: null`
+- `GET /api/compass?from=&date=` → `{ curiosity, challenge, practice_nudge }`: each suggestion `{ entry, why }` (challenge also has `kind`: held, room, field)
+- `GET /api/practice?date=[&practice=]` → today's plan: practice with its steps, reason, size, nudge, `offer_bigger`, streak, anchor, choices
+- `POST /api/practice { practice_id, size: tiny|small|full, seconds, intention, date }` → the updated plan
 - `GET /api/review?days=7&date=` (`days=0` = everything) → `{ from, to, days_active, entries, walked, practices, reactions, bookends }`
 - `POST /api/event { kind: "flip", node_id, date }` (sent when the source part first comes into view)
 - `GET /admin/api/stats` (header `x-admin-key`) → per tester: open days, response days, `came_back`

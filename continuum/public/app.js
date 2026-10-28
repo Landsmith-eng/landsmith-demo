@@ -168,11 +168,16 @@ function panel(kind, label, children, { wall = null, wallClass = '' } = {}) {
 }
 
 const whoLine = (node) => [TYPE_LABEL[node.type], who(node), node.as_of && `as of ${node.as_of}`].filter(Boolean).join(' · ');
+const typeLine = (node) => [TYPE_LABEL[node.type], node.as_of && `as of ${node.as_of}`].filter(Boolean).join(' · ');
+// The concept arrives first; who said it materializes a moment later.
+const nameReveal = (node) => (node.thinker || node.year != null) && h('div', { class: 'name-reveal' },
+  h('span', { class: 'rule', 'aria-hidden': 'true' }), [node.thinker, year(node.year)].filter(Boolean).join(' · '));
 const hint = (text) => h('div', { class: 'hint', 'aria-hidden': 'true' }, text);
 
-function bubble(r, onclick, note = r.note) {
+// Related ideas lead with the idea; the thinker's name is revealed when the idea itself takes the stage.
+function bubble(r, onclick, note = r.note, label = TYPE_LABEL[r.type] ?? null) {
   return h('button', { type: 'button', class: `bubble field-${r.field}`, title: note ?? '', onclick },
-    r.thinker && h('span', { class: 'b-who' }, r.thinker), h('span', { class: 'b-title' }, r.title),
+    label && h('span', { class: 'b-who' }, label), h('span', { class: 'b-title' }, r.title),
     note && h('span', { class: 'b-note' }, note));
 }
 
@@ -185,17 +190,10 @@ function conceptPanels(node, trail, { intro = null } = {}) {
   const themes = node.themes?.length && h('div', { class: 'theme-chips' },
     node.themes.map((t) => h('button', { type: 'button', class: 'chip', onclick: () => showGallery('themes', { theme: t.id }) }, t.name)));
   P.push(panel('arrival', 'Arrival', [
-    intro, h('div', { class: 'who' }, whoLine(node)), h('h1', {}, node.title), themes, hint('Scroll to begin'),
-  ], { wall: node.image?.src ?? null, wallClass: 'clear' }));
+    intro, h('div', { class: 'who' }, typeLine(node)), h('h1', {}, node.title), nameReveal(node), themes, hint('Scroll to begin'),
+  ]));
   P.push(panel('plain', 'In plain words', [h('div', { class: 'eyebrow' }, node.type === 'practice' ? 'The practice' : 'In plain words'),
     ...node.plain_face.split('\n\n').map((p) => h('p', { class: 'plain' }, p))]));
-  if (node.image) {
-    P.push(h('section', { class: 'panel p-picture', 'data-label': 'The picture', 'data-kind': 'picture' },
-      h('figure', { class: `stage-figure ${node.image.kind} rise` },
-        h('img', { src: node.image.src, alt: node.image.alt, decoding: 'async' }),
-        node.image.kind === 'artefact' && h('figcaption', {}, node.image.credit_url
-          ? h('a', { href: node.image.credit_url, target: '_blank', rel: 'noopener' }, node.image.credit) : node.image.credit))));
-  }
   if (node.misreading) P.push(panel('misreading', 'Often misread', [h('div', { class: 'eyebrow' }, 'Often misread'), h('p', { class: 'plain' }, node.misreading)]));
   if (node.source_face) {
     P.push(panel('source', 'The source', [
@@ -212,7 +210,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('div', { class: 'eyebrow' }, `${ROLE_LABEL[o.role] ?? o.role} · ${o.author}`),
       h('p', { class: 'plain' }, o.gist),
       h('blockquote', { class: `quote role-${o.role}` }, o.quote),
-      o.echoes && bubble({ ...o.echoes, thinker: `Echoes ${o.echoes.thinker ?? ''}`.trim() }, go(o.echoes.id), o.echo_note),
+      o.echoes && bubble(o.echoes, go(o.echoes.id), o.echo_note, 'Echoes'),
     ]));
   }
   if (node.entry) {
@@ -226,8 +224,11 @@ function conceptPanels(node, trail, { intro = null } = {}) {
     const rows = node.neighbours.filter(test);
     if (rows.length) P.push(panel('related', label, [h('div', { class: 'eyebrow' }, label), ...rows.map((r) => bubble(r, go(r.id)))]));
   }
+  const compass = h('div', { class: 'compass' });
+  loadCompass(node, compass, trail);
   P.push(panel('end', 'Keep exploring', [
     h('h2', {}, 'Keep exploring'),
+    compass,
     h('div', { class: 'end-links' },
       node.year != null && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('timeline', { focus: node.id }) }, 'See it on the timeline'),
       node.room && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room'),
@@ -237,6 +238,107 @@ function conceptPanels(node, trail, { intro = null } = {}) {
   return P;
 }
 
+// Where to go next: one suggestion from the user's own curiosity, and, when their pattern looks one-sided, a gentle
+// challenge with the reason shown. Plus a nudge toward today's practice if they haven't done it.
+async function loadCompass(node, box, trail) {
+  const c = await api(`/api/compass?from=${encodeURIComponent(node.id)}&date=${today()}`).catch(() => null);
+  if (!c) return;
+  const item = (label, s) => h('div', { class: 'compass-item' },
+    h('div', { class: 'eyebrow' }, label), h('p', { class: 'muted small' }, s.why),
+    bubble(s.entry, () => walkTo(s.entry.id, [...trail, node]), null));
+  box.replaceChildren(...[
+    c.curiosity && item('Follow your curiosity', c.curiosity),
+    c.challenge && item('A gentle challenge', c.challenge),
+    c.practice_nudge && h('button', { type: 'button', class: 'btn practice-nudge', onclick: () => showPractice() }, `${c.practice_nudge} →`),
+  ].filter(Boolean));
+}
+
+// ── Practice: wisdom is easy, practice is hard ──────────────────────────────────────────────────────────────
+// Arrive, the line you kept, the exercise (with a breathing timer), an intention. Sizes grow with the habit.
+const SIZE_LABEL = { tiny: '10 seconds', small: '1 minute', full: '5 minutes' };
+function showPractice({ practice = null, size = null } = {}) {
+  setNav('practice');
+  return guarded(async () => {
+    const plan = await api(`/api/practice?date=${today()}${practice ? `&practice=${encodeURIComponent(practice)}` : ''}`);
+    const sz = size ?? plan.size;
+    const steps = plan.practice.steps;
+    const sizeChips = h('div', { class: 'size-chips', role: 'group', 'aria-label': 'How long' },
+      ['tiny', 'small', 'full'].map((k) => h('button', {
+        type: 'button', class: `chip ${k === sz ? 'on' : ''}`, 'aria-pressed': String(k === sz),
+        onclick: () => showPractice({ practice: plan.practice.id, size: k }),
+      }, SIZE_LABEL[k])));
+    const bigger = plan.offer_bigger && sz !== plan.offer_bigger && h('button', { type: 'button', class: 'btn ghost',
+      onclick: () => showPractice({ practice: plan.practice.id, size: plan.offer_bigger }) },
+    `Three days in a row. Try ${SIZE_LABEL[plan.offer_bigger]} today?`);
+
+    // The timer: a ring that fills over the session's length; one breath in, one out, every eight seconds.
+    const secs = plan.sizes[sz];
+    const ring = h('div', { class: 'ring', role: 'timer', 'aria-live': 'off' }, h('span', { class: 'ring-num' }, String(secs)));
+    let started = 0, timer = 0;
+    const begin = h('button', { type: 'button', class: 'btn' }, 'Begin');
+    begin.addEventListener('click', () => {
+      if (timer) return;
+      started = Date.now(); ring.classList.add('running'); begin.textContent = 'Breathe';
+      begin.disabled = true;
+      timer = setInterval(() => {
+        const left = Math.max(0, secs - Math.floor((Date.now() - started) / 1000));
+        ring.style.setProperty('--p', String(1 - left / secs));
+        ring.firstChild.textContent = left ? String(left) : '✓';
+        if (!left) { clearInterval(timer); begin.textContent = 'Done'; ring.classList.add('finished'); }
+      }, 250);
+    });
+
+    const intention = h('input', { type: 'text', class: 'intention', maxlength: '500', placeholder: steps?.intention ?? 'One thing to carry with you…' });
+    const finish = h('button', { type: 'button', class: 'btn' }, plan.done_today ? 'Save again' : 'Finish');
+    const endBox = h('div', {});
+    finish.addEventListener('click', async () => {
+      clearInterval(timer);
+      const spent = started ? Math.round((Date.now() - started) / 1000) : null;
+      finish.disabled = true;
+      try {
+        const after = await api('/api/practice', { method: 'POST', body: { practice_id: plan.practice.id, size: sz, seconds: spent, intention: intention.value, date: today() } });
+        endBox.replaceChildren(
+          h('h2', {}, after.streak > 1 ? `Done. ${after.streak} days in a row.` : 'Done. That is how a habit starts.'),
+          h('p', { class: 'plain' }, sz === 'tiny' ? 'Ten seconds counts. Tomorrow, the same again, or a little more.' : 'Small, repeated, and yours.'),
+          h('div', { class: 'end-links' }, h('button', { type: 'button', class: 'btn ghost', onclick: showToday }, 'Back to today')));
+      } catch { finish.disabled = false; }
+    });
+
+    const exercise = sz === 'full'
+      ? h('ol', { class: 'steps' }, (steps?.full ?? [plan.practice.plain_face]).map((t) => h('li', {}, t)))
+      : h('p', { class: 'plain' }, steps?.[sz] ?? plan.practice.plain_face);
+    const panels = [
+      panel('arrival', 'Today\'s practice', [
+        h('div', { class: 'eyebrow' }, plan.streak ? `Today's practice · ${plan.streak} ${plan.streak === 1 ? 'day' : 'days'} in a row` : "Today's practice"),
+        h('h1', {}, plan.practice.title),
+        h('p', { class: 'muted' }, plan.reason),
+        plan.nudge && h('p', { class: 'nudge' }, plan.nudge),
+        plan.done_today && h('p', { class: 'muted small' }, `Done today (${SIZE_LABEL[plan.done_today.size]}). Once more is fine.`),
+        sizeChips, bigger, hint('Scroll to begin'),
+      ]),
+      plan.anchor && panel('source', 'A line you kept', [
+        h('div', { class: 'eyebrow' }, 'A line you kept'),
+        h('blockquote', { class: 'quote' }, plan.anchor.line),
+        h('button', { type: 'button', class: 'link', onclick: () => walkTo(plan.anchor.id, []) },
+          [plan.anchor.thinker, plan.anchor.title].filter(Boolean).join(' · ')),
+      ]),
+      panel('question', 'The practice', [
+        h('div', { class: 'eyebrow' }, plan.arrive[sz]), exercise, h('div', { class: 'timer' }, ring, begin),
+      ]),
+      panel('yours', 'Before you go', [
+        h('div', { class: 'eyebrow' }, 'Before you go'), h('label', { class: 'prompt' }, steps?.intention ?? 'One thing to carry with you'),
+        intention, h('div', { class: 'row' }, h('span'), finish), endBox,
+      ]),
+      panel('related', 'Other practices', [
+        h('div', { class: 'eyebrow' }, 'Or choose another practice'),
+        h('div', { class: 'theme-chips' }, plan.choices.filter((c) => c.id !== plan.practice.id).map((c) =>
+          h('button', { type: 'button', class: 'chip', onclick: () => showPractice({ practice: c.id, size: sz }) }, c.title))),
+      ]),
+    ].filter(Boolean);
+    renderStage({ id: plan.practice.id, field: 'practice' }, panels);
+  });
+}
+
 // Shows a stage: panels plus the side rail of dots, the card's links in the dock, and the motif behind.
 const rail = document.getElementById('rail');
 const dockLinks = document.getElementById('docklinks');
@@ -244,10 +346,39 @@ let stageObserver = null;
 // How strongly the motif shows behind each kind of part: full on arrival, faint behind anything you read.
 const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .18, opinion: .18, yours: .3, related: .45, end: .9, question: .3 };
 
-function renderStage(node, panels, { links = [], startAt = 0, onSource = null } = {}) {
+// The background picture: blurred and dim while a part is centred for reading, coming into focus as you scroll
+// between parts. Before writing (a closed card) it never comes fully into focus, so it cannot give the idea away.
+const wallpaper = document.getElementById('wallpaper');
+let wallMax = 1;
+function setWallpaper(src, maxFocus = 1) {
+  wallMax = maxFocus;
+  const img = wallpaper.querySelector('img');
+  if (!src) { wallpaper.classList.remove('on'); return; }
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  wallpaper.classList.add('on'); focusWall();
+}
+let wallTick = 0;
+function focusWall() {
+  wallTick = 0;
+  if (!wallpaper.classList.contains('on')) return;
+  const panels = [...document.querySelectorAll('.stage .panel')];
+  const mid = innerHeight / 2;
+  let between = 1;
+  for (const p of panels) {
+    const r = p.getBoundingClientRect();
+    const d = Math.abs((r.top + Math.min(r.height, innerHeight) / 2) - mid) / (Math.min(r.height, innerHeight) / 2);
+    between = Math.min(between, d);
+  }
+  const f = Math.min(1, between) * wallMax; // 0 = a part is centred (reading), 1 = halfway between two parts
+  wallpaper.style.setProperty('--focus', f.toFixed(3));
+}
+addEventListener('scroll', () => { if (!wallTick) wallTick = requestAnimationFrame(focusWall); }, { passive: true });
+
+function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   const wrap = h('div', { class: `stage field-${node.field}` }, panels);
   render(wrap);
   document.documentElement.classList.add('staged');
+  setWallpaper(background, backgroundMax);
   setMotif(motifFor(node), wrap);
   motifLevel(1);
   dockLinks.replaceChildren(...links.filter(Boolean));
@@ -278,7 +409,7 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null } 
 function unstage() {
   document.documentElement.classList.remove('staged');
   stageObserver?.disconnect(); stageObserver = null;
-  setMotif(null); rail.replaceChildren(); rail.hidden = true; dockLinks.replaceChildren();
+  setMotif(null); rail.replaceChildren(); rail.hidden = true; dockLinks.replaceChildren(); setWallpaper(null);
 }
 
 function cardLinks(node, trail) {
@@ -294,7 +425,7 @@ function cardLinks(node, trail) {
 
 function showConcept(node, trail, opts = {}) {
   renderStage(node, conceptPanels(node, trail, opts), {
-    links: cardLinks(node, trail), startAt: opts.startAt ?? 0,
+    links: cardLinks(node, trail), startAt: opts.startAt ?? 0, background: node.background ?? null,
     onSource: () => api('/api/event', { method: 'POST', body: { kind: 'flip', node_id: node.id, date: today() } }).catch(() => {}),
   });
 }
@@ -333,12 +464,13 @@ function writeView(data) {
     panel('arrival', 'Today\'s idea', [
       h('div', { class: 'eyebrow' }, `Today · ${data.done} of ${data.total} so far`),
       progress(data.done, data.total),
-      h('div', { class: 'who' }, whoLine(node)),
+      h('div', { class: 'who' }, typeLine(node)),
       h('h1', {}, node.title),
+      nameReveal(node),
       hint('Scroll to the question'),
-    ], { wall: node.backdrop ?? null, wallClass: 'faded' }),
+    ]),
     panel('question', 'The question', [form]),
-  ]);
+  ], { background: node.backdrop ?? null, backgroundMax: .45 });
 }
 
 function doneView(data, { reveal = false } = {}) {
@@ -486,9 +618,8 @@ function galleryRooms(nodes, rooms, focus) {
     const cls = `tile field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.backdrop ? ' has-backdrop' : ''}${n.id === focus ? ' focus' : ''}`;
     const inner = [
       n.backdrop && h('span', { class: 'tile-bg', 'aria-hidden': 'true' }, h('img', { src: n.backdrop, alt: '', loading: 'lazy', decoding: 'async' })),
-      h('span', { class: 'b-who' }, n.thinker),
-      n.title && h('span', { class: 'tile-title' }, n.title),
-      h('span', { class: 'tile-meta' }, [year(n.year), TL_STATE[n.state], n.daily && n.state !== 'upcoming' && 'Daily line'].filter(Boolean).join(' · ')),
+      n.title ? h('span', { class: 'tile-title' }, n.title) : h('span', { class: 'tile-title muted' }, 'Coming up'),
+      h('span', { class: 'tile-meta' }, [TYPE_LABEL[n.type], year(n.year), n.state !== 'upcoming' && TL_STATE[n.state], n.daily && n.state !== 'upcoming' && 'Daily line'].filter(Boolean).join(' · ')),
     ];
     return n.state === 'upcoming'
       ? h('div', { class: cls, 'data-id': n.id }, inner)
@@ -503,8 +634,8 @@ function galleryRooms(nodes, rooms, focus) {
 // A catalogue row for one idea: used in themes and search results. Upcoming daily ideas stay closed.
 function ideaRow(n, extra) {
   const inner = [
-    h('span', { class: 'b-who' }, [n.thinker, year(n.year)].filter(Boolean).join(' · ') || TYPE_LABEL[n.type] || ''),
-    n.title && h('span', { class: 'b-title' }, n.title),
+    h('span', { class: 'b-who' }, [TYPE_LABEL[n.type], year(n.year)].filter(Boolean).join(' · ')),
+    h('span', { class: 'b-title' }, n.title ?? 'Coming up'),
     (TL_STATE[n.state] || extra) && h('span', { class: 'b-note' }, [TL_STATE[n.state], extra].filter(Boolean).join(' · ')),
   ];
   return n.state === 'upcoming'
@@ -626,6 +757,7 @@ document.addEventListener('click', (e) => {
   if (!nav) return;
   e.preventDefault();
   if (nav.dataset.nav === 'journal') showJournal();
+  else if (nav.dataset.nav === 'practice') showPractice();
   else if (nav.dataset.nav === 'review') showReview(7);
   else if (nav.dataset.nav === 'gallery') showGallery('rooms');
   else showToday();

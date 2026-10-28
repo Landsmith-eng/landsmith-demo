@@ -65,6 +65,16 @@ for (const e of content.edges) {
 }
 
 for (const msg of content.imageIssues) bad(msg);
+// The daily practice: every practice node needs its exercise at all three sizes, plus an intention prompt.
+{
+  const { practiceSteps } = await import('../content/practice_steps.js');
+  for (const n of content.nodes.filter((x) => x.type === 'practice')) {
+    const s = practiceSteps[n.id];
+    if (!s) { bad(`${n.id}: needs exercises in content/practice_steps.js`); continue; }
+    if (!s.tiny || !s.small || !Array.isArray(s.full) || s.full.length < 2 || !s.intention) bad(`${n.id}: practice needs tiny, small, full (steps) and intention`);
+  }
+  for (const id of Object.keys(practiceSteps)) if (!byId.has(id)) bad(`practice_steps.js: unknown practice ${id}`);
+}
 // The index: every theme links real ideas, at least three of them, with a question.
 {
   const { themes, THEME_KINDS } = await import('../content/themes.js');

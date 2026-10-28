@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS proposals (
   updated_at TEXT
 );
 
+-- One practice session per user per day (the latest wins). size grows with the habit: tiny, small, full.
+CREATE TABLE IF NOT EXISTS practice_log (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  local_date TEXT NOT NULL,
+  practice_id TEXT NOT NULL REFERENCES nodes(id),
+  size TEXT NOT NULL CHECK (size IN ('tiny','small','full')),
+  seconds INTEGER,
+  intention TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, local_date)
+);
+
 CREATE TABLE IF NOT EXISTS reactions (
   user_id INTEGER NOT NULL REFERENCES users(id),
   node_id TEXT NOT NULL REFERENCES nodes(id),
