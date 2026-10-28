@@ -41,5 +41,10 @@ createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY, tts }).listen(PORT, (
   // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
   if (tts) tts.voices().then(
     (v) => console.log(`ElevenLabs: connected, ${v.length} voices on your account.`),
-    (e) => console.warn(`ElevenLabs: the key did not work: ${e.message}${e.why ? ` (${e.why})` : ''}. The app will use the phone's voice.`));
+    (e) => {
+      console.warn(`ElevenLabs: the key did not work: ${e.message}${e.why ? ` (${e.why})` : ''}. The app will use the phone's voice.`);
+      // The key's shape, never the key: a cut-off or masked copy is the usual cause.
+      const k = process.env.ELEVENLABS_API_KEY;
+      console.warn(`  The key in .env starts with "${k.slice(0, 3)}" and is ${k.length} characters long. A full ElevenLabs key starts with "sk_" and is about 51 characters.`);
+    });
 });
