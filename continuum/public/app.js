@@ -61,7 +61,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  if (!nodes.some((n) => n?.classList?.contains('stage'))) unstage();
+  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .1); }
   const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
     `Test date: ${testDate()} (real date ${realToday()}). `,
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
@@ -70,7 +70,11 @@ function render(...nodes) {
   window.scrollTo(0, 0);
 }
 
+// Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
+const TAB_BG = { practice: '/img/tabs/practice.webp' };
+let currentTab = null;
 function setNav(name) {
+  currentTab = name;
   for (const b of document.querySelectorAll('nav [data-nav]')) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -335,7 +339,7 @@ function showPractice({ practice = null, size = null } = {}) {
           h('button', { type: 'button', class: 'chip', onclick: () => showPractice({ practice: c.id, size: sz }) }, c.title))),
       ]),
     ].filter(Boolean);
-    renderStage({ id: plan.practice.id, field: 'practice' }, panels);
+    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: TAB_BG.practice });
   });
 }
 
