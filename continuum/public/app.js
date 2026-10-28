@@ -61,7 +61,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .1); }
+  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .35); }
   const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
     `Test date: ${testDate()} (real date ${realToday()}). `,
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
@@ -71,7 +71,7 @@ function render(...nodes) {
 }
 
 // Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
-const TAB_BG = { practice: '/img/tabs/practice.webp' };
+const TAB_BG = { practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp' };
 let currentTab = null;
 function setNav(name) {
   currentTab = name;
