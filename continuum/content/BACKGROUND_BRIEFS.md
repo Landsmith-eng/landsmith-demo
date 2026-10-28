@@ -39,21 +39,24 @@ Export portrait, about 1024 × 1536, WebP under 400 KB.
 
 ## The rooms (backgrounds for every other idea)
 
+Each room has an animal or a constellation and borrows the look of one public-domain artwork. The prompts say "inspired
+by", not "copy": we want a new plate in that work's manner. For people, "no faces" still applies; animals are welcome.
+
 | Room id | Room | Background prompt (after the style block) |
 |---|---|---|
-| `near_east` | The ancient Near East and the Bible | A desert dawn over a river valley, reeds at the water, clay tablets half-buried in sand. |
-| `greece_rome` | Greece and Rome | Weathered marble columns and olive trees on a hillside above the sea, late afternoon. |
-| `india` | India and the Buddhist world | River steps leading down to still water at dawn, mist, a single floating lamp. |
-| `east_asia` | China and Japan | Ink-wash mountains in mist, a pine on a rock, a small bridge over a stream. |
-| `medieval` | Faith and reason | Light through a tall arched window into a stone library, dust in the air, books on long shelves. |
-| `early_modern` | Renaissance and Enlightenment | A scholar's study by candlelight: a globe, an open window, a brass telescope. |
-| `nineteenth` | The 1800s | A city of chimneys and a railway at dusk, seen from a hill, gas lamps coming on. |
-| `twentieth` | The 1900s and after | An empty café table by a rain-streaked window in a city at night. |
-| `africa` | Africa and the diaspora | A baobab on a wide plain at sunrise, long shadows, a path leading away. |
-| `americas` | The Americas | Cedar and birch by a lake in the morning, sweetgrass in the foreground. |
-| `science` | How we came to know the world | A star-filled night sky with faint arcs of orbits above an observatory dome. |
-| `mind` | The study of the mind | Clouds drifting over soft hills at dusk, their shapes almost like thoughts. |
-| `art` | Art and the image | A painter's studio wall with unframed canvases in soft north light. |
-| `culture` | Culture and everyday life | A lantern-lit street market at evening, figures softly blurred in motion. |
-| `law` | Law and the state | The steps and columns of a courthouse in morning light, long column shadows across the stone. |
-| `now` | Now | A morning newspaper folded on a table by a window, the street outside in motion. |
+| `near_east` | The ancient Near East and the Bible | Papyrus reeds at the edge of a calm Nile marsh at dawn; a tawny cat crouched in the reeds at lower left; fish under clear water along the bottom. Inspired by the marsh scene from the Tomb of Nebamun (Egypt, c. 1350 BCE): flat profile shapes, ochre and blue-green. |
+| `greece_rome` | Greece and Rome | **Done.** Alternative: a calm sea below marble columns, dolphins leaping at the lower edge, inspired by the Knossos dolphin fresco (c. 1600 BCE). |
+| `india` | India and the Buddhist world | Stone river steps going down into still water at dawn, mist, one floating lamp; silver fish turning under the surface at the bottom. Inspired by Pahari (Kangra) miniature painting, 18th century: fine lines, soft washes. |
+| `east_asia` | China and Japan | A cat on a wooden windowsill at lower right, seen from behind, looking out over misty rice fields to a distant mountain; a bamboo blind along the top. Inspired by Hiroshige's "Asakusa Ricefields and Torinomachi Festival" (1857): flat woodblock colour. |
+| `medieval` | Faith and reason | A tall arched window in a stone library, light across long shelves; a small cat on the sill at the bottom, two mice at the far edge; faint interlace knotwork down one side. Inspired by the cats and mice of the Book of Kells (c. 800). |
+| `early_modern` | Renaissance and Enlightenment | A scholar's study by candlelight, a globe and brass telescope at the left edge, an open window at night; a hare sitting on the floorboards in the lower third. Inspired by Albrecht Dürer's "Young Hare" (1502): fine fur, everything else soft. |
+| `nineteenth` | The 1800s | City rooftops and chimneys at dusk, a railway viaduct far off, gas lamps coming on; a black cat in silhouette on a chimney pot at top right. Inspired by Steinlen's black cats (1890s) and Whistler's Nocturnes (1870s): blue-grey night. |
+| `twentieth` | The 1900s and after | An empty café table by a rain-streaked window at night; beyond the glass, softly glowing fish seem to float among the city lights. Inspired by Paul Klee's "Fish Magic" (1925): dark ground, glowing fish, scratched texture. |
+| `africa` | Africa and the diaspora | A baobab on a wide plain at sunrise along one edge, long shadows, a path leading away; faint red-ochre paintings of eland on a granite outcrop at lower left; the last of the Milky Way fading above. Inspired by San rock art of the Drakensberg. |
+| `americas` | The Americas | Cedar and birch along a lake in early morning, sweetgrass in the foreground; a trout leaping from still water at lower right, rings spreading. Inspired by Winslow Homer's Adirondack watercolours, such as "Leaping Trout" (1889): loose wet washes. |
+| `science` | How we came to know the world | A night sky over a small observatory dome at the bottom; faint engraved constellation figures across the stars, the two fish of Pisces and the lion of Leo clearest; thin arcs of orbits. Inspired by the "Urania's Mirror" star cards (1824). |
+| `mind` | The study of the mind | Soft hills at dusk with clouds drifting above, shapes almost like thoughts; in a lower corner a cat asleep, curled tight, on a cushion by an open window. Inspired by John Constable's cloud studies (1820s): loose, luminous sky. |
+| `art` | Art and the image | A painter's studio wall with unframed canvases in soft north light; a white cat playing on the floor at lower left. Inspired by Gustave Courbet's "The Painter's Studio" (1855), which has a white cat at the painter's feet: warm brown shadow, one bright window. |
+| `culture` | Culture and everyday life | A lantern-lit street market at evening, figures blurred in motion at the edges; at lower right a stall of glass bowls of goldfish glowing in the lantern light. Inspired by Utagawa Kuniyoshi's goldfish prints (1839 to 1840): orange fish, paper lanterns. |
+| `law` | Law and the state | Courthouse steps and columns at first light, long column shadows across the stone; a cat asleep in the sun on a low step; in the fading sky, the faint constellation Libra, the scales. Inspired by "Urania's Mirror" (1824) for the stars and Canaletto (18th century) for the stone. |
+| `now` | Now | A morning newspaper folded on a table by a window, the street outside in motion; a cat curled asleep beside it; a glass bowl with one goldfish catching the light. Inspired by Vermeer's "Girl Reading a Letter at an Open Window" (c. 1657): light from the left, a still room. |
