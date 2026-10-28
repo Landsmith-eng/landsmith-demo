@@ -813,11 +813,13 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     });
   });
 
+  // ElevenLabs problems show in the server window, so they can be fixed (the phone falls back to its own voice).
+  const ttsWarn = (what, e) => console.warn(`ElevenLabs refused ${what}: ${e.message}${e.why ? ` (${e.why})` : ''}`);
   // ── Reading aloud with ElevenLabs (when ELEVENLABS_API_KEY is set). The key never leaves the server. ──
   app.get('/api/tts', auth, (req, res) => res.json({ enabled: Boolean(tts), voice_id: tts?.voiceId ?? null }));
   app.get('/api/tts/voices', auth, async (req, res) => {
     if (!tts) return res.status(404).json({ error: 'tts_off' });
-    try { res.json({ voices: await tts.voices(), default: tts.voiceId }); } catch (e) { res.status(502).json({ error: e.message }); }
+    try { res.json({ voices: await tts.voices(), default: tts.voiceId }); } catch (e) { ttsWarn('listing voices', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }
   });
   app.post('/api/tts', auth, async (req, res) => {
     if (!tts) return res.status(404).json({ error: 'tts_off' });
@@ -829,7 +831,7 @@ export function createApp(db, { adminKey, tts = null } = {}) {
     try {
       const { audio, cached } = await tts.speak(text, voice);
       res.set({ 'content-type': 'audio/mpeg', 'cache-control': 'private, max-age=86400', 'x-tts-cache': cached ? 'hit' : 'miss' }).send(audio);
-    } catch (e) { res.status(502).json({ error: e.message }); }
+    } catch (e) { ttsWarn('reading aloud', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }
   });
 
   app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));

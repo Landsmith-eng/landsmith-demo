@@ -38,4 +38,8 @@ createApp(db, { adminKey: process.env.CONTINUUM_ADMIN_KEY, tts }).listen(PORT, (
   if (err) throw err;
   // The picture count comes from the database, so it shows whether `npm run seed` has picked up new images.
   console.log(`Continuum on http://localhost:${PORT} · ${nodes} nodes · daily pictures: ${pictures} of 14 · reading voice: ${tts ? 'ElevenLabs' : 'phone'}`);
+  // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
+  if (tts) tts.voices().then(
+    (v) => console.log(`ElevenLabs: connected, ${v.length} voices on your account.`),
+    (e) => console.warn(`ElevenLabs: the key did not work: ${e.message}${e.why ? ` (${e.why})` : ''}. The app will use the phone's voice.`));
 });

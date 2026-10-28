@@ -429,12 +429,16 @@ const ttsEnabled = async () => {
   if (ttsOn) document.documentElement.classList.add('can-speak');
   return Boolean(ttsOn);
 };
-// The choice, kept on this device: 'el:<voice id>' (an ElevenLabs voice), a phone voice's name, or nothing (default).
+// The choice, kept on this device: 'el:<voice id>' (an ElevenLabs voice), 'phone:<name>' (one of the phone's voices),
+// or nothing (the default: ElevenLabs when the server has a key, else the phone's default voice). A bare name is a
+// choice from before natural voices existed; it is ignored once they do.
 const VOICE_KEY = 'continuum.voice';
 async function voicePlan() {
-  const choice = store.get(VOICE_KEY);
-  if (choice?.startsWith('el:') && await ttsEnabled()) return { el: choice.slice(3) };
-  const phone = choice && !choice.startsWith('el:') && speech?.getVoices().find((v) => v.name === choice);
+  const choice = store.get(VOICE_KEY) ?? '';
+  const el = await ttsEnabled();
+  if (choice.startsWith('el:') && el) return { el: choice.slice(3) };
+  const name = choice.startsWith('phone:') ? choice.slice(6) : !el && !choice.startsWith('el:') ? choice : '';
+  const phone = name && speech?.getVoices().find((v) => v.name === name);
   if (phone) return { phone };
   if (await ttsEnabled()) return { el: null }; // the server's default ElevenLabs voice
   return { phone: null }; // the phone's default voice
@@ -477,7 +481,10 @@ async function fetchClip(text, voiceId) {
     method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
     body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
   });
-  if (!res.ok) throw new Error(`tts_${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
+  }
   return URL.createObjectURL(await res.blob());
 }
 function playClip(url, run) {
@@ -515,9 +522,9 @@ async function readStage() {
         const clips = await clipsFor(i);
         if (i + 1 < panels.length) clipsFor(i + 1).catch(() => {});
         for (const url of clips) { if (run.stop) break; await playClip(url, run); }
-      } catch {
+      } catch (e) {
         if (!speech) break;
-        notice('The natural voice is not available right now (check the ElevenLabs key or credits). Using the phone\'s voice.');
+        notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ' (check the ElevenLabs key or credits)'}. Using the phone's voice.`);
         plan = { phone: null }; i--; continue;
       }
     } else {
@@ -546,8 +553,10 @@ addEventListener('pagehide', () => { speech?.cancel(); audioEl.pause(); });
 async function chooseVoice() {
   stopReading();
   const sample = 'Some things are up to us, and some are not.';
-  const current = store.get(VOICE_KEY) ?? '';
-  const el = await ttsEnabled() ? await api('/api/tts/voices').catch(() => null) : null;
+  const on = await ttsEnabled();
+  const el = on ? await api('/api/tts/voices').catch(() => null) : null;
+  const saved = store.get(VOICE_KEY) ?? '';
+  const current = saved.startsWith('el:') || saved.startsWith('phone:') ? saved : on ? '' : saved && `phone:${saved}`;
   const all = speech?.getVoices() ?? [];
   const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
   const phoneVoices = [...all.filter((v) => v.lang.toLowerCase().startsWith(lang)), ...all.filter((v) => !v.lang.toLowerCase().startsWith(lang))];
@@ -555,9 +564,9 @@ async function chooseVoice() {
   const preview = async (key) => {
     speech?.cancel(); audioEl.pause(); previewing?.wake?.();
     const run = previewing = { wake: null };
-    if (key.startsWith('el:') || (!key && el)) {
-      try { await playClip(await fetchClip(sample, key.slice(3) || null), run); } catch { notice('That voice could not be played. Check the ElevenLabs key or credits.'); }
-    } else if (speech) sayPhone(sample, all.find((v) => v.name === key) ?? null, run);
+    if (key.startsWith('el:') || (!key && on)) {
+      try { await playClip(await fetchClip(sample, key.slice(3) || null), run); } catch (e) { notice(`That voice could not be played${e.why ? `: ${e.why}` : '. Check the ElevenLabs key or credits'}.`); }
+    } else if (speech) sayPhone(sample, all.find((v) => `phone:${v.name}` === key) ?? null, run);
   };
   const row = (label, note, key) => h('button', {
     type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String(current === key),
@@ -571,11 +580,12 @@ async function chooseVoice() {
   const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
     h('h2', {}, 'Reading voice'),
     h('p', { class: 'muted small' }, 'Tap a voice to hear it.'),
-    row('Default', el ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
+    row('Default', on ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
+    on && !el && h('p', { class: 'notice' }, 'The natural voices could not be listed. The server window says why; the default natural voice may still work.'),
     el && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Natural voices · ElevenLabs'),
     el?.voices.map((v) => row(v.name, v.note, `el:${v.id}`)),
     phoneVoices.length && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Phone voices'),
-    phoneVoices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, v.name)),
+    phoneVoices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, `phone:${v.name}`)),
     h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
   const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
   const close = () => { speech?.cancel(); audioEl.pause(); previewing?.wake?.(); box.remove(); voiceBtn.focus(); };

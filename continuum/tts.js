@@ -10,6 +10,13 @@ export const DEFAULT_MODEL = 'eleven_multilingual_v2';
 export const MAX_TEXT = 2500;
 const VOICE_RE = /^[A-Za-z0-9]{8,40}$/;
 
+// ElevenLabs explains a refusal in its JSON body (a missing permission, no credits, a bad key): keep that message.
+async function failure(res) {
+  let why = '';
+  try { const b = await res.json(); why = b?.detail?.message ?? b?.detail?.status ?? (typeof b?.detail === 'string' ? b.detail : '') ?? ''; } catch { /* not JSON */ }
+  return Object.assign(new Error(`elevenlabs_${res.status}`), { status: res.status, why });
+}
+
 export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MODEL, cacheDir, fetchImpl = fetch } = {}) {
   if (!apiKey) return null;
   if (cacheDir) mkdirSync(cacheDir, { recursive: true });
@@ -23,7 +30,7 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
     async voices() {
       if (voiceList && Date.now() - voiceListAt < 600_000) return voiceList;
       const res = await fetchImpl(`${API}/voices`, { headers: { 'xi-api-key': apiKey } });
-      if (!res.ok) throw Object.assign(new Error(`elevenlabs_${res.status}`), { status: res.status });
+      if (!res.ok) throw await failure(res);
       const { voices = [] } = await res.json();
       voiceList = voices.map((v) => ({
         id: v.voice_id, name: v.name,
@@ -43,7 +50,7 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
         headers: { 'xi-api-key': apiKey, 'content-type': 'application/json', accept: 'audio/mpeg' },
         body: JSON.stringify({ text, model_id: model }),
       });
-      if (!res.ok) throw Object.assign(new Error(`elevenlabs_${res.status}`), { status: res.status });
+      if (!res.ok) throw await failure(res);
       const audio = Buffer.from(await res.arrayBuffer());
       if (file) writeFileSync(file, audio);
       return { audio, cached: false };
