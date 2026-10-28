@@ -9,7 +9,19 @@ const ID_RE = /^[a-z0-9_]{3,80}$/;
 
 export function createTalk({ apiKey, client = null, model = TALK_MODEL } = {}) {
   if (!client && !apiKey) return null;
-  return { client: client ?? new Anthropic({ apiKey }), model };
+  return { client: client ?? new Anthropic({ apiKey }), model, apiKey };
+}
+
+// Check the key (looking up the model costs nothing). The SDK sends the key as a bearer token; if Anthropic turns
+// that down, try the same key in the x-api-key header before giving up, and keep whichever works.
+export async function connectTalk(talk) {
+  try { await talk.client.models.retrieve(talk.model); return { ok: true, via: 'bearer' }; } catch (first) {
+    if (first.status !== 401 || !talk.apiKey) return { ok: false, error: first };
+    const alt = new Anthropic({ apiKey: null, authToken: null, defaultHeaders: { 'x-api-key': talk.apiKey, Authorization: null } });
+    try { await alt.models.retrieve(talk.model); talk.client = alt; return { ok: true, via: 'x-api-key' }; } catch (second) {
+      return { ok: false, error: second };
+    }
+  }
 }
 
 // The stable part of the prompt (cached). Spoken aloud, so it asks for short, plain, conversational replies.

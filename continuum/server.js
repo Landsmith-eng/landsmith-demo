@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
 import { createTts } from './tts.js';
-import { createTalk } from './talk.js';
+import { createTalk, connectTalk } from './talk.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 // Private settings (the API keys) live in .env next to this file, never in git. KEY=value, one per line. A value in
@@ -53,13 +53,13 @@ createApp(db, {
   // The picture count comes from the database, so it shows whether `npm run seed` has picked up new images.
   console.log(`Continuum on http://localhost:${PORT} · ${nodes} nodes · daily pictures: ${pictures} of 14 · reading voice: ${tts ? 'ElevenLabs' : 'phone'}`);
   // Check the Anthropic key once at start (looking up the model costs nothing).
-  if (talk) talk.client.models.retrieve(talk.model).then(
-    () => console.log(`Talk: connected to Claude (${talk.model}).`),
-    (e) => {
-      console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''}). Talk is off until it does.`);
-      console.warn(`  ${keyShape('ANTHROPIC_API_KEY', 'an Anthropic API key starts with "sk-ant-api" and is about 108 characters.')}`);
-      if (process.env.ANTHROPIC_BASE_URL && !/^https:\/\/api\.anthropic\.com\/?$/.test(process.env.ANTHROPIC_BASE_URL)) console.warn(`  ANTHROPIC_BASE_URL is set to ${process.env.ANTHROPIC_BASE_URL}, which sends requests somewhere other than Anthropic.`);
-    });
+  if (talk) connectTalk(talk).then(({ ok, via, error: e }) => {
+    if (ok) return console.log(`Talk: connected to Claude (${talk.model}${via === 'x-api-key' ? ', key sent as x-api-key' : ''}).`);
+    console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''}). Talk is off until it does.`);
+    console.warn(`  ${keyShape('ANTHROPIC_API_KEY', 'an Anthropic key starts with "sk-ant-api" or "sk-ant-usr" and is about 108 characters.')}`);
+    if (process.env.ANTHROPIC_BASE_URL && !/^https:\/\/api\.anthropic\.com\/?$/.test(process.env.ANTHROPIC_BASE_URL)) console.warn(`  ANTHROPIC_BASE_URL is set to ${process.env.ANTHROPIC_BASE_URL}, which sends requests somewhere other than Anthropic.`);
+    if (e?.message) console.warn(`  Anthropic said: ${e.message.slice(0, 300)}`);
+  });
   else console.log('Talk: off (add ANTHROPIC_API_KEY to .env to turn it on).');
   // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
   if (tts) tts.voices().then(
