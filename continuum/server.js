@@ -58,7 +58,7 @@ createApp(db, {
     (e) => {
       console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''}). Talk is off until it does.`);
       console.warn(`  ${keyShape('ANTHROPIC_API_KEY', 'an Anthropic API key starts with "sk-ant-api" and is about 108 characters.')}`);
-      if (process.env.ANTHROPIC_BASE_URL) console.warn(`  ANTHROPIC_BASE_URL is set to ${process.env.ANTHROPIC_BASE_URL}, which sends requests somewhere other than Anthropic.`);
+      if (process.env.ANTHROPIC_BASE_URL && !/^https:\/\/api\.anthropic\.com\/?$/.test(process.env.ANTHROPIC_BASE_URL)) console.warn(`  ANTHROPIC_BASE_URL is set to ${process.env.ANTHROPIC_BASE_URL}, which sends requests somewhere other than Anthropic.`);
     });
   else console.log('Talk: off (add ANTHROPIC_API_KEY to .env to turn it on).');
   // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
