@@ -381,15 +381,39 @@ html.staged:has(.dock-links:not(:empty)) { --links: 44px; }
 #wallpaper { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
 #wallpaper.on { opacity: 1; }
 #wallpaper img { width: 100%; height: 100%; object-fit: cover;
-  opacity: calc(.16 + var(--focus, 0) * .64); filter: blur(calc((1 - var(--focus, 0)) * 16px)) saturate(calc(.7 + var(--focus, 0) * .3));
+  opacity: calc(.44 + var(--focus, 0) * .5); filter: blur(calc((1 - var(--focus, 0)) * 8px)) saturate(calc(.8 + var(--focus, 0) * .2));
   transform: scale(calc(1.06 - var(--focus, 0) * .06)); transition: opacity .25s linear, filter .25s linear, transform .25s linear; }
-#wallpaper::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) calc(70% - var(--focus, 0) * 55%), transparent); }
+#wallpaper::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) calc(48% - var(--focus, 0) * 40%), transparent); }
 /* Plain pages: a sharp copy of the picture shows through below the content (--clear-from = where the content ends). */
 #wallpaper img.clear { display: none; }
 #wallpaper.plain img.clear { display: block; position: absolute; inset: 0; opacity: .85; filter: none; transform: none; transition: none;
   -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px));
   mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px)); }
 #wallpaper.plain::after { background: linear-gradient(to bottom,
-  color-mix(in srgb, var(--bg) 51%, transparent) calc(var(--clear-from, 100vh) + 16px),
-  color-mix(in srgb, var(--bg) 12%, transparent) calc(var(--clear-from, 100vh) + 220px)); }
+  color-mix(in srgb, var(--bg) 42%, transparent) calc(var(--clear-from, 100vh) + 16px),
+  color-mix(in srgb, var(--bg) 6%, transparent) calc(var(--clear-from, 100vh) + 220px)); }
 @media (prefers-reduced-motion: reduce) { #wallpaper img { transition: none; } }
+
+/* Look: a pause inside the picture. The button shows whenever there is a picture behind the page. */
+.look { position: fixed; z-index: 5; top: calc(8px + env(safe-area-inset-top)); right: 12px; display: none;
+  align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 80%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  color: var(--ink); font-size: .85rem; }
+.look svg { width: 16px; height: 16px; }
+html:has(#wallpaper.on:not(.nolook)) .look { display: inline-flex; }
+html.gazing .look { display: none; }
+.gaze { position: fixed; inset: 0; z-index: 10; overflow: hidden; background: #0d100e; touch-action: none; cursor: grab;
+  opacity: 0; transition: opacity .6s ease; }
+.gaze.in { opacity: 1; }
+.gaze.dragging { cursor: grabbing; }
+.gaze img { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; user-select: none; -webkit-user-drag: none;
+  filter: blur(8px); transition: filter 1.2s ease; }
+.gaze.in img { filter: none; }
+.gaze .gaze-hint { position: absolute; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom)); text-align: center;
+  transition: opacity 1s ease; pointer-events: none; }
+.gaze .gaze-hint span { display: inline-block; padding: 7px 14px; border-radius: 999px; background: rgba(13,16,14,.55); color: #eef2ec; font-size: .85rem; }
+.gaze .gaze-hint.gone { opacity: 0; }
+.gaze .gaze-close { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.35); background: rgba(13,16,14,.45); color: #eef2ec; font-size: .85rem; }
+html.gazing { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .gaze, .gaze img { transition: none; } }

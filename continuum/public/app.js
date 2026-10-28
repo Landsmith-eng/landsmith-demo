@@ -366,6 +366,7 @@ let wallMax = 1;
 function setWallpaper(src, maxFocus = 1, { plain = false } = {}) {
   wallMax = maxFocus;
   wallpaper.classList.toggle('plain', plain);
+  wallpaper.classList.toggle('nolook', !plain && maxFocus < 1); // a closed card's picture stays a hint, not a view
   if (!src) { wallpaper.classList.remove('on'); return; }
   for (const img of wallpaper.querySelectorAll('img')) if (img.getAttribute('src') !== src) img.setAttribute('src', src);
   wallpaper.classList.add('on'); focusWall();
@@ -393,6 +394,91 @@ const queueWall = () => { if (!wallTick) wallTick = requestAnimationFrame(focusW
 addEventListener('scroll', queueWall, { passive: true });
 addEventListener('resize', queueWall);
 new ResizeObserver(queueWall).observe(view);
+
+// Look: step inside the background picture for a pause. Drag to wander, pinch or scroll to look closer, tap to
+// return. Left alone, the view drifts slowly across the picture, the way an eye rests on a painting.
+const lookBtn = document.getElementById('look');
+lookBtn.addEventListener('click', () => gaze(wallpaper.querySelector('img').getAttribute('src')));
+function gaze(src) {
+  if (!src || document.querySelector('.gaze')) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const img = h('img', { src, alt: '', draggable: 'false' });
+  const hint = h('div', { class: 'gaze-hint' }, h('span', {}, 'Drag to look around · pinch to look closer · tap to return'));
+  const close = h('button', { type: 'button', class: 'gaze-close' }, 'Return');
+  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, hint, close);
+  document.body.append(box);
+  document.documentElement.classList.add('gazing');
+  let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false;
+  const fit = () => { base = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight); };
+  const draw = () => {
+    const sc = base * zoom;
+    x = Math.min(0, Math.max(innerWidth - img.naturalWidth * sc, x));
+    y = Math.min(0, Math.max(innerHeight - img.naturalHeight * sc, y));
+    img.style.transform = `translate(${x}px, ${y}px) scale(${sc})`;
+  };
+  const zoomAt = (z, cx, cy) => {
+    const next = Math.min(3, Math.max(1, z));
+    x = cx - (cx - x) * (next / zoom); y = cy - (cy - y) * (next / zoom); zoom = next; draw();
+  };
+  const drift = () => {
+    if (performance.now() - lastTouch > 2500) {
+      const px = x, py = y; x += vx; y += vy; draw();
+      if (x === px) vx = -vx; if (y === py) vy = -vy; // reached an edge: turn back
+    }
+    raf = requestAnimationFrame(drift);
+  };
+  img.decode().catch(() => {}).then(() => {
+    fit(); const sc = base * zoom;
+    x = (innerWidth - img.naturalWidth * sc) / 2; y = (innerHeight - img.naturalHeight * sc) / 2; draw();
+    requestAnimationFrame(() => box.classList.add('in'));
+    if (!still) raf = requestAnimationFrame(drift);
+  });
+  setTimeout(() => hint.classList.add('gone'), 3500);
+
+  const pts = new Map();
+  let moved = 0, downAt = 0, pinch = null;
+  box.addEventListener('pointerdown', (e) => {
+    if (e.target === close) return;
+    box.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { moved = 0; downAt = performance.now(); }
+    box.classList.add('dragging'); lastTouch = performance.now();
+  });
+  box.addEventListener('pointermove', (e) => {
+    const prev = pts.get(e.pointerId); if (!prev) return;
+    const cur = { x: e.clientX, y: e.clientY };
+    if (pts.size === 1) { x += cur.x - prev.x; y += cur.y - prev.y; draw(); }
+    pts.set(e.pointerId, cur);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch) zoomAt(zoom * (d / pinch), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch = d;
+    }
+    moved += Math.hypot(cur.x - prev.x, cur.y - prev.y); lastTouch = performance.now();
+  });
+  const up = (e) => {
+    if (!pts.delete(e.pointerId)) return;
+    if (pts.size < 2) pinch = null;
+    if (!pts.size) {
+      box.classList.remove('dragging');
+      if (e.type === 'pointerup' && moved < 8 && performance.now() - downAt < 400) leave();
+    }
+  };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+  box.addEventListener('wheel', (e) => { e.preventDefault(); lastTouch = performance.now(); zoomAt(zoom * Math.exp(-e.deltaY / 400), e.clientX, e.clientY); }, { passive: false });
+  const onKey = (e) => { if (e.key === 'Escape') leave(); };
+  const onResize = () => { fit(); draw(); };
+  addEventListener('keydown', onKey); addEventListener('resize', onResize);
+  close.addEventListener('click', () => leave());
+  close.focus();
+  function leave() {
+    if (done) return; done = true;
+    cancelAnimationFrame(raf); removeEventListener('keydown', onKey); removeEventListener('resize', onResize);
+    box.classList.remove('in'); document.documentElement.classList.remove('gazing');
+    setTimeout(() => box.remove(), still ? 0 : 600);
+    lookBtn.focus();
+  }
+}
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   const wrap = h('div', { class: `stage field-${node.field}` }, panels);
