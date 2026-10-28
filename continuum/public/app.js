@@ -395,6 +395,66 @@ addEventListener('scroll', queueWall, { passive: true });
 addEventListener('resize', queueWall);
 new ResizeObserver(queueWall).observe(view);
 
+// Listen: the device's own voice reads the stage aloud, part by part, from the part in view to the end, scrolling
+// gently to each part as it goes (so the picture comes into focus between parts). Tap again to stop.
+const listenBtn = document.getElementById('listen');
+const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
+if (speech) document.documentElement.classList.add('can-speak');
+let reading = null; // { stop: boolean }
+const pickVoice = () => {
+  const voices = speech.getVoices().filter((v) => /^en(-|_|$)/i.test(v.lang));
+  const lang = (navigator.language || 'en-US').toLowerCase();
+  return voices.find((v) => /natural|neural|premium|enhanced/i.test(v.name) && v.lang.toLowerCase() === lang)
+    ?? voices.find((v) => /google/i.test(v.name) && v.lang.toLowerCase() === lang)
+    ?? voices.find((v) => v.lang.toLowerCase() === lang) ?? voices[0] ?? null;
+};
+// What a listener should hear from one part: its words, without buttons, inputs, hints or decoration.
+function spokenText(p) {
+  const c = p.cloneNode(true);
+  c.querySelectorAll('a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer').forEach((e) => e.remove());
+  c.querySelectorAll('div, h1, h2, h3, p, li, blockquote, label').forEach((e) => { e.prepend(' '); e.append('. '); });
+  return c.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').replace(/([.…]\s*){2,}/g, '. ').replace(/([!?:;,])\s*\.\s/g, '$1 ')
+    .replace(/^\s*\.\s*/, '').trim();
+}
+// Short pieces: some browsers cut off a single long utterance.
+const sentences = (text) => text.match(/[^.!?…]+[.!?…]+["”’)]*|[^.!?…]+$/g)?.map((t) => t.trim()).filter((t) => /[\p{L}\d]/u.test(t)) ?? [];
+function say(text, voice) {
+  return new Promise((resolve) => {
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.rate = .95; u.pitch = 1;
+    u.onend = u.onerror = () => resolve();
+    speech.speak(u);
+  });
+}
+async function readStage() {
+  const panels = [...document.querySelectorAll('.stage .panel')];
+  if (!panels.length) return;
+  const mid = innerHeight / 2;
+  let start = panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; });
+  if (start < 0) start = 0;
+  const run = reading = { stop: false };
+  listenBtn.setAttribute('aria-pressed', 'true'); listenBtn.querySelector('span').textContent = 'Stop';
+  const voice = pickVoice();
+  for (let i = start; i < panels.length && !run.stop; i++) {
+    if (i > start) {
+      panels[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      await new Promise((r) => setTimeout(r, 900));
+    }
+    for (const line of sentences(spokenText(panels[i]))) { if (run.stop) break; await say(line, voice); }
+    if (!run.stop) await new Promise((r) => setTimeout(r, 500));
+  }
+  if (reading === run) stopReading();
+}
+function stopReading() {
+  if (!reading) return;
+  reading.stop = true; reading = null; speech?.cancel();
+  listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
+}
+listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
+speech?.getVoices(); // starts loading the voice list
+addEventListener('pagehide', () => speech?.cancel());
+
 // Look: step inside the background picture for a pause. Drag to wander, pinch or scroll to look closer, tap to
 // return. Left alone, the view drifts slowly across the picture, the way an eye rests on a painting.
 const lookBtn = document.getElementById('look');
@@ -481,6 +541,7 @@ function gaze(src) {
 }
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
+  stopReading();
   const wrap = h('div', { class: `stage field-${node.field}` }, panels);
   render(wrap);
   document.documentElement.classList.add('staged');
@@ -514,6 +575,7 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null, b
 // Everything that isn't a stage: no motif, no rail, no card links.
 function unstage() {
   document.documentElement.classList.remove('staged');
+  stopReading();
   stageObserver?.disconnect(); stageObserver = null;
   setMotif(null); rail.replaceChildren(); rail.hidden = true; dockLinks.replaceChildren(); setWallpaper(null);
 }
