@@ -1,6 +1,6 @@
 # Continuum (MVP)
 
-One small idea a day. Write your take first, then read the plain face, flip to the authentic source,
+One small idea a day. Write your take first, then read the plain face, the authentic source,
 and walk the lineage as far as you like: who came before, who extended it, who attacked it, who measured it,
 and which practice it lands on.
 
@@ -33,8 +33,13 @@ if the URL changes, resend `<new-url>/?u=<same token>` (tokens are in the `users
 ## How it behaves
 
 - **Today's card**: type, title, thinker and a question. Nothing else until you write (the doc's "write before you read").
-- **Then**: plain face (one analogy) → tap to flip to the source (translator, edition, full-text link where one exists) →
-  neighbour bubbles grouped by edge type. Tapping a bubble opens that node; the walk has no bottom and keeps a breadcrumb trail.
+- **Then, one part per screen** (the stage): arrival (the title), the plain face (one analogy), the picture, the
+  misreading, the source (translator, edition, full-text link), each court opinion, your take and reaction, then each
+  group of related ideas. Each part fills the screen and materializes as it scrolls in; scrolling back up brings
+  earlier parts back. A dot rail shows where you are; the dock at the bottom holds the four tabs and the card's own
+  links (back, timeline, room, keep). Behind it all runs a quiet animated motif for the idea (`public/motifs.js`:
+  atoms for Democritus, a river for Heraclitus, a wheel for Schopenhauer; otherwise one per field), faint behind
+  anything you read; reduced-motion settings get a still frame. Pictures become full-bleed wallpaper.
 - **Daily pick** (doc's rule): an unwritten neighbour of yesterday's node, preferring ones you haven't already read on a walk;
   else the next unwritten node in the line. Saved per day, so walking can't swap today's card. Missed days skip nothing.
 - **Practices** are the floor: one face, never a daily card, reachable from every line node.
@@ -121,5 +126,5 @@ All `/api/*` calls need header `x-continuum-token`.
 - `POST /api/reaction { node_id, value: changed|somewhat|unchanged, date }` → `{ reaction }`. 409 `write_first` until you have written on that node.
 - `GET /api/timeline?date=` → `{ nodes }`: every idea in date order with `state` (written, visited, today, upcoming, unseen); upcoming daily ideas have `title: null`
 - `GET /api/review?days=7&date=` (`days=0` = everything) → `{ from, to, days_active, entries, walked, practices, reactions, bookends }`
-- `POST /api/event { kind: "flip", node_id, date }`
+- `POST /api/event { kind: "flip", node_id, date }` (sent when the source part first comes into view)
 - `GET /admin/api/stats` (header `x-admin-key`) → per tester: open days, response days, `came_back`

@@ -142,6 +142,7 @@ export function createApp(db, { adminKey } = {}) {
       reaction: q.reaction.get(uid, n.id)?.value ?? null,
       neighbours: q.neighbours.all({ id: n.id }),
       themes: themesOf(n.id),
+      room: n.room,
       as_of: n.as_of,
       // A court case's opinions, each with the older idea it echoes (if any) resolved for linking.
       opinions: n.opinions ? JSON.parse(n.opinions).map((o) => {

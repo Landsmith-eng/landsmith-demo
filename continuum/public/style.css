@@ -11,12 +11,12 @@
 }
 :root {
   /* Sage paper and forest green. Fields: philosophy green, science ochre, religion slate blue, practice berry. */
-  --bg: #e8eee6;
-  --surface: #fbfcf9;
-  --ink: #1b241e;
-  --muted: #5a675e;
-  --line: #c9d5c4;
-  --accent: #1d4632;
+  --bg: #eef2ec;
+  --surface: #fbfcfa;
+  --ink: #161b18;
+  --muted: #4d5751;
+  --line: #cfd8cb;
+  --accent: #22573d;
   --accent-ink: #f4f8f2;
   --source-bg: #173526;
   --source-ink: #e9f1e6;
@@ -36,16 +36,16 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c1a12;
-    --surface: #13251a;
-    --ink: #e4ebe3;
-    --muted: #98a69b;
-    --line: #24392b;
-    --accent: #74b48e;
-    --accent-ink: #0f1611;
+    --bg: #121614;
+    --surface: #1a201c;
+    --ink: #f0f4ef;
+    --muted: #b1bbb4;
+    --line: #2e3832;
+    --accent: #93d3ac;
+    --accent-ink: #0e1410;
     --source-bg: #dfe9dc;
     --source-ink: #1b241e;
-    --f-philosophy: #7fbf98;
+    --f-philosophy: #93d3ac;
     --f-science: #d6b25c;
     --f-religion: #92b5dc;
     --f-practice: #d996ad;
@@ -62,9 +62,10 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 17px/1.55 var(--sans);
+  font: 18px/1.6 var(--sans);
 }
-main { max-width: 640px; margin: 0 auto; padding: 8px 16px 64px; }
+:root { --dock: calc(62px + env(safe-area-inset-bottom)); --bar: 52px; }
+main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 4px 16px calc(var(--dock) + 24px); }
 h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.25; margin: 0 0 .4em; }
 h1 { font-size: 1.75rem; }
 h2 { font-size: 1.2rem; margin-top: 2rem; }
@@ -74,21 +75,14 @@ p { margin: 0 0 1em; }
 .small { font-size: .85rem; }
 
 .bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  max-width: 640px; margin: 0 auto; padding: 14px 16px;
+  position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  max-width: 640px; height: var(--bar); margin: 0 auto; padding: 0 16px;
 }
 .brand { font-family: var(--display); font-weight: 600; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
 nav { display: flex; gap: 4px; }
 button { font: inherit; cursor: pointer; }
 .link { background: none; border: 0; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
 .link:hover, .link[aria-current="page"] { color: var(--ink); }
-/* Phones: the four tabs get their own row under the brand, evenly spaced. */
-@media (max-width: 520px) {
-  .bar { flex-wrap: wrap; gap: 2px; padding-bottom: 6px; }
-  .bar nav { width: 100%; justify-content: space-between; margin: 0 -8px; width: calc(100% + 16px); }
-  nav [aria-current="page"] { box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
-}
-
 .eyebrow { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; }
 .progress { display: flex; gap: 4px; margin: 4px 0 20px; }
 .progress span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
@@ -272,3 +266,86 @@ button.tile:hover { border-color: var(--field); }
 .theme.focus h2 { color: var(--accent); }
 .bubble.closed { opacity: .7; }
 .bubble.closed::after { content: ''; }
+
+/* ── The stage: one part of a concept per screen ─────────────────────────────────────────────────────────── */
+html.staged { scroll-snap-type: y proximity; }
+html.staged main { padding-bottom: 0; }
+.panel {
+  position: relative; min-height: calc(100svh - var(--dock) - var(--links, 0px));
+  display: flex; align-items: center; scroll-snap-align: start; scroll-margin-top: 0; padding: 28px 0 40px;
+}
+html.staged:has(.dock-links:not(:empty)) { --links: 44px; }
+.panel-inner { width: 100%; padding-right: 14px; transition: opacity .6s ease, transform .6s ease; }
+.panel.past .panel-inner { opacity: .3; transform: scale(.965); }
+.rise { opacity: 0; transform: translateY(22px) scale(.965); filter: blur(5px);
+  transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1), filter .8s ease;
+  transition-delay: calc(var(--i, 0) * 110ms); }
+.panel.in .rise { opacity: 1; transform: none; filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .panel-inner { transition: none !important; transform: none !important; filter: none !important; }
+  .rise { opacity: 1; }
+  html.staged { scroll-snap-type: none; }
+}
+
+.panel.p-arrival { min-height: calc(100svh - var(--bar) - var(--dock) - var(--links, 0px)); }
+.p-arrival h1 { font-size: clamp(2.1rem, 8.5vw, 3.2rem); line-height: 1.12; margin: .2em 0 .5em; letter-spacing: -.01em; }
+.p-arrival .who, .p-arrival .eyebrow { color: var(--field, var(--muted)); font-weight: 600; letter-spacing: .06em; font-size: .82rem; text-transform: uppercase; }
+.p-arrival .progress { margin: 6px 0 22px; }
+.hint { margin-top: 28px; font-size: .82rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.hint::after { content: ' ↓'; display: inline-block; animation: nudge 2.4s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) { .hint::after { animation: none; } }
+
+.plain { font-size: 1.22rem; line-height: 1.68; }
+.panel .eyebrow { color: var(--field, var(--muted)); font-weight: 600; }
+.quote { font-family: var(--display); font-size: 1.32rem; line-height: 1.55; margin: 0 0 1rem; padding-left: 16px; border-left: 3px solid var(--field, var(--accent)); }
+.quote p { margin: 0 0 .8em; white-space: pre-line; }
+.quote.role-dissent { border-left-style: dashed; }
+.p-source cite { display: block; font-style: normal; font-size: .85rem; color: var(--muted); }
+.srclinks { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.srclinks a { color: var(--ink); font-size: .92rem; }
+.p-yours .yours { font-size: 1.15rem; }
+.p-related .bubble { margin-top: 10px; }
+.p-related .bubbles, .p-related .panel-inner > .bubble { border-top: 1px solid var(--line); }
+.end-links { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.end-links .btn { width: 100%; }
+
+/* Wallpaper: a picture full-bleed behind a part. Faded and blurred before writing; clearer after. */
+.wall { position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); overflow: hidden; }
+.wall img { width: 100%; height: 100%; object-fit: cover; }
+.wall::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 30%, transparent) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 55%, var(--bg) 88%); }
+.wall.faded img { opacity: .35; filter: blur(3px) saturate(.85); }
+.wall.clear img { opacity: .5; }
+.p-picture { padding: 0; }
+.stage-figure { margin: 0 calc(50% - 50vw); width: 100vw; }
+.stage-figure img { display: block; width: 100%; height: calc(100svh - var(--dock) - var(--links, 0px) - 80px); object-fit: cover; }
+.stage-figure.artefact img { object-fit: contain; }
+.stage-figure figcaption { font-size: .78rem; color: var(--muted); padding: 6px 16px; }
+@media (min-width: 700px) { .stage-figure { margin: 0; width: 100%; } .wall { width: 100vw; } }
+
+.p-question .prompt { font-size: 1.4rem; line-height: 1.45; }
+.p-question textarea { min-height: 34svh; font-size: 1.05rem; }
+
+/* The motif canvas sits behind everything; --level dims it on dense parts. */
+#motif { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .5s ease; }
+#motif.on { opacity: var(--level, 1); }
+
+/* Dot rail: where you are in this concept. */
+.rail { position: fixed; z-index: 3; right: 6px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+.rail .dot { width: 18px; height: 18px; padding: 0; border: 0; background: none; display: grid; place-items: center; }
+.rail .dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: transform .3s, background .3s; }
+.rail .dot.on::before { background: var(--accent); transform: scale(1.5); }
+
+/* The constant menu: the card's links above the four tabs, fixed to the bottom. */
+.dock {
+  position: fixed; z-index: 4; left: 0; right: 0; bottom: 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.dock-links { display: flex; gap: 6px; overflow-x: auto; max-width: 640px; margin: 0 auto; padding: 8px 16px 0; scrollbar-width: none; }
+.dock-links:empty { display: none; }
+.dock-links .chip { flex: none; }
+.tabs { display: flex; justify-content: space-around; max-width: 640px; margin: 0 auto; }
+.tab { flex: 1; background: none; border: 0; color: var(--muted); padding: 14px 4px 16px; font-size: .95rem; }
+.tab[aria-current="page"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+.dock-links .chip { color: var(--ink); }
