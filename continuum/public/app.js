@@ -433,6 +433,11 @@ const ttsEnabled = async () => {
 // or nothing (the default: ElevenLabs when the server has a key, else the phone's default voice). A bare name is a
 // choice from before natural voices existed; it is ignored once they do.
 const VOICE_KEY = 'continuum.voice';
+// Reading speed, kept on this device: 0.8 to 1.4. ElevenLabs audio plays faster or slower (pitch kept, no new clip
+// to pay for); the phone's voice speaks at that rate.
+const RATE_KEY = 'continuum.rate';
+const RATES = [['Slower', .8], ['Calm', .9], ['Normal', 1], ['Brisk', 1.15], ['Faster', 1.3]];
+const readRate = () => { const r = Number(store.get(RATE_KEY)); return RATES.some(([, v]) => v === r) ? r : 1; };
 async function voicePlan() {
   const choice = store.get(VOICE_KEY) ?? '';
   const el = await ttsEnabled();
@@ -468,7 +473,7 @@ function sayPhone(text, voice, run) {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.rate = .95;
+    u.rate = .95 * readRate();
     u.onend = u.onerror = () => resolve();
     if (run) run.wake = resolve;
     speech.speak(u);
@@ -493,6 +498,8 @@ function playClip(url, run) {
     audioEl.onended = audioEl.onerror = done;
     if (run) run.wake = done;
     audioEl.src = url;
+    audioEl.preservesPitch = true;
+    audioEl.playbackRate = readRate();
     audioEl.play().catch(done);
   });
 }
@@ -569,7 +576,7 @@ async function chooseVoice() {
     } else if (speech) sayPhone(sample, all.find((v) => `phone:${v.name}` === key) ?? null, run);
   };
   const row = (label, note, key) => h('button', {
-    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String(current === key),
+    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String(current === key), 'data-key': key,
     onclick: (e) => {
       if (key) store.set(VOICE_KEY, key); else store.del(VOICE_KEY);
       sheet.querySelectorAll('.voice-row').forEach((r) => r.setAttribute('aria-checked', String(r === e.currentTarget)));
@@ -579,12 +586,24 @@ async function chooseVoice() {
   const defaultName = el?.voices.find((v) => v.id === el.default)?.name;
   const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
     h('h2', {}, 'Reading voice'),
+    h('div', { class: 'eyebrow', style: 'margin-top:8px' }, 'Speed'),
+    h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Reading speed' }, RATES.map(([label, v]) => h('button', {
+      type: 'button', class: `chip ${v === readRate() ? 'on' : ''}`, 'aria-pressed': String(v === readRate()),
+      onclick: (e) => {
+        store.set(RATE_KEY, String(v));
+        e.currentTarget.parentElement.querySelectorAll('.chip').forEach((c) => {
+          const on = c === e.currentTarget; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on));
+        });
+        preview(sheet.querySelector('.voice-row[aria-checked="true"]')?.dataset.key ?? '');
+      },
+    }, label))),
+    h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Voice'),
     h('p', { class: 'muted small' }, 'Tap a voice to hear it.'),
     row('Default', on ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
     on && !el && h('p', { class: 'notice' }, 'The natural voices could not be listed. The server window says why; the default natural voice may still work.'),
     el && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Natural voices · ElevenLabs'),
     el?.voices.map((v) => row(v.name, v.note, `el:${v.id}`)),
-    phoneVoices.length && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Phone voices'),
+    phoneVoices.length > 0 && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Phone voices'),
     phoneVoices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, `phone:${v.name}`)),
     h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
   const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
