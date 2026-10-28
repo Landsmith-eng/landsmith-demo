@@ -482,7 +482,8 @@ function sayPhone(text, voice, run) {
 }
 // ElevenLabs: the server returns MP3 for a piece of text; one audio element plays the pieces in turn.
 const audioEl = new Audio();
-async function fetchClip(text, voiceId) {
+async function fetchClip(text, voiceId) { return URL.createObjectURL(await fetchBlob(text, voiceId)); }
+async function fetchBlob(text, voiceId) {
   const res = await fetch('/api/tts', {
     method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
     body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
@@ -491,7 +492,7 @@ async function fetchClip(text, voiceId) {
     const body = await res.json().catch(() => ({}));
     throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
   }
-  return URL.createObjectURL(await res.blob());
+  return res.blob();
 }
 function playClip(url, run) {
   return new Promise((resolve) => {
@@ -1092,8 +1093,6 @@ function showJournal() {
 // links, and are read aloud in the reading voice. The conversation is kept, so it can be picked up later.
 const TALK_KEY = 'continuum.talk';
 const SPEAK_KEY = 'continuum.talk.speak';
-let talkVoice = null; // the reply being read aloud: { stop, wake }
-const stopTalkVoice = () => { if (talkVoice) { talkVoice.stop = true; talkVoice.wake?.(); } talkVoice = null; speech?.cancel(); audioEl.pause(); };
 // Reply text with [[id]] markers: the words, and each named idea as a link (a placeholder while it streams).
 function replyNodes(text, refs, done) {
   const out = [];
@@ -1108,17 +1107,65 @@ function replyNodes(text, refs, done) {
   return out;
 }
 const spokenReply = (text, refs) => text.replace(/\[\[([a-z0-9_]+)\]\]/g, (_, id) => refs[id]?.title ?? '').replace(/\s+/g, ' ').trim();
-async function speakReply(text) {
+
+// Reading a reply aloud, one sentence at a time, so it can be paused, repeated, or started from any sentence (tap it).
+// One reply plays at a time; the sentence being read is highlighted. view = { spans, spoken, btn, clips }.
+const talkPlayer = { view: null, i: 0, state: 'idle', run: null };
+function setPlayState(view, state) {
+  if (!view) return;
+  view.btn.textContent = state === 'playing' ? 'Pause' : state === 'paused' ? 'Resume' : 'Listen';
+  view.btn.setAttribute('aria-pressed', String(state === 'playing'));
+  view.spans.forEach((sp, k) => sp.classList.toggle('now', state !== 'idle' && k === talkPlayer.i));
+}
+function stopTalkVoice() {
+  const p = talkPlayer;
+  if (p.run) { p.run.stop = true; p.run.wake?.(); }
+  speech?.cancel(); audioEl.pause();
+  const v = p.view; p.view = null; p.run = null; p.state = 'idle'; setPlayState(v, 'idle');
+}
+async function playFrom(view, i) {
   stopTalkVoice();
-  const run = talkVoice = { stop: false, wake: null };
+  const p = talkPlayer; const run = { stop: false, wake: null };
+  Object.assign(p, { view, i, state: 'playing', run });
+  setPlayState(view, 'playing');
   const plan = await voicePlan();
-  if ('el' in plan) {
-    try {
-      for (const piece of chunks(text)) { if (run.stop) return; await playClip(await fetchClip(piece, plan.el), run); }
-      return;
-    } catch { if (!speech) return; }
+  const clip = (k) => {
+    if (!view.clips.has(k)) view.clips.set(k, fetchBlob(view.spoken[k], plan.el).catch((e) => { view.clips.delete(k); throw e; }));
+    return view.clips.get(k);
+  };
+  let useEl = 'el' in plan;
+  while (p.i < view.spoken.length && !run.stop) {
+    setPlayState(view, 'playing');
+    if (useEl) {
+      try {
+        const blob = await clip(p.i);
+        if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
+        if (run.stop) return;
+        await playClip(URL.createObjectURL(blob), run);
+      } catch (e) {
+        if (!speech) break;
+        notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ''}. Using the phone's voice.`);
+        useEl = false; continue;
+      }
+    } else await sayPhone(view.spoken[p.i], plan.phone ?? null, run);
+    if (run.stop || p.state === 'paused') return; // paused: stay on this sentence
+    p.i++;
   }
-  for (const line of sentences(text)) { if (run.stop) return; await sayPhone(line, plan.phone ?? null, run); }
+  if (p.run === run) stopTalkVoice();
+}
+function togglePlay(view) {
+  const p = talkPlayer;
+  if (p.view !== view || p.state === 'idle') return playFrom(view, 0);
+  if (p.state === 'playing') {
+    p.state = 'paused';
+    // The natural voice pauses mid-sentence; the phone's voice stops and resumes from the start of the sentence.
+    if (!audioEl.paused) audioEl.pause(); else { p.run.stop = true; speech?.cancel(); }
+    return setPlayState(view, 'paused');
+  }
+  if (p.state === 'paused') {
+    if (!p.run.stop && audioEl.src && audioEl.paused && !audioEl.ended) { p.state = 'playing'; setPlayState(view, 'playing'); audioEl.play(); }
+    else playFrom(view, p.i);
+  }
 }
 
 function showTalk({ about = null } = {}) {
@@ -1136,9 +1183,26 @@ function showTalk({ about = null } = {}) {
     const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
     const bubble = (who, text, done = true) => {
       const b = h('div', { class: `talk-turn ${who === 'you' ? 'from-you' : 'from-map'}` });
-      if (who === 'you') b.textContent = text; else b.replaceChildren(...replyNodes(text, refs, done));
+      if (who === 'you') b.textContent = text; else if (done) finishReply(b, text); else b.replaceChildren(...replyNodes(text, refs, false));
       log.append(b); return b;
     };
+    // A finished reply: each sentence a tap target (listen from here), and Listen/Pause/Resume and Repeat below.
+    function finishReply(b, text) {
+      const parts = sentences(text);
+      if (!parts.length) { b.replaceChildren(...replyNodes(text, refs, true)); return null; }
+      const btn = h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false' }, 'Listen');
+      const again = h('button', { type: 'button', class: 'chip' }, 'Repeat');
+      const view = { spans: [], spoken: parts.map((t) => spokenReply(t, refs)), btn, clips: new Map() };
+      view.spans = parts.map((t, k) => {
+        const sp = h('span', { class: 'say', title: 'Listen from here' }, ...replyNodes(t, refs, true), ' ');
+        sp.addEventListener('click', (e) => { if (!e.target.closest('a')) playFrom(view, k); });
+        return sp;
+      });
+      btn.addEventListener('click', () => togglePlay(view));
+      again.addEventListener('click', () => playFrom(view, 0));
+      b.replaceChildren(h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again));
+      return view;
+    }
     state.turns.forEach((x) => bubble(x.who, x.text));
     if (!state.turns.length) {
       log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
@@ -1170,7 +1234,7 @@ function showTalk({ about = null } = {}) {
       bubble('you', text);
       const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
       keepInView(out);
-      let reply = '';
+      let reply = ''; let view = null;
       try {
         const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today() }) });
         if (!res.ok) {
@@ -1192,11 +1256,11 @@ function showTalk({ about = null } = {}) {
               reply += m.d; out.classList.remove('thinking'); out.replaceChildren(...replyNodes(reply.trimStart(), refs, false));
               keepInView(out);
             }
-            else if (m.t === 'done') { Object.assign(refs, m.refs); out.replaceChildren(...replyNodes(reply.trim(), refs, true)); keepInView(out); }
+            else if (m.t === 'done') { Object.assign(refs, m.refs); view = finishReply(out, reply.trim()); keepInView(out); }
             else if (m.t === 'error') throw new Error(m.error);
           }
         }
-        if (speakOn() && reply.trim()) speakReply(spokenReply(reply, refs));
+        if (speakOn() && view) playFrom(view, 0);
       } catch (e) {
         out.classList.remove('thinking');
         if (!reply) out.remove();
@@ -1206,33 +1270,49 @@ function showTalk({ about = null } = {}) {
     send.addEventListener('click', submit);
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); submit(); } });
 
-    // Speaking: the browser's speech recognition (on Android Chrome it sends the audio to Google to transcribe).
+    // Speaking: the browser's speech recognition (on Android Chrome it sends the audio to Google to transcribe). It
+    // keeps listening through pauses for thought (restarting when the browser ends a session on silence) until the
+    // user taps again; then what they said is sent.
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let rec = null;
+    let rec = null; let listening = false; let heard = ''; let before = '';
     const mic = Recognition && h('button', { type: 'button', class: 'btn ghost mic', 'aria-label': 'Speak', 'aria-pressed': 'false' }, 'Speak');
-    function stopMic() { if (rec) { const r = rec; rec = null; r.stop(); } if (mic) { mic.setAttribute('aria-pressed', 'false'); mic.textContent = 'Speak'; } }
-    mic?.addEventListener('click', () => {
-      if (rec) return stopMic();
-      stopTalkVoice();
-      rec = new Recognition();
-      rec.lang = navigator.language || 'en-US'; rec.interimResults = true; rec.continuous = false;
-      const before = ta.value ? `${ta.value.trim()} ` : '';
-      let finalText = '';
-      rec.onresult = (e) => {
-        let interim = ''; finalText = '';
-        for (const r of e.results) { if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; }
-        ta.value = before + finalText + interim;
+    const micLabel = (on) => { mic.setAttribute('aria-pressed', String(on)); mic.textContent = on ? 'Listening… tap when done' : 'Speak'; };
+    function stopMic() { listening = false; if (rec) { rec.onend = null; rec.abort(); rec = null; } if (mic) micLabel(false); }
+    function finishMic() { micLabel(false); if (heard.trim()) submit(); }
+    function listen() {
+      const r = rec = new Recognition();
+      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
+      let session = '';
+      r.onresult = (e) => {
+        let fin = ''; let interim = '';
+        for (const x of e.results) { if (x.isFinal) fin += x[0].transcript; else interim += x[0].transcript; }
+        session = fin;
+        ta.value = `${before}${heard} ${fin}${interim}`.replace(/\s+/g, ' ').trimStart();
       };
-      rec.onerror = () => { status.textContent = 'The microphone did not catch that. Try again, or type.'; };
-      rec.onend = () => { const said = finalText.trim(); stopMic(); if (said) submit(); };
-      mic.setAttribute('aria-pressed', 'true'); mic.textContent = 'Listening… tap to stop';
-      rec.start();
+      r.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          listening = false; status.textContent = 'The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.';
+        }
+      };
+      r.onend = () => {
+        heard = `${heard} ${session}`.trim(); rec = null;
+        if (listening) { try { listen(); return; } catch { listening = false; } }
+        finishMic();
+      };
+      r.start();
+    }
+    mic?.addEventListener('click', () => {
+      if (listening) { listening = false; if (rec) rec.stop(); else finishMic(); return; }
+      stopTalkVoice();
+      listening = true; heard = ''; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
+      status.textContent = ''; micLabel(true);
+      listen();
     });
 
     compose.append(h('div', { class: 'row' }, mic || h('span'), send));
     render(
       h('h1', {}, 'Talk'),
-      h('p', { class: 'muted small' }, 'A conversation with the ideas on the map. It challenges what you hold firmly, backs you when you are onto something, and suggests practices and readings.'),
+      h('p', { class: 'muted small' }, 'A conversation with the ideas on the map. It challenges what you hold firmly, backs you when you are onto something, and suggests practices and readings. Tap any sentence of a reply to hear it from there.'),
       h('div', { class: 'theme-chips' }, speakToggle, fresh),
       log,
       compose,

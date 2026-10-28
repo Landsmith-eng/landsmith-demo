@@ -452,3 +452,8 @@ html.gazing { overflow: hidden; }
 .talk-compose textarea { min-height: 3.2em; }
 .mic[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .tab { padding-left: 2px; padding-right: 2px; font-size: .82rem; }
+
+.talk-turn .say { cursor: pointer; border-radius: 4px; transition: background .2s; }
+.talk-turn .say.now { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.talk-controls { display: flex; gap: 6px; margin-top: 10px; font-family: var(--sans, inherit); }
+.talk-controls .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
