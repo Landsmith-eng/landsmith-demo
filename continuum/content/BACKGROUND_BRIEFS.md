@@ -60,3 +60,19 @@ by", not "copy": we want a new plate in that work's manner. For people, "no face
 | `culture` | Culture and everyday life | A lantern-lit street market at evening, figures blurred in motion at the edges; at lower right a stall of glass bowls of goldfish glowing in the lantern light. Inspired by Utagawa Kuniyoshi's goldfish prints (1839 to 1840): orange fish, paper lanterns. |
 | `law` | Law and the state | Courthouse steps and columns at first light, long column shadows across the stone; a cat asleep in the sun on a low step; in the fading sky, the faint constellation Libra, the scales. Inspired by "Urania's Mirror" (1824) for the stars and Canaletto (18th century) for the stone. |
 | `now` | Now | A morning newspaper folded on a table by a window, the street outside in motion; a cat curled asleep beside it; a glass bowl with one goldfish catching the light. Inspired by Vermeer's "Girl Reading a Letter at an Open Window" (c. 1657): light from the left, a still room. |
+
+## Extra plates (tabs and spares)
+
+Not wired in yet: the tab plates go behind the Practice, Journal, Review and Gallery screens once they arrive; the
+spares are kept for new rooms or to rotate with a room's own plate.
+
+| Use | Background prompt (after the style block) |
+|---|---|
+| Practice tab | A single heron standing still in shallow water at dawn, mist on the reeds, perfect reflection. Inspired by Ohara Koson's heron prints (c. 1910s). |
+| Journal tab | A writing desk under a window at night, an inkwell and closed notebook, a moth resting near a candle. Inspired by Vilhelm Hammershøi's quiet interiors (c. 1900). |
+| Review tab | Koi circling slowly in a dark garden pond seen from above, a few fallen leaves on the surface. Inspired by Japanese woodblock fish prints of the 1800s. |
+| Gallery tab | A long gallery corridor with tall windows and empty frames on the walls, a cat walking away down the middle. Inspired by Hubert Robert's gallery paintings (1790s). |
+| Spare: stillness | An owl on a bare branch against a deep night sky, the constellation Ursa Major faint behind it. Inspired by the "Urania's Mirror" star cards (1824). |
+| Spare: change | A river delta seen from a hill at dusk, braided channels catching the last light, a few fish jumping. Inspired by Thomas Moran's watercolours (1870s). |
+| Spare: patience | A spider web heavy with dew between two grass stems at sunrise, a valley soft behind it. Inspired by Albrecht Dürer's "Great Piece of Turf" (1503). |
+| Spare: return | A small boat pulled up on a quiet shore at evening, a lantern on its bench, stars appearing. Inspired by Caspar David Friedrich's coastal scenes (c. 1820). |
