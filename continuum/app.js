@@ -105,6 +105,25 @@ export function createApp(db, { adminKey } = {}) {
   for (const r of rooms) for (const ext of ['webp', 'jpg', 'png']) {
     if (existsSync(new URL(`${r.id}.${ext}`, ROOM_IMG_DIR))) { roomBg.set(r.id, `/img/rooms/${r.id}.${ext}`); break; }
   }
+  // Daily-life scenes (public/img/spares/) take turns with a room's own plate, one per day, where they fit the room.
+  const SPARE_DIR = new URL('./public/img/spares/', import.meta.url);
+  const ROOM_ROTATION = {
+    nineteenth: ['daily_station', 'daily_bridge_rain', 'daily_laundry_yard', 'daily_fish_market'],
+    twentieth: ['daily_tram_snow', 'daily_cafe_terrace', 'daily_library_steps', 'daily_bakery_window'],
+    culture: ['daily_fish_market', 'daily_cafe_terrace', 'daily_laundry_yard', 'daily_bakery_window'],
+    now: ['daily_station', 'daily_bridge_rain', 'daily_tram_snow', 'daily_library_steps'],
+  };
+  const roomRotation = new Map();
+  for (const [room, names] of Object.entries(ROOM_ROTATION)) {
+    const own = roomBg.get(room);
+    const extra = names.filter((f) => existsSync(new URL(`${f}.webp`, SPARE_DIR))).map((f) => `/img/spares/${f}.webp`);
+    if (own && extra.length) roomRotation.set(room, [own, ...extra]);
+  }
+  const roomBgOn = (room, date) => {
+    const list = roomRotation.get(room);
+    if (!list) return roomBg.get(room) ?? null;
+    return list[Math.floor(Date.parse(`${date}T00:00:00Z`) / 86400000) % list.length];
+  };
 
   // Index: which themes each idea belongs to.
   const themesByNode = new Map();
@@ -134,7 +153,7 @@ export function createApp(db, { adminKey } = {}) {
   const card = (n) => ({ id: n.id, type: n.type, field: n.field, title: n.title, thinker: n.thinker, year: n.year, prompt: n.prompt });
 
   // Before writing, the user sees only the card and the question. Everything else is behind "write first".
-  function fullNode(n, uid) {
+  function fullNode(n, uid, date = localDate()) {
     const entry = q.entry.get(uid, n.id) ?? null;
     return {
       ...card(n),
@@ -153,7 +172,7 @@ export function createApp(db, { adminKey } = {}) {
       themes: themesOf(n.id),
       room: n.room,
       // Behind the stage: the idea's own picture once it is revealed, otherwise its room's.
-      background: (entry && n.image ? JSON.parse(n.image).src : null) ?? roomBg.get(n.room) ?? null,
+      background: (entry && n.image ? JSON.parse(n.image).src : null) ?? roomBgOn(n.room, date),
       as_of: n.as_of,
       // A court case's opinions, each with the older idea it echoes (if any) resolved for linking.
       opinions: n.opinions ? JSON.parse(n.opinions).map((o) => {
@@ -179,7 +198,7 @@ export function createApp(db, { adminKey } = {}) {
     let state, node;
     if (written) {
       state = 'done_today';
-      node = fullNode(q.node.get(written.node_id), uid);
+      node = fullNode(q.node.get(written.node_id), uid, date);
     } else {
       const pick = todaysPick(uid, date);
       state = pick ? 'write' : 'complete';
@@ -203,7 +222,7 @@ export function createApp(db, { adminKey } = {}) {
     if (q.entry.get(uid, nodeId) || todaysPick(uid, date) !== nodeId) return res.status(409).json({ error: 'not_todays_node' });
     q.insertEntry.run(uid, nodeId, text, date);
     q.insertEvent.run(uid, 'respond', nodeId, date);
-    res.json({ node: fullNode(q.node.get(nodeId), uid) });
+    res.json({ node: fullNode(q.node.get(nodeId), uid, date) });
   });
 
   // The rabbit hole: any node opens fully, with no bottom enforced. The one exception is today's
@@ -217,7 +236,7 @@ export function createApp(db, { adminKey } = {}) {
       return res.json({ node: card(node), today: true });
     }
     q.insertEvent.run(uid, 'walk', node.id, date);
-    res.json({ node: fullNode(node, uid) });
+    res.json({ node: fullNode(node, uid, date) });
   });
 
   app.post('/api/event', auth, (req, res) => {
@@ -402,15 +421,19 @@ export function createApp(db, { adminKey } = {}) {
     const from = new Date(Date.parse(`${date}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
     const opened = pq.openDays.get(uid, from, date).n;
     const practised = logs.filter((l) => l.local_date >= from).length;
-    if (!today && opened >= 4 && practised * 2 < opened) { size = 'tiny'; nudge ??= 'On busy days the smallest version is the one that sticks. Ten seconds.'; }
+    const reluctant = !today && opened >= 4 && practised * 2 < opened;
+    if (reluctant) { size = 'tiny'; nudge ??= 'On busy days the smallest version is the one that sticks. Ten seconds.'; }
     const streakAtSize = (() => { let n = 0; for (const l of past) { if (l.size !== size) break; n++; } return n; })();
     const offerBigger = !today && size !== 'full' && gap === 1 && streakAtSize >= 3 ? step(1) : null;
     if (today) size = today.size;
+    // The plate behind the practice carries the day's situation: done for today, coming back, a reluctant
+    // stretch, or ready to grow. null = the usual one.
+    const mood = today ? 'stillness' : last && gap >= 3 ? 'return' : reluctant ? 'patience' : offerBigger ? 'change' : null;
     const kept = pq.keptFor.get({ uid, practice: chosen.id }) ?? pq.keptFor.get({ uid, practice: null });
     return {
       practice: { id: chosen.id, title: chosen.title, plain_face: chosen.plain_face, steps: practiceSteps[chosen.id] ?? null },
       reason: reason === 'weekday' ? `${weekday}'s practice` : kept ? `Because you kept ${kept.thinker ? `${kept.thinker}'s line` : `"${kept.title}"`}` : 'Built from the ideas you have written on and walked to',
-      size, sizes: SIZES, arrive: ARRIVE, nudge, offer_bigger: offerBigger, streak, done_today: today ?? null,
+      size, sizes: SIZES, arrive: ARRIVE, nudge, offer_bigger: offerBigger, streak, done_today: today ?? null, mood,
       anchor: kept ? { id: kept.id, title: kept.title, thinker: kept.thinker, line: firstLine(kept.source_face) || kept.title } : null,
       choices: practices.map((p) => ({ id: p.id, title: p.title })),
     };

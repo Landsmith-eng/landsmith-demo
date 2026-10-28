@@ -63,8 +63,10 @@ by", not "copy": we want a new plate in that work's manner. For people, "no face
 
 ## Extra plates (tabs and spares)
 
-Not wired in yet: the tab plates go behind the Practice, Journal, Review and Gallery screens once they arrive; the
-spares are kept for new rooms or to rotate with a room's own plate.
+The tab plates sit behind the Practice, Journal, Review and Gallery screens (`public/img/tabs/`). The four spares
+carry a meaning and replace a tab's plate when the situation fits (`MOOD_BG` in `public/app.js`): the owl once
+today's practice is done, the boat when coming back after three days or more, the dewy web on a reluctant stretch,
+the braided river when ready for a bigger practice or when a mind changed this week (Review).
 
 | Use | Background prompt (after the style block) |
 |---|---|
@@ -80,7 +82,8 @@ spares are kept for new rooms or to rotate with a room's own plate.
 ## Daily life, observed (blurred figures)
 
 The look of the market plate: ordinary places, people softly blurred in motion with no visible faces, one still
-animal or object in sharp focus. Spares for any tab or room, or to rotate with Culture and Now.
+animal or object in sharp focus. They take turns, one a day, with the own plates of the 1800s, 1900s, Culture and
+Now rooms (`ROOM_ROTATION` in `app.js`; files in `public/img/spares/`).
 
 | Name | Background prompt (after the style block) |
 |---|---|

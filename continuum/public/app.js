@@ -61,7 +61,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(TAB_BG[currentTab] ?? null, .35, { plain: true }); }
+  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? null, .35, { plain: true }); }
   const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
     `Test date: ${testDate()} (real date ${realToday()}). `,
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
@@ -72,9 +72,16 @@ function render(...nodes) {
 
 // Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
 const TAB_BG = { practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp' };
+// Plates with a meaning, shown when the situation fits: done for today (the owl), coming back after a gap (the
+// boat), a reluctant stretch (the dewy web), ready to grow or a changed mind (the braided river).
+const MOOD_BG = {
+  stillness: '/img/spares/stillness_owl.webp', return: '/img/spares/return_boat.webp',
+  patience: '/img/spares/patience_web.webp', change: '/img/spares/change_river.webp',
+};
 let currentTab = null;
+let pageBg = null; // a page's own plate in place of its tab's, set just before render
 function setNav(name) {
-  currentTab = name;
+  currentTab = name; pageBg = null;
   for (const b of document.querySelectorAll('nav [data-nav]')) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -301,6 +308,7 @@ function showPractice({ practice = null, size = null } = {}) {
       finish.disabled = true;
       try {
         const after = await api('/api/practice', { method: 'POST', body: { practice_id: plan.practice.id, size: sz, seconds: spent, intention: intention.value, date: today() } });
+        setWallpaper(MOOD_BG[after.mood] ?? TAB_BG.practice, wallMax); // done: the owl settles in behind
         endBox.replaceChildren(
           h('h2', {}, after.streak > 1 ? `Done. ${after.streak} days in a row.` : 'Done. That is how a habit starts.'),
           h('p', { class: 'plain' }, sz === 'tiny' ? 'Ten seconds counts. Tomorrow, the same again, or a little more.' : 'Small, repeated, and yours.'),
@@ -339,7 +347,7 @@ function showPractice({ practice = null, size = null } = {}) {
           h('button', { type: 'button', class: 'chip', onclick: () => showPractice({ practice: c.id, size: sz }) }, c.title))),
       ]),
     ].filter(Boolean);
-    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: TAB_BG.practice });
+    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: MOOD_BG[plan.mood] ?? TAB_BG.practice });
   });
 }
 
@@ -520,6 +528,7 @@ function showReview(days = 7) {
       h('button', { type: 'button', class: `btn ${days === 0 ? '' : 'ghost'}`, onclick: () => showReview(0) }, 'Everything'));
     const changed = r.reactions.changed + r.reactions.somewhat;
     const answered = changed + r.reactions.unchanged;
+    pageBg = changed ? MOOD_BG.change : null; // a mind changed this week: the river finding new channels
     const practices = r.practices.length
       ? h('div', {}, h('h2', {}, 'Where it kept landing'),
           h('p', { class: 'muted small' }, 'The practices your walks arrived at, most often first.'),

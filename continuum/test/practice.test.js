@@ -49,16 +49,19 @@ test('practice: three days in a row offers the next size; a gap steps back down 
       assert.equal(r.status, 200);
       assert.equal(r.json.streak, i + 1);
       assert.ok(r.json.done_today);
+      assert.equal(r.json.mood, 'stillness'); // done for today: the owl
     }
     let p = (await call(`/api/practice?date=${day(3)}`)).json;
     assert.equal(p.size, 'tiny');
     assert.equal(p.offer_bigger, 'small');
+    assert.equal(p.mood, 'change'); // ready to grow: the river
     assert.equal(p.streak, 3);
     await call('/api/practice', { practice_id: 'practice_examine_daily', size: 'small', seconds: 60, date: day(3) });
     // Four days off: back down a size, with a welcome rather than a scolding.
     p = (await call(`/api/practice?date=${day(8)}`)).json;
     assert.equal(p.size, 'tiny');
     assert.match(p.nudge, /Welcome back/);
+    assert.equal(p.mood, 'return'); // back after a gap: the boat
     assert.equal(p.streak, 0);
     // Validation.
     assert.equal((await call('/api/practice', { practice_id: 'socrates_unexamined_life', size: 'tiny', date: day(8) })).status, 400);
@@ -75,6 +78,7 @@ test('practice: opening the app most days but practising on few of them makes to
     const p = (await call(`/api/practice?date=${day(6)}`)).json;
     assert.equal(p.size, 'tiny');
     assert.match(p.nudge, /smallest version/);
+    assert.equal(p.mood, 'patience'); // a reluctant stretch: the dewy web
   } finally { server.close(); }
 });
 
@@ -101,5 +105,22 @@ test('compass: holding ground brings a gentle challenge; curiosity follows what 
     assert.equal(c.practice_nudge, 'Ten seconds of practice');
     await call('/api/practice', { practice_id: 'practice_keep_death_in_view', size: 'tiny', date: '2026-11-03' });
     assert.equal((await call('/api/compass?date=2026-11-03')).json.practice_nudge, null);
+  } finally { server.close(); }
+});
+
+test('room plates: the daily-life scenes take turns with the 1800s room\'s own plate, one a day', async () => {
+  const { db, server, call } = await boot();
+  try {
+    const { id } = db.prepare("SELECT id FROM nodes WHERE room = 'nineteenth' AND seq IS NULL AND image IS NULL LIMIT 1").get();
+    const seen = new Set();
+    for (let i = 0; i < 5; i++) seen.add((await call(`/api/node/${id}?date=${day(i)}`)).json.node.background);
+    assert.equal(seen.size, 5);
+    assert.ok(seen.has('/img/rooms/nineteenth.webp'));
+    assert.ok([...seen].every((src) => /^\/img\/(rooms|spares)\//.test(src)));
+    // The same day always gives the same plate.
+    assert.equal((await call(`/api/node/${id}?date=${day(1)}`)).json.node.background, (await call(`/api/node/${id}?date=${day(6)}`)).json.node.background);
+    // Rooms without a rotation keep their own plate every day.
+    const greek = db.prepare("SELECT id FROM nodes WHERE room = 'greece_rome' AND seq IS NULL AND image IS NULL LIMIT 1").get();
+    assert.equal((await call(`/api/node/${greek.id}?date=${day(2)}`)).json.node.background, '/img/rooms/greece_rome.webp');
   } finally { server.close(); }
 });
