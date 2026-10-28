@@ -5,14 +5,22 @@ import { createTts } from './tts.js';
 import { createTalk } from './talk.js';
 import { existsSync, readFileSync } from 'node:fs';
 
-// Private settings (the ElevenLabs key) live in .env next to this file, never in git. KEY=value, one per line.
+// Private settings (the API keys) live in .env next to this file, never in git. KEY=value, one per line. A value in
+// .env wins over the same name set elsewhere on the computer, so the file is the one place to change a key.
 const ENV_FILE = fileURLToPath(new URL('./.env', import.meta.url));
+const fromFile = new Set();
 if (existsSync(ENV_FILE)) {
   for (const line of readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !line.trimStart().startsWith('#') && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    const value = m && m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (m && value && !line.trimStart().startsWith('#')) { process.env[m[1]] = value; fromFile.add(m[1]); }
   }
 }
+// Where a key came from, and its shape (never the key itself): enough to see a wrong, cut-off or stray key.
+const keyShape = (name, expect) => {
+  const k = process.env[name] ?? '';
+  return `the key ${fromFile.has(name) ? 'in .env' : 'set elsewhere on this computer (not in .env)'} starts with "${k.slice(0, 7)}" and is ${k.length} characters long; ${expect}`;
+};
 
 const PORT = Number(process.env.PORT ?? 8878);
 const DB_PATH = process.env.CONTINUUM_DB ?? fileURLToPath(new URL('./data/continuum.db', import.meta.url));
@@ -47,7 +55,11 @@ createApp(db, {
   // Check the Anthropic key once at start (looking up the model costs nothing).
   if (talk) talk.client.models.retrieve(talk.model).then(
     () => console.log(`Talk: connected to Claude (${talk.model}).`),
-    (e) => console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''} ${e.message}). Talk is off until it does.`));
+    (e) => {
+      console.warn(`Talk: the Anthropic key did not work (${e.status ?? ''}). Talk is off until it does.`);
+      console.warn(`  ${keyShape('ANTHROPIC_API_KEY', 'an Anthropic API key starts with "sk-ant-api" and is about 108 characters.')}`);
+      if (process.env.ANTHROPIC_BASE_URL) console.warn(`  ANTHROPIC_BASE_URL is set to ${process.env.ANTHROPIC_BASE_URL}, which sends requests somewhere other than Anthropic.`);
+    });
   else console.log('Talk: off (add ANTHROPIC_API_KEY to .env to turn it on).');
   // Check the ElevenLabs key once at start, and say plainly what is wrong if it does not work.
   if (tts) tts.voices().then(
@@ -55,7 +67,6 @@ createApp(db, {
     (e) => {
       console.warn(`ElevenLabs: the key did not work: ${e.message}${e.why ? ` (${e.why})` : ''}. The app will use the phone's voice.`);
       // The key's shape, never the key: a cut-off or masked copy is the usual cause.
-      const k = process.env.ELEVENLABS_API_KEY;
-      console.warn(`  The key in .env starts with "${k.slice(0, 3)}" and is ${k.length} characters long. A full ElevenLabs key starts with "sk_" and is about 51 characters.`);
+      console.warn(`  ${keyShape('ELEVENLABS_API_KEY', 'a full ElevenLabs key starts with "sk_" and is about 51 characters.')}`);
     });
 });
