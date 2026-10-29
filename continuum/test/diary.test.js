@@ -97,3 +97,31 @@ test('after the first 14: adaptive daily cards with a reason, a gentle challenge
     assert.equal(t.journey.streak, 0);
   } finally { server.close(); }
 });
+
+test('the interview: answers saved and changed, a journey from firm views held by instinct, used for the daily card', async () => {
+  const { server, call } = await boot();
+  try {
+    let s = (await call('/api/stance')).json;
+    assert.equal(s.questions.length, 7);
+    assert.deepEqual(s.journey, { answered: 0, stops: [], open: [] });
+    let r = await call('/api/stance', { answers: [
+      { id: 'death', agree: 2, basis: 'instinct' },
+      { id: 'human_nature', agree: -1, basis: 'thought' },
+      { id: 'meaning', agree: 0, basis: null },
+    ] });
+    assert.equal(r.status, 200);
+    const j = r.json.journey;
+    assert.equal(j.answered, 3);
+    assert.equal(j.stops[0].stance, 'death'); // firm, by instinct: first
+    assert.equal(j.stops[0].shares.id, 'ecclesiastes_no_work_in_the_grave');
+    assert.equal(j.stops[0].differs.id, 'montaigne_to_philosophize_is_to_learn_to_die');
+    assert.equal(j.stops[1].shares.id, 'xunzi_human_nature_is_bad'); // disagreeing: the sides swap
+    assert.equal(j.open[0].stance, 'meaning');
+    assert.doesNotMatch(JSON.stringify(j), /wrong|bias|test/i);
+    // Changing an answer, and taking one back.
+    await call('/api/stance', { answers: [{ id: 'death', agree: null }] });
+    assert.equal((await call('/api/stance')).json.journey.stops[0].stance, 'human_nature');
+    assert.equal((await call('/api/stance', { answers: [{ id: 'nope', agree: 1 }] })).status, 400);
+    assert.equal((await call('/api/stance', { answers: [{ id: 'death', agree: 5 }] })).status, 400);
+  } finally { server.close(); }
+});

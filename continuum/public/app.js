@@ -1,5 +1,5 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
-import { setMotif, motifLevel, motifFor } from '/motifs.js';
+import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
 
@@ -410,6 +410,7 @@ function focusWall() {
   }
   const f = Math.min(1, between) * wallMax; // 0 = a part is centred (reading), 1 = halfway between two parts
   wallpaper.style.setProperty('--focus', f.toFixed(3));
+  if (document.documentElement.classList.contains('staged')) setSkyFocus(Math.min(1, between));
 }
 const queueWall = () => { if (!wallTick) wallTick = requestAnimationFrame(focusWall); };
 addEventListener('scroll', queueWall, { passive: true });
@@ -935,6 +936,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     });
     const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝');
     render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
+    setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
     if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
   });
@@ -1085,7 +1087,16 @@ function showJournal() {
           e.kind === 'kept' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body));
       })))
       : h('p', { class: 'muted' }, 'Nothing yet. Write today\'s answer, or leave a note on any idea you walk to: "Your notes" is near the end of every idea.');
-    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), roads, threads, entries);
+    const st = await api('/api/stance').catch(() => null);
+    const journey = st && (st.journey.answered
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'), journeyView(st.journey),
+          h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showStance() }, 'Change your answers'))
+      : h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'),
+          h('p', { class: 'muted small' }, 'A short interview, seven views people hold, helps Continuum plan a journey that suits you.'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showStance() }, 'Take the interview')));
+    const again = h('p', { class: 'muted small', style: 'margin-top:28px' },
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => tour() }, 'Take the spoken tour again'));
+    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), journey, roads, threads, entries, again);
   });
 }
 
@@ -1322,6 +1333,79 @@ function showTalk({ about = null } = {}) {
   });
 }
 
+// The interview: seven views people hold, one at a time, asked gently. Where do you stand, and how did you come to it?
+// It is not a test: it only shapes the journey. Answers can be changed any time; skipping is fine.
+const AGREE_CHOICES = [[2, 'Strongly agree'], [1, 'Lean toward agreeing'], [0, 'Not sure'], [-1, 'Lean toward disagreeing'], [-2, 'Strongly disagree']];
+function showStance() {
+  setNav('');
+  return guarded(async () => {
+    const data = await api('/api/stance');
+    const answers = { ...data.saved };
+    let i = -1;
+    const step = () => {
+      if (i < 0) {
+        return render(h('div', { class: 'interview' },
+          h('div', { class: 'eyebrow' }, 'A short interview'),
+          h('h1', {}, 'Where are you starting from?'),
+          h('p', { class: 'plain' }, 'Seven views that people hold. For each, say where you stand, and how you came to it. There are no right answers, and nothing here is judged.'),
+          h('p', { class: 'muted' }, 'Continuum uses your answers only to plan a journey that suits you: voices who share your views and give them reasons, voices who see things another way, and practices to try. You can change any answer later, or skip one.'),
+          h('div', { class: 'row', style: 'margin-top:20px' },
+            h('button', { type: 'button', class: 'link', onclick: () => showToday() }, 'Maybe later'),
+            h('button', { type: 'button', class: 'btn', onclick: () => { i = 0; step(); } }, 'Begin'))));
+      }
+      if (i >= data.questions.length) return finish();
+      const q = data.questions[i]; const a = answers[q.id] ?? {};
+      const choice = (value, label) => h('button', {
+        type: 'button', class: `choice ${a.agree === value ? 'on' : ''}`, 'aria-pressed': String(a.agree === value),
+        onclick: () => { answers[q.id] = { ...a, agree: value }; if (value === 0) { answers[q.id].basis = null; i++; } step(); },
+      }, label);
+      const basis = a.agree != null && a.agree !== 0 && h('div', { class: 'basis' },
+        h('p', { class: 'prompt' }, 'How did you come to this view?'),
+        Object.entries(data.basis).map(([k, label]) => h('button', {
+          type: 'button', class: `choice ${a.basis === k ? 'on' : ''}`, onclick: () => { answers[q.id] = { ...a, basis: k }; i++; step(); },
+        }, label)));
+      render(h('div', { class: 'interview' },
+        h('div', { class: 'eyebrow' }, `${i + 1} of ${data.questions.length} · a view some people hold`),
+        h('h1', { class: 'view' }, q.view),
+        h('p', { class: 'prompt' }, 'Where do you stand?'),
+        h('div', { class: 'choices' }, AGREE_CHOICES.map(([v, l]) => choice(v, l))),
+        basis,
+        h('div', { class: 'row', style: 'margin-top:18px' },
+          h('button', { type: 'button', class: 'link', onclick: () => { i = Math.max(-1, i - 1); step(); } }, 'Back'),
+          h('button', { type: 'button', class: 'link', onclick: () => { delete answers[q.id]; i++; step(); } }, 'Skip this one'))));
+      document.querySelector('.interview .choice.on, .interview .choice')?.focus({ preventScroll: true });
+    };
+    async function finish() {
+      const body = { answers: data.questions.map((q) => (answers[q.id] ? { id: q.id, agree: answers[q.id].agree, basis: answers[q.id].basis ?? null } : { id: q.id, agree: null })) };
+      const r = await api('/api/stance', { method: 'POST', body });
+      render(h('div', { class: 'interview' },
+        h('div', { class: 'eyebrow' }, 'Your journey'),
+        h('h1', {}, r.journey.stops.length ? 'Places worth a visit' : 'Thank you'),
+        r.journey.stops.length
+          ? h('p', { class: 'muted' }, 'Drawn from your answers. Start with a voice who shares your view and gives it reasons, then visit one who sees it another way. The journey also shapes your daily cards, and it lives in your Diary.')
+          : h('p', { class: 'muted' }, 'Your daily cards will follow your own curiosity. You can take the interview again from your Diary.'),
+        journeyView(r.journey),
+        h('div', { class: 'row', style: 'margin-top:20px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => showToday() }, 'On to today'))));
+    }
+    step();
+  });
+}
+// The journey as a list of stops: for each view, the voice who shares it, the one who sees it another way, a practice.
+function journeyView(j) {
+  const link = (c, label) => c && h('div', { class: 'stop-line' }, h('span', { class: 'muted small' }, label),
+    bubble(c, () => (c.type === 'practice' ? showPractice({ practice: c.id }) : walkTo(c.id, [])), null));
+  return h('div', { class: 'journey' },
+    j.stops.map((st, k) => h('section', { class: 'stop' },
+      h('div', { class: 'eyebrow' }, `Stop ${k + 1}`),
+      h('p', { class: 'stop-view' }, st.lead),
+      link(st.shares, 'A voice who shares it, with reasons'),
+      link(st.differs, 'A voice who sees it another way'),
+      link(st.practice, 'A practice to try'))),
+    j.open.length > 0 && h('section', { class: 'stop' },
+      h('div', { class: 'eyebrow' }, 'Questions you are open on'),
+      j.open.map((o) => h('div', {}, h('p', { class: 'stop-view' }, `"${o.view}"`), o.ideas.map((c) => link(c, ''))))));
+}
+
 // One step of the walk. `trail` is the path taken to get here, shown as breadcrumbs.
 function walkTo(id, trail) {
   return guarded(async () => {
@@ -1373,9 +1457,9 @@ addEventListener('touchend', (e) => {
 
 // The opening, once per visit: an empty hallway comes into focus, then the cat walks in as the name sharpens. A tap
 // skips it. Skipped when testing with ?day=, and shown as a still for reduced-motion settings.
-function intro() {
-  try { if (sessionStorage.getItem('continuum.intro')) return; sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
-  if (params.get('day')) return;
+function intro(then = () => {}) {
+  try { if (sessionStorage.getItem('continuum.intro')) return then(); sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
+  if (params.get('day')) return then();
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const hall = h('img', { class: 'hall', src: '/img/tabs/gallery_empty.webp', alt: '' });
   const cat = h('img', { class: 'cat', src: '/img/tabs/gallery.webp', alt: '' });
@@ -1383,7 +1467,8 @@ function intro() {
     h('div', { class: 'title' }, h('h1', {}, 'Continuum'), h('p', {}, 'A daily walk through human wisdom')));
   document.body.append(box);
   const timers = [];
-  const done = () => { timers.forEach(clearTimeout); box.classList.add('out'); setTimeout(() => box.remove(), 950); };
+  let ended = false;
+  const done = () => { if (ended) return; ended = true; timers.forEach(clearTimeout); box.classList.add('out'); setTimeout(() => { box.remove(); then(); }, 950); };
   box.addEventListener('click', done);
   Promise.all([hall, cat].map((im) => im.decode().catch(() => {}))).then(() => {
     if (still) { box.classList.add('on', 'walk'); timers.push(setTimeout(done, 1600)); return; }
@@ -1392,5 +1477,89 @@ function intro() {
   });
   timers.push(setTimeout(done, 9000)); // never stuck on a slow connection
 }
-intro();
+// The tour: a narrated walk round the app, like Landsmith's tutorials. Each step is spoken (in the reading voice) and
+// spotlights what it describes; it moves on by itself when the narration ends, or with Next. Offered once, after the
+// opening; again any time from the Diary. Ends by offering the seven questions.
+const TOUR_KEY = 'continuum.tour';
+const TOUR = [
+  { text: 'Welcome to Continuum. Each day brings one idea from the long conversation of human wisdom. You write what you think first, before you read a word of it. Then the idea opens, one part at a time.' },
+  { target: '.tabs [data-nav=today]', text: 'Today is your card for the day. Answer its question in a sentence or two. There are no wrong answers.' },
+  { target: '.tabs [data-nav=practice]', text: 'Practice turns ideas into habits. It starts at ten seconds a day, and grows as you keep going.' },
+  { target: '.tabs [data-nav=journal]', text: 'Your Diary keeps everything you write, the notes you leave on any idea, and the lines you keep. It suggests new roads, chosen from your own words.' },
+  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with the whole map. Argue a point, test a belief, or ask for a practice. It will push back when you are very sure.' },
+  { target: '.tabs [data-nav=review]', text: 'Review shows your week: what you wrote, where you wandered, and what changed your mind.' },
+  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme. Wander anywhere. Only the daily cards stay hidden until their day.' },
+  { target: '#listen', text: 'Listen reads any idea aloud. Voice sets the voice and the speed.' },
+  { text: 'Two more things. Pinch the page with two fingers to make the text larger. And on any picture, tap Look to step inside it for a while.' },
+  { text: 'That is the tour. If you like, a short interview comes next: seven views people hold, and where you stand on each. There are no right answers. It only helps Continuum plan a journey that suits you.' },
+];
+let tourState = null;
+function tour({ fromStart = true } = {}) {
+  endTour();
+  const box = h('div', { class: 'tour', role: 'dialog', 'aria-label': 'Tour of Continuum' });
+  const spot = h('div', { class: 'tour-spot', 'aria-hidden': 'true' });
+  const count = h('span', { class: 'tour-count' });
+  const text = h('p', { class: 'tour-text' });
+  const bar = h('div', { class: 'tour-bar' }, h('span'));
+  const back = h('button', { type: 'button', class: 'chip' }, 'Back');
+  const play = h('button', { type: 'button', class: 'chip' }, 'Pause');
+  const next = h('button', { type: 'button', class: 'btn' }, 'Next');
+  const skip = h('button', { type: 'button', class: 'link' }, 'Skip the tour');
+  box.append(spot, h('div', { class: 'tour-card' }, h('div', { class: 'row' }, count, skip), bar, text, h('div', { class: 'row tour-buttons' }, h('div', {}, back, play), next)));
+  document.body.append(box);
+  const st = tourState = { i: fromStart ? 0 : 0, run: null, paused: false, box };
+  const say = async (line) => {
+    const run = st.run = { stop: false, wake: null };
+    const plan = await voicePlan();
+    if (run.stop) return;
+    if ('el' in plan) { try { await playClip(await fetchClip(line, plan.el), run); return; } catch { /* fall back */ } }
+    for (const part of sentences(line)) { if (run.stop) return; await sayPhone(part, plan.phone ?? null, run); }
+  };
+  const silence = () => { if (st.run) { st.run.stop = true; st.run.wake?.(); } speech?.cancel(); audioEl.pause(); };
+  async function show(i) {
+    silence();
+    if (i >= TOUR.length) return finish();
+    st.i = i; const step = TOUR[i];
+    count.textContent = `${i + 1} of ${TOUR.length}`;
+    bar.firstChild.style.width = `${((i + 1) / TOUR.length) * 100}%`;
+    text.textContent = step.text;
+    back.disabled = i === 0;
+    next.textContent = i === TOUR.length - 1 ? 'Begin the interview' : 'Next';
+    const el = step.target && document.querySelector(step.target);
+    const r = el && el.getBoundingClientRect();
+    if (r && r.width) {
+      const pad = 6;
+      Object.assign(spot.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+      spot.classList.add('on'); box.classList.toggle('card-top', r.top > innerHeight / 2);
+    } else { spot.classList.remove('on'); box.classList.remove('card-top'); }
+    if (st.paused) return;
+    await say(step.text);
+    if (tourState === st && st.i === i && !st.paused && !st.run?.stop) setTimeout(() => { if (tourState === st && st.i === i && !st.paused) show(i + 1); }, 900);
+  }
+  function finish() { endTour(); store.set(TOUR_KEY, 'done'); showStance(); }
+  back.addEventListener('click', () => show(Math.max(0, st.i - 1)));
+  next.addEventListener('click', () => { st.paused = false; play.textContent = 'Pause'; show(st.i + 1); });
+  play.addEventListener('click', () => {
+    st.paused = !st.paused; play.textContent = st.paused ? 'Play' : 'Pause';
+    if (st.paused) silence(); else show(st.i);
+  });
+  skip.addEventListener('click', () => { endTour(); store.set(TOUR_KEY, 'done'); });
+  st.silence = silence;
+  show(0);
+}
+function endTour() { if (!tourState) return; tourState.silence?.(); tourState.box.remove(); tourState = null; }
+// The first time: a small invitation (a tap is needed before a page may speak), then the tour.
+function offerTour() {
+  if (store.get(TOUR_KEY) || params.get('day')) return;
+  const box = h('div', { class: 'tour', role: 'dialog', 'aria-label': 'Welcome' },
+    h('div', { class: 'tour-card' },
+      h('h2', { style: 'margin:0 0 .4em' }, 'Welcome to Continuum'),
+      h('p', { class: 'tour-text' }, 'A two-minute spoken tour shows you around. Turn your sound on.'),
+      h('div', { class: 'row tour-buttons' },
+        h('button', { type: 'button', class: 'link', onclick: () => { box.remove(); store.set(TOUR_KEY, 'done'); } }, 'Not now'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { box.remove(); tour(); } }, 'Start the tour'))));
+  document.body.append(box);
+}
+
+intro(offerTour);
 showToday();

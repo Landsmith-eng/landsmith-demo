@@ -87,6 +87,20 @@ for (const msg of content.imageIssues) bad(msg);
   }
   for (const id of Object.keys(practiceSteps)) if (!byId.has(id)) bad(`practice_steps.js: unknown practice ${id}`);
 }
+// The interview: each view points at real walk-only ideas (no daily card given away) and a real practice.
+{
+  const { stances } = await import('../content/stances.js');
+  const seen = new Set();
+  for (const q of stances) {
+    if (seen.has(q.id)) bad(`stances.js: duplicate ${q.id}`); seen.add(q.id);
+    for (const k of ['with', 'other']) {
+      const n = byId.get(q[k]);
+      if (!n) bad(`stances.js: ${q.id}.${k} is not an idea (${q[k]})`);
+      else if (n.seq != null) bad(`stances.js: ${q.id}.${k} is a daily card; use a walk-only idea`);
+    }
+    if (byId.get(q.practice)?.type !== 'practice') bad(`stances.js: ${q.id}.practice is not a practice (${q.practice})`);
+  }
+}
 // The index: every theme links real ideas, at least three of them, with a question.
 {
   const { themes, THEME_KINDS } = await import('../content/themes.js');

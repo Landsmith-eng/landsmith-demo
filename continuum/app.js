@@ -8,6 +8,7 @@ import { themes } from './content/themes.js';
 import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
+import { stances, BASIS } from './content/stances.js';
 import { systemBlocks, answer, referencedIds, MAX_USER_TEXT } from './talk.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
@@ -190,6 +191,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!pool.length) return null;
     const d = discovery(uid, () => false);
     const fresh = pool.filter((n) => !n.walked);
+    // Their journey from the interview comes first: the next stop they have not written on.
+    const inPool = new Set(pool.map((n) => n.id));
+    for (const stop of journeyFor(uid).stops) {
+      for (const [card, why] of [[stop.shares, 'shares the view, and gives it reasons'], [stop.differs, 'sees it another way']]) {
+        if (card && inPool.has(card.id)) return { id: card.id, why: `From your journey: on "${stop.view.replace(/\.$/, '')}", this one ${why}.` };
+      }
+    }
     const adaptiveDays = aq.adaptiveCount.get(uid).n;
     if (adaptiveDays % 5 === 4) {
       const wroteIn = new Set(aq.writtenRooms.all(uid).map((r) => r.room));
@@ -814,6 +822,50 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     });
   });
 
+  // ── The interview and the journey it suggests ──
+  const sq = {
+    all: db.prepare('SELECT stance_id, agree, basis FROM stances WHERE user_id = ?'),
+    save: db.prepare(`INSERT INTO stances (user_id, stance_id, agree, basis) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id, stance_id) DO UPDATE SET agree = excluded.agree, basis = excluded.basis, updated_at = datetime('now')`),
+    clear: db.prepare('DELETE FROM stances WHERE user_id = ? AND stance_id = ?'),
+  };
+  const stanceById = new Map(stances.map((q) => [q.id, q]));
+  // The journey: the views held most firmly with the least looking-into come first. For each, a voice that shares the
+  // view and gives it reasons, then one that sees it another way, then a practice. Views they are unsure of become
+  // open questions. Nothing here judges: it only orders the road.
+  function journeyFor(uid) {
+    const answers = sq.all.all(uid);
+    const weight = { instinct: 2, some: 1, thought: 0 };
+    const card = (id) => { const n = q.node.get(id); return n && { id: n.id, title: n.title, thinker: n.thinker, field: n.field, type: n.type }; };
+    const stops = answers.filter((a) => a.agree !== 0).map((a) => ({ a, st: stanceById.get(a.stance_id), w: Math.abs(a.agree) * 2 + (weight[a.basis] ?? 1) }))
+      .filter((x) => x.st).sort((x, y) => y.w - x.w || x.st.id.localeCompare(y.st.id)).slice(0, 4).map(({ a, st }) => {
+        const agrees = a.agree > 0;
+        return {
+          stance: st.id, view: st.view, agree: a.agree, basis: a.basis,
+          lead: `${{ 2: 'You agree', 1: 'You lean toward agreeing', '-1': 'You lean toward disagreeing', '-2': 'You disagree' }[a.agree]}: "${st.view}"`,
+          shares: card(agrees ? st.with : st.other), differs: card(agrees ? st.other : st.with), practice: card(st.practice),
+        };
+      });
+    const open = answers.filter((a) => a.agree === 0).map((a) => stanceById.get(a.stance_id)).filter(Boolean)
+      .map((st) => ({ stance: st.id, view: st.view, ideas: [card(st.with), card(st.other)] }));
+    return { answered: answers.length, stops, open };
+  }
+  app.get('/api/stance', auth, (req, res) => {
+    const saved = Object.fromEntries(sq.all.all(req.user.id).map((a) => [a.stance_id, { agree: a.agree, basis: a.basis }]));
+    res.json({ questions: stances.map((x) => ({ id: x.id, view: x.view })), basis: BASIS, saved, journey: journeyFor(req.user.id) });
+  });
+  app.post('/api/stance', auth, (req, res) => {
+    const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+    for (const a of answers) {
+      if (!stanceById.has(a?.id)) return res.status(400).json({ error: 'bad_stance' });
+      if (a.agree === null) { sq.clear.run(req.user.id, a.id); continue; }
+      if (!Number.isInteger(a.agree) || a.agree < -2 || a.agree > 2) return res.status(400).json({ error: 'bad_agree' });
+      if (a.basis != null && !(a.basis in BASIS)) return res.status(400).json({ error: 'bad_basis' });
+      sq.save.run(req.user.id, a.id, a.agree, a.basis ?? null);
+    }
+    res.json({ journey: journeyFor(req.user.id) });
+  });
+
   // ── Talk: a conversation with the map's collective wisdom (when ANTHROPIC_API_KEY is set). ──
   const tq = {
     create: db.prepare('INSERT INTO talks (user_id) VALUES (?)'),
@@ -835,13 +887,22 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         n.type === 'practice' ? 'practice' : n.field, themesOf(n.id).map((t) => t.name).join('; ') || '-', clip(n.plain_face, 150)].join(' | '))
       .join('\n');
   }
+  const AGREE = { 2: 'strongly agrees', 1: 'leans toward agreeing', 0: 'is unsure', '-1': 'leans toward disagreeing', '-2': 'strongly disagrees' };
+  const interviewLines = (uid) => {
+    const rows = sq.all.all(uid);
+    if (!rows.length) return '';
+    return `\n\nFrom the welcome interview (for planning their journey; be gentle, never treat it as a position to attack):\n${rows.map((a) => {
+      const qn = stanceById.get(a.stance_id); return qn ? `- "${qn.view}": ${AGREE[a.agree]}${a.basis ? ` (${BASIS[a.basis].toLowerCase()})` : ''}` : '';
+    }).filter(Boolean).join('\n')}`;
+  };
   function talkDiary(uid, states) {
     const { answers, notes, kept } = discovery(uid, (id) => states.get(id) === 'upcoming');
     return [
       ...answers.map((a) => ({ at: a.created_at, line: `${a.local_date} answer on [[${a.id}]] ("${clip(a.prompt, 160)}"): ${clip(a.body, 500)}` })),
       ...notes.map((n) => ({ at: n.updated_at, line: `${n.local_date} note on [[${n.id}]]: ${clip(n.body, 500)}` })),
       ...kept.map((f) => ({ at: f.created_at, line: `${f.created_at.slice(0, 10)} kept a line from [[${f.id}]]: ${clip(firstLine(f.source_face), 200)}` })),
-    ].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 40).map((x) => x.line).join('\n');
+    ].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 40).map((x) => x.line).join('\n')
+      + interviewLines(uid);
   }
   // One idea, opened for the conversation partner: the same reveal rules as the app (misreadings after writing).
   function talkIdea(uid, date, states, id) {

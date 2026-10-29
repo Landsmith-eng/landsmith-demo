@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS practice_log (
   PRIMARY KEY (user_id, local_date)
 );
 
+-- The interview: where the user stands on each view (-2..2) and how they came to it (thought, some, instinct).
+CREATE TABLE IF NOT EXISTS stances (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  stance_id TEXT NOT NULL,
+  agree INTEGER NOT NULL CHECK (agree BETWEEN -2 AND 2),
+  basis TEXT CHECK (basis IN ('thought','some','instinct')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, stance_id)
+);
+
 -- Conversations with the map (Talk). messages is the API conversation as JSON, appended to and never edited.
 CREATE TABLE IF NOT EXISTS talks (
   id INTEGER PRIMARY KEY,

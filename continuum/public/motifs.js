@@ -58,6 +58,11 @@ const MOTIFS = {
       for (const a of s.p) { c.fillStyle = ink(.25 + .25 * Math.sin(t / 900 + a.tw)); c.beginPath(); c.arc(a.x, a.y, 2.2, 0, TAU); c.fill(); }
     },
   },
+  // The Gallery's sky: a few still, twinkling stars, so the constellations and comets have somewhere to appear.
+  sky: {
+    init(s, w, h) { s.p = Array.from({ length: Math.round(w * h / 9000) + 20 }, () => ({ x: rnd(0, w), y: rnd(0, h * .7), tw: rnd(0, TAU), r: rnd(.8, 1.8) })); },
+    draw(c, s, w, h, t, ink) { for (const a of s.p) { c.fillStyle = ink(.12 + .14 * Math.sin(t / 1100 + a.tw)); c.beginPath(); c.arc(a.x, a.y, a.r, 0, TAU); c.fill(); } },
+  },
   river: {
     init(s) { s.n = 9; },
     draw(c, s, w, h, t, ink) {
@@ -250,7 +255,10 @@ const FIGURES = [
   { stars: [[.5, 0], [.4, .4], [.62, .45], [.35, .95], [.58, 1]], lines: [[0, 1], [0, 2], [1, 2], [1, 3], [2, 4], [3, 4]] }, // Lyra
   { stars: [[.1, .1], [.3, .25], [.55, .3], [.8, .2], [.5, .6], [.55, .95]], lines: [[0, 1], [1, 2], [2, 3], [2, 4], [4, 5]] }, // Cygnus (the Northern Cross)
 ];
-const sky = { comets: [], figure: null, nextComet: 0, nextFigure: 0 };
+// Constellations appear only as a filler: between parts, when the background comes into focus (focus near 1), and on
+// the Gallery (always 1). While a part is being read (focus near 0) they wait, and fade if already showing.
+const sky = { comets: [], figure: null, nextComet: 0, nextFigure: 0, focus: 0, shown: 0 };
+export function setSkyFocus(f) { sky.focus = f; }
 function drawSky(c, w, h, now, ink) {
   if (!sky.nextComet) { sky.nextComet = now + rnd(6000, 16000); sky.nextFigure = now + rnd(14000, 30000); }
   if (now > sky.nextComet) {
@@ -267,14 +275,16 @@ function drawSky(c, w, h, now, ink) {
     c.fillStyle = ink(.7 * fade); c.beginPath(); c.arc(k.x, k.y, 1.8, 0, TAU); c.fill();
   }
   sky.comets = sky.comets.filter((k) => k.life < 90 && k.x > -200 && k.x < w + 200 && k.y < h + 200);
-  if (!sky.figure && now > sky.nextFigure) {
+  sky.shown += ((sky.focus > .55 ? 1 : 0) - sky.shown) * .04; // ease toward visible between parts, hidden while reading
+  if (!sky.figure && now > sky.nextFigure && sky.focus > .55) {
     const f = FIGURES[Math.floor(rnd(0, FIGURES.length))], size = rnd(.28, .4) * Math.min(w, h);
     sky.figure = { f, size, x: rnd(.05, .95) * (w - size), y: rnd(.04, .3) * h, born: now, life: rnd(9000, 13000) };
+    sky.nextFigure = now + rnd(16000, 30000);
   }
   if (sky.figure) {
     const { f, size, x, y, born, life } = sky.figure, age = (now - born) / life;
-    if (age >= 1) { sky.figure = null; sky.nextFigure = now + rnd(40000, 90000); return; }
-    const a = Math.sin(Math.PI * age); // in, linger, out
+    if (age >= 1) { sky.figure = null; sky.nextFigure = now + rnd(12000, 30000); return; }
+    const a = Math.sin(Math.PI * age) * sky.shown; // in, linger, out; and only between parts
     const pt = ([px, py]) => [x + px * size, y + py * size];
     c.strokeStyle = ink(.22 * a); c.lineWidth = 1;
     for (const [i, j] of f.lines) { const [x1, y1] = pt(f.stars[i]), [x2, y2] = pt(f.stars[j]); c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }

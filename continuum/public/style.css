@@ -485,3 +485,36 @@ html.gazing { overflow: hidden; }
 .dock .chip, .dock-links .chip { font-size: 13px; }
 .corner .pill { font-size: 13.5px; }
 .rail { font-size: 16px; }
+
+/* The tour: a spotlight on what is being described, and a card with the narration and controls. */
+.tour { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
+.tour::before { content: ''; position: absolute; inset: 0; background: rgba(8,14,11,.5); transition: opacity .3s; }
+.tour:has(.tour-spot.on)::before { opacity: 0; }
+.tour-spot { position: fixed; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(8,14,11,.5); border: 2px solid var(--warm);
+  opacity: 0; transition: all .45s cubic-bezier(.2,.7,.2,1); animation: tour-pulse 1.8s ease-in-out infinite; }
+.tour-spot.on { opacity: 1; }
+@keyframes tour-pulse { 50% { border-color: color-mix(in srgb, var(--warm) 45%, transparent); } }
+.tour-card { position: fixed; left: 12px; right: 12px; top: 30%; max-width: 520px; margin: 0 auto; pointer-events: auto;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); font-size: 16px; }
+.tour.card-top .tour-card { top: 14%; }
+.tour-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-count { font-size: 12.5px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.tour-text { font-family: var(--display); font-size: 17px; line-height: 1.5; margin: 10px 0 14px; }
+.tour-bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.tour-bar span { display: block; height: 100%; width: 0; background: var(--warm); transition: width .4s ease; }
+.tour-buttons .chip { margin-right: 6px; font-size: 13px; }
+.tour-buttons .btn, .tour-card .link { font-size: 15px; }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; animation: none; } }
+
+/* The interview and the journey */
+.interview { padding: 6svh 0 4svh; }
+.interview h1.view { font-size: clamp(1.7rem, 7vw, 2.4rem); line-height: 1.2; margin: .3em 0 .6em; }
+.choices, .basis { display: flex; flex-direction: column; gap: 8px; }
+.basis { margin-top: 18px; }
+.choice { text-align: left; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 1rem; }
+.choice.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.journey .stop { border-top: 1px solid var(--line); padding: 14px 0; }
+.stop-view { font-family: var(--display); font-size: 1.1rem; margin: .2em 0 .5em; }
+.stop-line { margin: 8px 0; }
+.stop-line > .muted { display: block; margin-bottom: 4px; }
