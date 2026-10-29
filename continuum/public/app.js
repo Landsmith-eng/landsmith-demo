@@ -295,7 +295,7 @@ function notePanel(node) {
   return panel('note', 'Your notes', [
     h('div', { class: 'eyebrow' }, 'Your notes'),
     h('label', { class: 'prompt unspoken', for: ta.id }, 'A note for your diary of discovery'),
-    ta, h('div', { class: 'row' }, status, save),
+    ta, h('div', { class: 'row' }, dictation(ta)?.button, status, save),
   ]);
 }
 
@@ -603,7 +603,7 @@ async function loop() {
       try {
         const blob = await clipFor(reader.k);
         if (reader.k + 1 < reader.items.length) clipFor(reader.k + 1).catch(() => {});
-        if (run.stop) return;
+        if (run.stop) return false;
         await playClip(URL.createObjectURL(blob), run);
       } catch (e) {
         if (!speech) break;
@@ -647,6 +647,54 @@ function stopReading() {
 function notice(text) {
   const n = h('div', { class: 'toast', role: 'status' }, text);
   document.body.append(n); setTimeout(() => n.remove(), 6000);
+}
+// Speaking instead of typing, for any text box: the browser's speech recognition (on Android Chrome the audio goes
+// to Google to be transcribed). It keeps listening through pauses for thought, restarting when the browser ends a
+// session on silence, until the user taps again (or nothing is heard for a while). What is said is added to the box.
+// Returns { button, start, stop, active } or null where the browser cannot listen.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {}, onBlocked = (m) => notice(m), quietMs = 30000 } = {}) {
+  if (!Recognition) return null;
+  const button = h('button', { type: 'button', class: 'btn ghost mic', 'aria-pressed': 'false' }, label);
+  let rec = null; let listening = false; let heard = ''; let before = ''; let quiet = 0;
+  const show = (on) => { button.setAttribute('aria-pressed', String(on)); button.textContent = on ? 'Listening… tap when done' : label; button.classList.toggle('on', on); };
+  const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
+  function finish() { show(false); clearTimeout(quiet); ta.dispatchEvent(new Event('input', { bubbles: true })); onDone(heard.trim()); }
+  function listen() {
+    const r = rec = new Recognition();
+    r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
+    let session = '';
+    r.onresult = (e) => {
+      let fin = ''; let interim = '';
+      for (const x of e.results) { if (x.isFinal) fin += x[0].transcript; else interim += x[0].transcript; }
+      session = fin; hush();
+      ta.value = `${before}${heard} ${fin}${interim}`.replace(/\s+/g, ' ').trimStart();
+    };
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        listening = false; onBlocked('The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.');
+      }
+    };
+    r.onend = () => {
+      heard = `${heard} ${session}`.trim(); rec = null;
+      if (listening) { try { listen(); return; } catch { listening = false; } }
+      finish();
+    };
+    r.start();
+  }
+  function start() {
+    if (listening) return;
+    onStart();
+    listening = true; heard = ''; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
+    show(true); hush();
+    try { listen(); } catch { listening = false; show(false); }
+  }
+  function stop() { listening = false; clearTimeout(quiet); if (rec) { rec.onend = null; rec.abort(); rec = null; } show(false); }
+  button.addEventListener('click', () => {
+    if (listening) { listening = false; if (rec) rec.stop(); else finish(); return; }
+    start();
+  });
+  return { button, start, stop, active: () => listening };
 }
 listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
 voiceBtn.addEventListener('click', () => chooseVoice());
@@ -880,7 +928,8 @@ function writeView(data) {
   },
     h('label', { for: 'resp', class: 'prompt' }, node.prompt ?? 'What do you think?'),
     ta,
-    h('div', { class: 'row' }, status, submit));
+    h('div', { class: 'row' }, dictation(ta, { label: 'Say it instead' })?.button ?? status, submit),
+    Recognition && h('div', { class: 'row' }, status));
   setNav('today');
   renderStage(node, [
     panel('arrival', 'Today\'s idea', [
@@ -1266,7 +1315,7 @@ async function playFrom(view, i) {
       try {
         const blob = await clip(p.i);
         if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
-        if (run.stop) return;
+        if (run.stop) return false;
         await playClip(URL.createObjectURL(blob), run);
       } catch (e) {
         if (!speech) break;
@@ -1274,10 +1323,12 @@ async function playFrom(view, i) {
         useEl = false; continue;
       }
     } else await sayPhone(view.spoken[p.i], plan.phone ?? null, run);
-    if (run.stop || p.state === 'paused') return; // paused: stay on this sentence
+    if (run.stop || p.state === 'paused') return false; // paused: stay on this sentence
     p.i++;
   }
+  const finished = !run.stop && p.i >= view.spoken.length;
   if (p.run === run) stopTalkVoice();
+  return finished;
 }
 function togglePlay(view) {
   const p = talkPlayer;
@@ -1299,7 +1350,7 @@ const TALK_MODES = {
   weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
   teach: { label: 'Teach it back', placeholder: 'Explain an idea in your own words, as if to a friend…' },
 };
-function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false } = {}) {
+function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false, voice = false } = {}) {
   setNav('talk');
   stopTalkVoice();
   return guarded(async () => {
@@ -1416,7 +1467,12 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
             else if (m.t === 'error') throw new Error(m.error);
           }
         }
-        if (speakOn() && view) playFrom(view, 0);
+        const spoken = byVoice; byVoice = false;
+        if ((speakOn() || spoken) && view) {
+          const finished = await playFrom(view, 0);
+          // Your turn: after a spoken exchange, listen again (it stops by itself if nothing is said).
+          if (spoken && finished && dict && document.body.contains(ta)) { status.textContent = 'Your turn. Speak, or tap to stop.'; dict.start(); }
+        }
       } catch (e) {
         out.classList.remove('thinking');
         if (!reply) out.remove();
@@ -1426,45 +1482,16 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     send.addEventListener('click', submit);
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); submit(); } });
 
-    // Speaking: the browser's speech recognition (on Android Chrome it sends the audio to Google to transcribe). It
-    // keeps listening through pauses for thought (restarting when the browser ends a session on silence) until the
-    // user taps again; then what they said is sent.
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let rec = null; let listening = false; let heard = ''; let before = '';
-    const mic = Recognition && h('button', { type: 'button', class: 'btn ghost mic', 'aria-label': 'Speak', 'aria-pressed': 'false' }, 'Speak');
-    const micLabel = (on) => { mic.setAttribute('aria-pressed', String(on)); mic.textContent = on ? 'Listening… tap when done' : 'Speak'; };
-    function stopMic() { listening = false; if (rec) { rec.onend = null; rec.abort(); rec = null; } if (mic) micLabel(false); }
-    function finishMic() { micLabel(false); if (heard.trim()) submit(); }
-    function listen() {
-      const r = rec = new Recognition();
-      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
-      let session = '';
-      r.onresult = (e) => {
-        let fin = ''; let interim = '';
-        for (const x of e.results) { if (x.isFinal) fin += x[0].transcript; else interim += x[0].transcript; }
-        session = fin;
-        ta.value = `${before}${heard} ${fin}${interim}`.replace(/\s+/g, ' ').trimStart();
-      };
-      r.onerror = (e) => {
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-          listening = false; status.textContent = 'The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.';
-        }
-      };
-      r.onend = () => {
-        heard = `${heard} ${session}`.trim(); rec = null;
-        if (listening) { try { listen(); return; } catch { listening = false; } }
-        finishMic();
-      };
-      r.start();
-    }
-    mic?.addEventListener('click', () => {
-      if (listening) { listening = false; if (rec) rec.stop(); else finishMic(); return; }
-      stopTalkVoice();
-      listening = true; heard = ''; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
-      status.textContent = ''; micLabel(true);
-      listen();
+    // Speaking: tap to talk, tap when done (pauses for thought are fine); what was said is sent. A message spoken
+    // aloud is answered aloud, and then the microphone opens again for the reply: a conversation, until you stop.
+    let byVoice = false;
+    const dict = dictation(ta, {
+      onStart: () => stopTalkVoice(),
+      onDone: (said) => { if (said) { byVoice = true; submit(); } },
+      onBlocked: (m) => { status.textContent = m; },
     });
-
+    const mic = dict?.button;
+    const stopMic = () => dict?.stop();
     compose.append(h('div', { class: 'row' }, mic || h('span'), send));
     if (current === 'act') {
       log.replaceChildren(h('div', { class: 'talk-turn from-map' },
@@ -1481,7 +1508,8 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       compose,
       status);
     if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    if (seed && draft && voice && dict) { ta.value = seed; dict.start(); } // answer aloud: the microphone is already listening
+    else if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
     else if (seed) { ta.value = seed; submit(); }
     if (log.lastElementChild) keepInView(log.lastElementChild);
   });
@@ -1514,7 +1542,8 @@ function showHomework(node) {
       ta.addEventListener('blur', () => { clearTimeout(timers[part]); save(part, ta.value); });
       reveal?.addEventListener('click', () => { shown.hidden = false; reveal.hidden = true; });
       ready();
-      return [ta, reveal && h('div', { class: 'row', style: 'justify-content:flex-start' }, reveal), shown];
+      const mic = dictation(ta)?.button;
+      return [ta, (reveal || mic) && h('div', { class: 'row', style: 'justify-content:flex-start' }, mic, reveal), shown];
     };
     const section = (title, ...kids) => h('section', { class: 'hw-part' }, h('h2', {}, title), ...kids);
     const parts = [];
@@ -1569,8 +1598,12 @@ async function problemCard(host, node) {
     lessonPlate(PAGE_BG.problem),
     h('div', { class: 'eyebrow' }, 'A problem to consider'),
     h('p', { class: 'lesson-text' }, r.problem),
-    h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `A problem to consider, from "${node.title}": ${r.problem} Here is what I think: ` , draft: true }) }, 'Think it through')));
+    h('p', { class: 'muted small' }, 'Think it through with Talk: say what you would do, and why. It will push back, or show you who agrees.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      Recognition && h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true, voice: true }) }, 'Answer aloud'),
+      h('button', { type: 'button', class: `btn ${Recognition ? 'ghost' : ''}`, onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true }) }, 'Write an answer'))));
 }
+const problemSeed = (node, problem) => `A problem to consider, from "${node.title}": ${problem} Here is what I think: `;
 // The daily review: an earlier idea, on a spaced schedule. First, what do you remember? Then its plain words and what
 // you wrote, and "Got it" (it comes back later) or "Fuzzy" (it comes back tomorrow).
 async function recallCard(host) {

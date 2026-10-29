@@ -694,3 +694,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .hw-courses li { margin: 6px 0; }
 .hw-courses a { color: var(--accent); }
 .hw-term-meaning[hidden], .hw-model[hidden] { display: none; }
+/* A microphone that is listening breathes, so it is clear the app is waiting for you. */
+.mic.on { border-color: var(--accent); color: var(--accent); animation: mic-breathe 1.8s ease-in-out infinite; }
+@keyframes mic-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
