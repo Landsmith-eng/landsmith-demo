@@ -141,3 +141,9 @@ Use this style block instead of the usual one:
 | `sailing_regatta` | A summer regatta, small sailboats leaning in a brisk wind, flags and clear water, a lighthouse far off. After Monet's regatta at Argenteuil (1872). |
 | `garden_swing` | A garden swing under an apple tree on a sunny afternoon, a child mid-swing, hens pecking, washing on a line. After Fragonard's lightness, in a modern key. |
 | `meadow_morning` | A dewy meadow at sunrise with a path through tall grass, a hare leaping, larks rising, mist lifting from a stream. Bright, after Corot's early mornings. |
+| `sunrise_sea_sail` | A single sailboat heading out on a calm sea at sunrise, the sun just clearing the horizon, gold and rose light on the water, a few gulls. After Monet's "Impression, Sunrise" (1872), brighter. |
+| `sunrise_hills` | Sunrise over layered green hills and a lake, light pouring through a gap in the clouds, a small boat with a white sail on the lake, birds rising. After Thomas Cole's luminous mornings (1830s). |
+| `sail_bay_noon` | A sunny bay full of small white and red sailboats at anchor and under sail, children on a pier, clear turquoise water. After Signac's bright harbours (1900s). |
+| `sunrise_beach_walk` | Early sunrise on a wide beach, a couple and a dog walking at the water's edge far off, footprints, the sky peach and pale blue. After Boudin's beach skies. |
+| `sail_river_morning` | A sailing barge with a tan sail gliding down a broad river at sunrise, mist burning off, cows in a meadow on the bank. After Constable's river scenes, in morning light. |
+| `sunrise_mountain_lake` | Sunrise over a mountain lake, peaks glowing pink, a little sailboat crossing the still water, wildflowers on the shore. After Albert Bierstadt (1860s), softened. |
