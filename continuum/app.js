@@ -1343,10 +1343,17 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   app.get('/api/stt', auth, (req, res) => res.json({ enabled: Boolean(tts?.transcribe) }));
   app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
     if (!tts?.transcribe) return res.status(404).json({ error: 'stt_off' });
-    if (!Buffer.isBuffer(req.body) || req.body.length < 1000) return res.status(400).json({ error: 'no_audio' });
+    if (!Buffer.isBuffer(req.body) || req.body.length < 1000) {
+      console.warn(`Speech to text: no usable audio arrived (${Buffer.isBuffer(req.body) ? `${req.body.length} bytes` : `content-type ${req.get('content-type')}`}).`);
+      return res.status(400).json({ error: 'no_audio' });
+    }
     const mime = String(req.get('content-type') ?? 'audio/webm').split(';')[0];
     const lang = /^[a-z]{2}$/.test(String(req.query.lang ?? '')) ? String(req.query.lang) : null;
-    try { res.json({ text: (await tts.transcribe(req.body, mime, { language: lang })).text }); } catch (e) {
+    try {
+      const r = await tts.transcribe(req.body, mime, { language: lang });
+      console.log(`Speech to text: ${Math.round(req.body.length / 1024)} KB of ${mime} -> ${r.text.length} characters (${r.model}).`);
+      res.json({ text: r.text });
+    } catch (e) {
       console.warn(`ElevenLabs refused speech to text: ${e.message}${e.why ? ` (${e.why})` : ''}`);
       res.status(502).json({ error: e.message, why: e.why ?? null });
     }

@@ -696,42 +696,51 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
   const blocked = () => { listening = false; show('off'); onBlocked('The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.'); };
 
   // ── Recording, written down by ElevenLabs ──
-  function recorder() {
-    let rec = null; let stream = null; let chunks = []; let ctx = null; let timer = 0; let heard = false; let lastVoice = 0; let cancelled = false;
-    const release = () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ctx?.close().catch(() => {}); stream = null; ctx = null; };
+  // ear: an AudioContext made at the tap itself (Android keeps one made later switched off), used only to stop by
+  // itself after a long silence. If it is not running, recording simply goes on until the user taps again.
+  function recorder(ear) {
+    let rec = null; let stream = null; let chunks = []; let timer = 0; let lastVoice = 0; let cancelled = false; let began = 0;
+    const release = () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ear?.close().catch(() => {}); stream = null; ear = null; };
     return {
       async start() {
-        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch { return blocked(); }
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch { release(); return blocked(); }
         if (!listening) return release(); // stopped while asking for the microphone
         const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
-        rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-        chunks = []; cancelled = false; heard = false; lastVoice = Date.now();
+        try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch { release(); sttOn = false; listening = false; show('off'); return notice('Recording is not available on this phone; using its own voice typing instead. Tap Speak again.'); }
+        chunks = []; cancelled = false; lastVoice = Date.now(); began = Date.now();
         rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
         rec.onstop = async () => {
+          const secs = (Date.now() - began) / 1000;
           release();
           if (cancelled) return;
-          if (!heard || !chunks.length) return done('');
-          show('busy');
           const blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/webm' });
+          if (secs < .7 || blob.size < 1000) { notice('I did not catch anything. Tap Speak, talk, then tap again when you are done.'); return done(''); }
+          show('busy');
           try {
-            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] }, body: blob });
+            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] || 'audio/webm' }, body: blob });
             const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw Object.assign(new Error(j.error), { why: j.why });
+            if (!r.ok) throw Object.assign(new Error(j.error || `http_${r.status}`), { why: j.why, status: r.status });
+            if (!j.text) notice('Nothing was heard in that recording. Try again a little closer to the phone.');
             put(j.text ?? ''); done(j.text ?? '');
-          } catch (e) { notice(`Could not write that down${e.why ? `: ${e.why}` : ''}. Try again, or type it.`); done(''); }
+          } catch (e) {
+            // ElevenLabs said no (often a key without speech-to-text access): use the phone's own voice typing from now on.
+            if (e.status === 502 && Recognition) sttOn = false;
+            notice(`Could not write that down${e.why ? `: ${e.why}` : ''}.${e.status === 502 && Recognition ? ' Switching to the phone\'s own voice typing; tap Speak again.' : ' Try again, or type it.'}`);
+            done('');
+          }
         };
-        // A simple ear: has anything been said, and how long has it been quiet? (Stops after quietMs of silence.)
-        try {
-          ctx = new (window.AudioContext || window.webkitAudioContext)();
-          const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(stream).connect(an);
-          const buf = new Uint8Array(an.fftSize);
-          timer = setInterval(() => {
-            an.getByteTimeDomainData(buf);
-            let sum = 0; for (const v of buf) sum += (v - 128) ** 2;
-            if (Math.sqrt(sum / buf.length) > 6) { heard = true; lastVoice = Date.now(); }
-            if (Date.now() - lastVoice > quietMs) this.finish();
-          }, 150);
-        } catch { heard = true; }
+        if (ear?.state === 'running') {
+          try {
+            const an = ear.createAnalyser(); an.fftSize = 1024; ear.createMediaStreamSource(stream).connect(an);
+            const buf = new Uint8Array(an.fftSize);
+            timer = setInterval(() => {
+              an.getByteTimeDomainData(buf);
+              let sum = 0; for (const v of buf) sum += (v - 128) ** 2;
+              if (Math.sqrt(sum / buf.length) > 4) lastVoice = Date.now();
+              if (Date.now() - lastVoice > quietMs && rec?.state === 'recording') rec.stop();
+            }, 200);
+          } catch { /* no ear: record until tapped */ }
+        }
         rec.start(1000);
       },
       finish() { if (rec?.state === 'recording') rec.stop(); else { release(); done(''); } },
@@ -773,7 +782,12 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
     onStart();
     listening = true; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
     show('on');
-    engine = canRecord && await sttEnabled() ? recorder() : Recognition ? recognizer() : null;
+    // Made right at the tap, before anything is awaited, so Android lets it run.
+    let ear = null;
+    try { ear = new (window.AudioContext || window.webkitAudioContext)(); ear.resume?.().catch(() => {}); } catch { ear = null; }
+    const useRecorder = canRecord && await sttEnabled();
+    if (!useRecorder) ear?.close().catch(() => {});
+    engine = useRecorder ? recorder(ear) : Recognition ? recognizer() : null;
     if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
     engine.start();
   }
