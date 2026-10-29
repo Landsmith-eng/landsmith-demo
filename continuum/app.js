@@ -1374,6 +1374,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     res.json({ bright });
   });
   app.get('/api/tts', auth, (req, res) => res.json({ enabled: Boolean(tts), voice_id: tts?.voiceId ?? null }));
+  // An error on a phone shows in the server window, so a glitch can be traced (message, where, and the page).
+  app.post('/api/clientlog', (req, res) => {
+    const clean = (x) => String(x ?? '').replace(/[\r\n]+/g, ' ').slice(0, 400);
+    const who = q.userByToken.get(req.get('x-continuum-token') ?? '')?.name ?? 'someone';
+    console.warn(`Phone error (${who}): ${clean(req.body?.message)}${req.body?.where ? ` at ${clean(req.body.where)}` : ''}${req.body?.view ? ` [${clean(req.body.view)}]` : ''}`);
+    res.json({ ok: true });
+  });
   // The phone reports each step of speaking in, so a glitch shows in the server window.
   app.post('/api/voicelog', auth, (req, res) => {
     const clean = (x) => String(x ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
@@ -1416,6 +1423,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     } catch (e) { ttsWarn('reading aloud', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }
   });
 
-  app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
+  // The app's own code and page are checked for a newer copy on every load (no stale mix of old and new after an
+  // update); pictures, fonts and sounds may be kept by the phone.
+  app.use(express.static(PUBLIC_DIR, {
+    extensions: ['html'],
+    setHeaders: (res, file) => { if (/\.(html|js|css)$/.test(file)) res.setHeader('cache-control', 'no-cache'); },
+  }));
   return app;
 }

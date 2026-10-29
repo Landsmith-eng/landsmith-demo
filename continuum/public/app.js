@@ -25,6 +25,15 @@ if (params.get('day')) {
 if (params.get('join')) store.set('continuum.join', params.get('join'));
 if (params.get('u') || params.get('day') || params.get('join')) history.replaceState(null, '', location.pathname);
 const token = () => store.get(TOKEN_KEY) ?? '';
+// Errors on the phone are reported to the server window (at most a few a minute), so a glitch names itself.
+let reported = 0;
+const reportError = (message, where = '') => {
+  if (++reported > 6) return; setTimeout(() => { reported = Math.max(0, reported - 1); }, 20000);
+  fetch('/api/clientlog', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ message: String(message).slice(0, 400), where: String(where).slice(0, 200), view: document.querySelector('main h1')?.textContent?.slice(0, 80) ?? '' }) }).catch(() => {});
+};
+addEventListener('error', (e) => reportError(e.message, `${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
+addEventListener('unhandledrejection', (e) => reportError(e.reason?.message ?? e.reason, 'promise'));
 
 function fmt(d) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -1351,7 +1360,7 @@ function errorView() {
 }
 
 async function guarded(fn) {
-  try { await fn(); } catch (err) { if (err.status === 401) inviteView(); else { console.error(err); errorView(); } }
+  try { await fn(); } catch (err) { if (err.status === 401) inviteView(); else { console.error(err); reportError(err?.message ?? err, err?.stack?.split('\n')[1]?.trim() ?? ''); errorView(); } }
 }
 
 function showToday() {
@@ -1930,6 +1939,7 @@ document.addEventListener('click', (e) => {
   const nav = e.target.closest('[data-nav]');
   if (!nav) return;
   e.preventDefault();
+  if (!tourState) document.querySelectorAll('.tour').forEach((x) => x.remove()); // a welcome card left behind
   if (nav.dataset.nav === 'journal') showJournal();
   else if (nav.dataset.nav === 'talk') showTalk();
   else if (nav.dataset.nav === 'practice') showPractice();
@@ -2069,7 +2079,10 @@ function tour({ fromStart = true } = {}) {
   st.silence = silence;
   show(0);
 }
-function endTour() { if (!tourState) return; tourState.silence?.(); tourState.box.remove(); tourState = null; }
+function endTour() {
+  if (tourState) { tourState.silence?.(); tourState.box.remove(); tourState = null; }
+  document.querySelectorAll('.tour').forEach((x) => x.remove()); // never leave a tour layer over the page
+}
 // ── The Parthenon: small invite-only groups that talk over one question at a time, live. Everyone's posts arrive as
 // they are written; anyone can ask the moderator (Claude) to say where the group stands and what no one has said. ──
 const seeTo = (el) => el?.scrollIntoView({ block: 'end', behavior: 'smooth' });
