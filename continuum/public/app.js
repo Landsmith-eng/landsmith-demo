@@ -1,5 +1,6 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
+import { mountMap } from '/mapview.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
 
@@ -83,9 +84,16 @@ const TAB_BG = {
 // between them. Pages whose plate has not arrived yet borrow one with a kindred meaning.
 const PAGE_BG = {
   debates: '/img/spares/debates_stoa.webp',
-  map: '/img/spares/stillness_owl.webp', // until map_observatory arrives
-  homework: '/img/spares/daily_library_steps.webp', // until homework_reading_room arrives
+  map: '/img/spares/map_observatory.webp', // an observatory open to the stars, a cat on the stair
+  homework: '/img/spares/homework_reading_room.webp', // a reading room under green lamps, a cat asleep on the books
+  weigh: '/img/spares/weigh_scales.webp', // brass scales by a window, a sparrow on one pan
+  teach: '/img/spares/teach_lecture_hall.webp', // an empty lecture hall, the board wiped clean: your turn to teach
+  act: '/img/spares/act_kitchen.webp', // a community kitchen, soup served at long tables, a dog by the door
+  parthenon: '/img/spares/parthenon_fire_circle.webp', // a ring of chairs round a fire at dusk: the Parthenon's groups
+  recall: '/img/spares/recall_fog_path.webp', // a garden path in fog, a hare stopped: what is near is sharp, what is far fades
+  problem: '/img/spares/problem_crossroads.webp', // a crossroads with a blank signpost, a fox at the fork
 };
+const talkPlate = (mode) => PAGE_BG[mode] ?? TAB_BG.talk;
 // Any other page gets one of the daily-life plates, the same one all day.
 const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
 const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
@@ -996,6 +1004,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
       h('button', { type: 'button', class: `btn ${arrangement === 'rooms' ? '' : 'ghost'}`, onclick: () => showGallery('rooms') }, 'Rooms'),
       h('button', { type: 'button', class: `btn ${arrangement === 'timeline' ? '' : 'ghost'}`, onclick: () => showGallery('timeline') }, 'Timeline'),
       h('button', { type: 'button', class: `btn ${arrangement === 'themes' ? '' : 'ghost'}`, onclick: () => showGallery('themes') }, 'Themes'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showMap() }, 'Map'),
     );
     const intro = h('p', { class: 'muted small' },
       `${nodes.length} ideas in ${new Set(nodes.map((n) => n.room)).size} rooms. Open any of them, any time. You have met ${met}. `
@@ -1028,6 +1037,21 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
     if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
+  });
+}
+
+// The Map of ideas, over the observatory plate (see mapview.js).
+function showMap() {
+  setNav('gallery');
+  return guarded(async () => {
+    const data = await api(`/api/map?date=${today()}`);
+    pageBg = PAGE_BG.map;
+    const mount = h('div', { class: 'map bare' });
+    render(h('h1', {}, 'Map of ideas'),
+      h('p', {}, 'Every idea in the gallery as a point of light. The ones you have met shine; the faint ones are still to explore.'),
+      mount,
+      h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms') }, '← Gallery')));
+    mountMap(mount, data, { h, onOpen: openEntry });
   });
 }
 
@@ -1332,12 +1356,14 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         const b = h('button', { type: 'button', class: `chip ${k === current ? 'on' : ''}`, 'aria-pressed': String(k === current) }, m.label);
         b.addEventListener('click', () => {
           current = k; ta.placeholder = m.placeholder;
+          setWallpaper(talkPlate(k), .35, { plain: true });
           b.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === b; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
           ta.focus();
         });
         return b;
       }));
     ta.placeholder = current === 'act' ? 'Your town, or zip code' : TALK_MODES[current].placeholder;
+    pageBg = talkPlate(current);
     if (about) ta.value = `I have just been reading "${about.title}". `;
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
     const status = h('div', { class: 'muted small', role: 'status' });
@@ -1460,10 +1486,13 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
 
 // A problem to consider: one concrete situation that puts the idea to the test, and a question. Think it through in
 // Talk, or just carry it through the day.
+// A strip of the lesson's own plate above it: the fox at the crossroads, the hare on the fog path.
+const lessonPlate = (src) => h('div', { class: 'lesson-plate', 'aria-hidden': 'true' }, h('img', { src, alt: '', loading: 'lazy', decoding: 'async' }));
 async function problemCard(host, node) {
   const r = await api(`/api/problem/${encodeURIComponent(node.id)}?date=${today()}`).catch(() => null);
   if (!r?.problem) return;
   host.append(h('div', { class: 'lesson' },
+    lessonPlate(PAGE_BG.problem),
     h('div', { class: 'eyebrow' }, 'A problem to consider'),
     h('p', { class: 'lesson-text' }, r.problem),
     h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `A problem to consider, from "${node.title}": ${r.problem} Here is what I think: ` , draft: true }) }, 'Think it through')));
@@ -1475,6 +1504,7 @@ async function recallCard(host) {
   const d = r?.due;
   if (!d) return;
   const box = h('div', { class: 'lesson' },
+    lessonPlate(PAGE_BG.recall),
     h('div', { class: 'eyebrow' }, "Today's review"),
     h('p', { class: 'lesson-text' }, `What do you remember of "${d.title}"?`),
     h('p', { class: 'muted small' }, 'Say it to yourself in a sentence, then look.'));
@@ -1635,7 +1665,7 @@ document.documentElement.style.setProperty('--text-scale', String(textScale));
 let pinch = null;
 const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 addEventListener('touchstart', (e) => {
-  if (e.touches.length !== 2 || document.querySelector('.gaze, .intro')) return;
+  if (e.touches.length !== 2 || document.querySelector('.gaze, .intro') || e.target.closest?.('.map-canvas')) return;
   const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
   const anchor = document.elementFromPoint(innerWidth / 2, cy);
   const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;

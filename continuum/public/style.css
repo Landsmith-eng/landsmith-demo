@@ -652,3 +652,25 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* Before writing, today's picture stays soft enough that it cannot give the idea away. */
 #wallpaper.nolook img { filter: blur(6px) saturate(.9); }
+
+/* The Map */
+.map { margin: 0 -16px; }
+.map-controls, .map .search, .map-legend, .map-info { margin-left: 16px; margin-right: 16px; }
+.map-controls .size-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.map-what { margin: 4px 0 10px; }
+.map .search { width: calc(100% - 32px); padding: 10px 14px; font: inherit; font-size: .95rem; }
+.map-canvas { display: block; width: 100%; height: 64svh; margin: 10px 0 8px; touch-action: none; cursor: grab;
+  background: radial-gradient(ellipse at center, rgba(4, 8, 10, .35), rgba(4, 8, 10, .62)); }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--muted); }
+.map-key { display: inline-flex; align-items: center; gap: 6px; }
+.map-key i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.map-key i.met { background: transparent; box-shadow: 0 0 0 1.5px #fff; }
+.map-key i.fuzzy { background: #f4c063; box-shadow: 0 0 8px 2px #f4c063; }
+.map-info { margin-top: 14px; min-height: 4em; }
+.map-info h3 { margin: .1em 0 .3em; }
+.map-links { display: flex; flex-direction: column; align-items: flex-start; margin-top: 8px; }
+.map-link { color: var(--ink); text-align: left; padding: 5px 0; text-decoration: underline; text-decoration-color: var(--line); }
+.map-fuzzy { color: var(--warm); }
+.lesson-plate { margin: 2px 0 10px; height: 132px; overflow: hidden; border-radius: 14px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent); mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+.lesson-plate img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 68%; display: block; }

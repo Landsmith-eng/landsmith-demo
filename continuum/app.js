@@ -10,6 +10,7 @@ import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_ste
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem } from './talk.js';
+import { computeLayouts, ERAS, eraOf } from './map.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -502,6 +503,41 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   app.get('/api/timeline', auth, (req, res) => {
     res.json({ nodes: mapEntries(req.user.id, localDate(req.query.date)), rooms });
+  });
+
+  // The Map: every idea on the walls laid out two ways (by influence, by meaning), worked out once at start-up.
+  const mapQ = {
+    nodes: db.prepare(`SELECT id, title, thinker, year, plain_face, prompt FROM nodes WHERE type != 'practice'`),
+    edges: db.prepare(`SELECT e.from_id, e.to_id, e.relation FROM edges e JOIN nodes a ON a.id = e.from_id JOIN nodes b ON b.id = e.to_id
+      WHERE a.type != 'practice' AND b.type != 'practice'`),
+    // The road walked: each idea in the order first met (written about, or walked to).
+    road: db.prepare(`SELECT node_id, MIN(d) AS d FROM (
+        SELECT node_id, local_date AS d FROM journal WHERE user_id = :uid
+        UNION ALL SELECT node_id, local_date AS d FROM events WHERE user_id = :uid AND kind = 'walk' AND node_id IS NOT NULL)
+      GROUP BY node_id ORDER BY d, node_id`),
+    fuzzy: db.prepare(`SELECT node_id FROM recall WHERE user_id = ? AND step = 0 AND last_date IS NOT NULL`),
+  };
+  const mapEdges = mapQ.edges.all();
+  const layouts = computeLayouts(mapQ.nodes.all(), mapEdges, themes);
+  let lineOf = null; // each idea's first sentence, made on first use (firstLine is defined further down)
+  app.get('/api/map', auth, (req, res) => {
+    const uid = req.user.id;
+    lineOf ??= new Map(mapQ.nodes.all().map((n) => [n.id, firstLine(n.plain_face).split(/(?<=[.!?])\s/)[0]]));
+    const entries = mapEntries(uid, localDate(req.query.date));
+    const hidden = new Set(entries.filter((n) => n.state === 'upcoming').map((n) => n.id));
+    const fuzzy = new Set(mapQ.fuzzy.all(uid).map((r) => r.node_id));
+    res.json({
+      eras: ERAS.map(({ id, name }) => ({ id, name })),
+      rooms: rooms.map(({ id, name }) => ({ id, name })),
+      nodes: entries.map((n) => ({
+        id: n.id, title: n.title, thinker: hidden.has(n.id) ? null : n.thinker, year: hidden.has(n.id) ? null : n.year,
+        field: n.field ?? 'philosophy', room: n.room, state: n.state, era: hidden.has(n.id) ? null : eraOf(n.year),
+        line: hidden.has(n.id) ? null : lineOf.get(n.id) ?? null, fuzzy: fuzzy.has(n.id),
+        influence: layouts.influence[n.id], semantic: layouts.semantic[n.id],
+      })),
+      edges: mapEdges.map((e) => ({ from: e.from_id, to: e.to_id, relation: e.relation })),
+      road: mapQ.road.all({ uid }).map((r) => r.node_id).filter((id) => !hidden.has(id)),
+    });
   });
 
   // The index: themes, conflicts and dilemmas with the ideas they link, in date order.
