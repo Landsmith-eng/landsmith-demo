@@ -126,3 +126,24 @@ test('the interview: answers saved and changed, a journey from firm views held b
     assert.equal((await call('/api/stance', { answers: [{ id: 'death', agree: 5 }] })).status, 400);
   } finally { server.close(); }
 });
+
+test('bearings: every seventh day of the walk, after writing, one debate comes back with the earlier choice', async () => {
+  const { server, call } = await boot();
+  try {
+    const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
+    await call('/api/stance', { answers: [{ id: 'death', agree: 2, basis: 'instinct' }], date: day(0) });
+    for (let n = 0; n < 7; n++) {
+      const t = (await call(`/api/today?date=${day(n)}`)).json;
+      assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // not before writing
+      await call('/api/respond', { node_id: t.node.id, body: 'x', date: day(n) });
+      const b = (await call(`/api/bearings?date=${day(n)}`)).json;
+      assert.equal(b.due, n === 6, `day ${n + 1}`);
+      if (b.due) {
+        assert.equal(b.day, 7);
+        assert.notEqual(b.debate.id, 'death'); // a debate never visited comes first
+        await call('/api/stance', { answers: [{ id: b.debate.id, agree: 0 }], date: day(n) });
+        assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // once a day
+      }
+    }
+  } finally { server.close(); }
+});

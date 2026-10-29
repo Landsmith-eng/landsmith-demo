@@ -529,3 +529,6 @@ html.gazing { overflow: hidden; }
 .camp { border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; }
 .camp-b { border-left-color: var(--warm); }
 .camp p { margin: .2em 0 0; font-family: var(--display); font-size: 1.05rem; line-height: 1.5; }
+
+.bearings { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--warm); border-radius: 10px; background: var(--surface); }
+.choices.compact .choice { padding: 9px 12px; font-size: .95rem; }

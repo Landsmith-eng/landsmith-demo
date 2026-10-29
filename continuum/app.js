@@ -828,6 +828,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     save: db.prepare(`INSERT INTO stances (user_id, stance_id, agree, basis) VALUES (?, ?, ?, ?)
       ON CONFLICT (user_id, stance_id) DO UPDATE SET agree = excluded.agree, basis = excluded.basis, updated_at = datetime('now')`),
     clear: db.prepare('DELETE FROM stances WHERE user_id = ? AND stance_id = ?'),
+    log: db.prepare('INSERT INTO stance_history (user_id, stance_id, agree, local_date) VALUES (?, ?, ?, ?)'),
+    lastOn: db.prepare('SELECT stance_id, MAX(local_date) AS d FROM stance_history WHERE user_id = ? GROUP BY stance_id'),
+    one: db.prepare('SELECT agree, basis, updated_at FROM stances WHERE user_id = ? AND stance_id = ?'),
   };
   const stanceById = new Map(stances.map((q) => [q.id, q]));
   // The journey: the views held most firmly with the least looking-into come first. For each, a voice that shares the
@@ -850,6 +853,20 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       .map((st) => ({ stance: st.id, question: st.question, ideas: [card(st.a.idea), card(st.b.idea)] }));
     return { answered: answers.length, stops, open };
   }
+  // Bearings: on every seventh day of the walk, once today is written, one debate comes back: the one not visited for
+  // longest (never answered first). It shows the earlier choice, and asks again; a move is welcomed, not scored.
+  app.get('/api/bearings', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.query.date);
+    const written = Boolean(q.writtenOn.get(uid, date));
+    const j = journey(uid, date, written);
+    if (!written || j.day < 7 || j.day % 7 !== 0) return res.json({ due: false });
+    const last = new Map(sq.lastOn.all(uid).map((r) => [r.stance_id, r.d]));
+    if ([...last.values()].includes(date)) return res.json({ due: false }); // already checked today
+    const pick = [...stances].sort((x, y) => (last.get(x.id) ?? '').localeCompare(last.get(y.id) ?? '') || x.id.localeCompare(y.id))[0];
+    const before = sq.one.get(uid, pick.id);
+    res.json({ due: true, day: j.day, debate: { id: pick.id, question: pick.question, a: { who: pick.a.who, claim: pick.a.claim }, b: { who: pick.b.who, claim: pick.b.claim } },
+      before: before ? { agree: before.agree, date: last.get(pick.id) ?? before.updated_at.slice(0, 10) } : null });
+  });
   app.get('/api/stance', auth, (req, res) => {
     const saved = Object.fromEntries(sq.all.all(req.user.id).map((a) => [a.stance_id, { agree: a.agree, basis: a.basis }]));
     res.json({ questions: stances.map((x) => ({ id: x.id, question: x.question, a: { who: x.a.who, claim: x.a.claim }, b: { who: x.b.who, claim: x.b.claim } })), basis: BASIS, saved, journey: journeyFor(req.user.id) });
@@ -861,7 +878,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       if (a.agree === null) { sq.clear.run(req.user.id, a.id); continue; }
       if (!Number.isInteger(a.agree) || a.agree < -2 || a.agree > 2) return res.status(400).json({ error: 'bad_agree' });
       if (a.basis != null && !(a.basis in BASIS)) return res.status(400).json({ error: 'bad_basis' });
-      sq.save.run(req.user.id, a.id, a.agree, a.basis ?? null);
+      const before = sq.one.get(req.user.id, a.id);
+      sq.save.run(req.user.id, a.id, a.agree, a.basis ?? before?.basis ?? null);
+      sq.log.run(req.user.id, a.id, a.agree, localDate(req.body?.date));
     }
     res.json({ journey: journeyFor(req.user.id) });
   });

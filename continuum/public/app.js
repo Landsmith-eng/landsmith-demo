@@ -821,8 +821,10 @@ function doneView(data, { reveal = false } = {}) {
     ? `That was the last of the first ${data.total}. From tomorrow, each day's idea is chosen from your own discoveries.`
     : 'That\'s today\'s card. Walk as far as you like; a new card arrives tomorrow.';
   setNav('today');
+  const intro = h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg));
+  bearings(intro);
   showConcept(data.node, [], {
-    intro: h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg)),
+    intro,
     startAt: reveal ? 1 : 0,
   });
 }
@@ -1375,6 +1377,31 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null } 
   });
 }
 
+// Bearings: every seventh day of the walk, after writing, one of the great debates comes back. The earlier choice is
+// shown; a new one is welcomed whether it moved or held. It sits quietly on Today's card.
+async function bearings(host) {
+  const b = await api(`/api/bearings?date=${today()}`).catch(() => null);
+  if (!b?.due) return;
+  const q = b.debate;
+  const label = Object.fromEntries(caseChoices(q));
+  const box = h('div', { class: 'bearings' },
+    h('div', { class: 'eyebrow' }, `Day ${b.day} · check your bearings`),
+    h('p', { class: 'stop-view' }, q.question),
+    b.before && h('p', { class: 'muted small' }, `On ${b.before.date} you chose: ${label[b.before.agree]}. A week of new ideas later, where are you now?`),
+    !b.before && h('p', { class: 'muted small' }, `${q.a.who}: ${q.a.claim} ${q.b.who}: ${q.b.claim}`));
+  const choices = h('div', { class: 'choices compact' }, caseChoices(q).map(([v, l]) => h('button', {
+    type: 'button', class: 'choice', onclick: async () => {
+      await api('/api/stance', { method: 'POST', body: { answers: [{ id: q.id, agree: v }], date: today() } }).catch(() => null);
+      const moved = b.before && b.before.agree !== v;
+      choices.replaceWith(h('p', { class: 'plain' }, !b.before ? 'Noted. It joins your journey.'
+        : moved ? `Your bearings moved: from "${label[b.before.agree]}" to "${l}". That is what the walk is for.`
+        : 'Steady: the same as before. Holding a view after meeting more of the debate means something too.'));
+    },
+  }, l)));
+  box.append(choices);
+  host.append(box);
+}
+
 // The interview: seven views people hold, one at a time, asked gently. Where do you stand, and how did you come to it?
 // It is not a test: it only shapes the journey. Answers can be changed any time; skipping is fine.
 // Which case speaks to you more: 2 = the first camp, clearly ... -2 = the second camp, clearly.
@@ -1421,7 +1448,7 @@ function showStance() {
       document.querySelector('.interview .choice.on, .interview .choice')?.focus({ preventScroll: true });
     };
     async function finish() {
-      const body = { answers: data.questions.map((q) => (answers[q.id] ? { id: q.id, agree: answers[q.id].agree, basis: answers[q.id].basis ?? null } : { id: q.id, agree: null })) };
+      const body = { date: today(), answers: data.questions.map((q) => (answers[q.id] ? { id: q.id, agree: answers[q.id].agree, basis: answers[q.id].basis ?? null } : { id: q.id, agree: null })) };
       const r = await api('/api/stance', { method: 'POST', body });
       render(h('div', { class: 'interview' },
         h('div', { class: 'eyebrow' }, 'Your journey'),

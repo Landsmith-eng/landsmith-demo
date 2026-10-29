@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS stances (
   PRIMARY KEY (user_id, stance_id)
 );
 
+-- Every choice in the debates, kept, so a later check-in can show how the user's bearings have moved.
+CREATE TABLE IF NOT EXISTS stance_history (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  stance_id TEXT NOT NULL,
+  agree INTEGER NOT NULL,
+  local_date TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Conversations with the map (Talk). messages is the API conversation as JSON, appended to and never edited.
 CREATE TABLE IF NOT EXISTS talks (
   id INTEGER PRIMARY KEY,
