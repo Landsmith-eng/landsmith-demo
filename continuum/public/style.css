@@ -532,3 +532,10 @@ html.gazing { overflow: hidden; }
 
 .bearings { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--warm); border-radius: 10px; background: var(--surface); }
 .choices.compact .choice { padding: 9px 12px; font-size: .95rem; }
+
+/* The reader's bar, above the menu while a page is read aloud; the part being read is marked. */
+.reader-bar { position: fixed; z-index: 5; left: 0; right: 0; bottom: calc(var(--dock) + var(--links, 0px) + 8px); display: none; justify-content: center; gap: 6px; padding: 0 12px; }
+.reader-bar.on { display: flex; }
+.reader-bar .chip { font-size: 14px; padding: 8px 12px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.panel.reading .panel-inner { box-shadow: -3px 0 0 var(--warm); }

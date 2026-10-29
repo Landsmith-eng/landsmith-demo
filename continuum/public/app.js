@@ -514,47 +514,99 @@ function playClip(url, run) {
   });
 }
 
+// The reader: the stage as a queue of sentences, played with a small bar above the menu: Back (the sentence before),
+// Pause/Play, Forward, Stop. The part being read is marked, the page follows along, and tapping any part while
+// reading jumps there. ElevenLabs clips are kept for the visit, so going back costs nothing.
+const reader = { items: [], k: 0, state: 'idle', run: null, plan: null, clips: new Map(), panels: [], bar: null, playBtn: null };
+function readerBar() {
+  if (reader.bar) return reader.bar;
+  const btn = (label, aria, fn) => { const b = h('button', { type: 'button', class: 'chip', 'aria-label': aria }, label); b.addEventListener('click', fn); return b; };
+  reader.playBtn = btn('Pause', 'Pause or play', () => togglePause());
+  reader.bar = h('div', { class: 'reader-bar', role: 'toolbar', 'aria-label': 'Reading aloud' },
+    btn('⟲ Back', 'Back one sentence', () => jump(reader.k - 1)), reader.playBtn,
+    btn('Forward ⟳', 'Forward one sentence', () => jump(reader.k + 1)), btn('Stop', 'Stop reading', () => stopReading()));
+  document.body.append(reader.bar);
+  return reader.bar;
+}
+function markPanel() {
+  reader.panels.forEach((p, n) => p.classList.toggle('reading', reader.state !== 'idle' && n === reader.items[reader.k]?.p));
+  if (reader.playBtn) reader.playBtn.textContent = reader.state === 'paused' ? 'Play' : 'Pause';
+}
 async function readStage() {
+  stopReading();
   const panels = [...document.querySelectorAll('.stage .panel')];
   if (!panels.length) return;
+  const items = panels.flatMap((p, n) => sentences(spokenText(p)).map((text) => ({ p: n, text })));
+  if (!items.length) return;
   const mid = innerHeight / 2;
-  let start = panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; });
-  if (start < 0) start = 0;
-  const run = reading = { stop: false, wake: null };
+  const startPanel = Math.max(0, panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; }));
+  Object.assign(reader, { items, panels, k: Math.max(0, items.findIndex((x) => x.p >= startPanel)), state: 'playing', clips: new Map(), plan: await voicePlan() });
+  reading = reader; // the Listen button shows Stop while this runs
   listenBtn.setAttribute('aria-pressed', 'true'); listenBtn.querySelector('span').textContent = 'Stop';
-  let plan = await voicePlan();
-  // ElevenLabs: fetch each part's audio ahead, so the next part is ready when this one ends.
-  const ahead = new Map();
-  const clipsFor = (i) => {
-    if (!ahead.has(i)) ahead.set(i, Promise.all(chunks(spokenText(panels[i])).map((t) => fetchClip(t, plan.el))));
-    return ahead.get(i);
-  };
-  for (let i = start; i < panels.length && !run.stop; i++) {
-    if (i > start) {
-      panels[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
-      await new Promise((r) => setTimeout(r, 900));
+  readerBar().classList.add('on');
+  // Tap a part while reading: read from there.
+  panels.forEach((p, n) => { p.onclick = (e) => { if (reader.state === 'idle' || e.target.closest('a, button, input, textarea')) return; jump(items.findIndex((x) => x.p === n)); }; });
+  loop();
+}
+const clipFor = (k) => {
+  const t = reader.items[k]?.text;
+  if (!reader.clips.has(t)) reader.clips.set(t, fetchBlob(t, reader.plan.el).catch((e) => { reader.clips.delete(t); throw e; }));
+  return reader.clips.get(t);
+};
+async function loop() {
+  const run = reader.run = { stop: false, wake: null };
+  let shownPanel = -1;
+  while (reader.k < reader.items.length && !run.stop) {
+    const item = reader.items[reader.k];
+    markPanel();
+    if (item.p !== shownPanel) {
+      const r = reader.panels[item.p].getBoundingClientRect();
+      if (shownPanel !== -1 || r.top < 0 || r.bottom > innerHeight) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
+      shownPanel = item.p;
+      if (run.stop) return;
     }
-    if ('el' in plan) {
+    if ('el' in reader.plan) {
       try {
-        const clips = await clipsFor(i);
-        if (i + 1 < panels.length) clipsFor(i + 1).catch(() => {});
-        for (const url of clips) { if (run.stop) break; await playClip(url, run); }
+        const blob = await clipFor(reader.k);
+        if (reader.k + 1 < reader.items.length) clipFor(reader.k + 1).catch(() => {});
+        if (run.stop) return;
+        await playClip(URL.createObjectURL(blob), run);
       } catch (e) {
         if (!speech) break;
         notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ' (check the ElevenLabs key or credits)'}. Using the phone's voice.`);
-        plan = { phone: null }; i--; continue;
+        reader.plan = { phone: null }; continue;
       }
-    } else {
-      for (const line of sentences(spokenText(panels[i]))) { if (run.stop) break; await sayPhone(line, plan.phone, run); }
-    }
-    if (!run.stop) await new Promise((r) => setTimeout(r, 500));
+    } else await sayPhone(item.text, reader.plan.phone, run);
+    if (run.stop || reader.state === 'paused') return;
+    reader.k++;
+    if (reader.items[reader.k]?.p !== item.p) await new Promise((x) => setTimeout(x, 400));
   }
-  if (reading === run) stopReading();
+  if (reader.run === run && !run.stop) stopReading();
+}
+function haltRun() { if (reader.run) { reader.run.stop = true; reader.run.wake?.(); } speech?.cancel(); audioEl.pause(); }
+function togglePause() {
+  if (reader.state === 'playing') {
+    reader.state = 'paused';
+    if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltRun(); // the phone's voice restarts its sentence
+  } else if (reader.state === 'paused') {
+    reader.state = 'playing';
+    if (reader.run && !reader.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
+    else loop();
+  }
+  markPanel();
+}
+function jump(k) {
+  if (reader.state === 'idle' || k < 0 || k >= reader.items.length) return;
+  haltRun(); reader.k = k;
+  if (reader.state === 'paused') reader.state = 'playing';
+  loop();
 }
 function stopReading() {
-  if (!reading) return;
-  const run = reading; run.stop = true; reading = null;
-  speech?.cancel(); audioEl.pause(); run.wake?.();
+  if (reading !== reader) return;
+  haltRun(); reading = null;
+  reader.state = 'idle'; markPanel();
+  reader.panels.forEach((p) => { p.onclick = null; });
+  reader.bar?.classList.remove('on');
   listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
 }
 // A short message at the top of the screen that fades away.
