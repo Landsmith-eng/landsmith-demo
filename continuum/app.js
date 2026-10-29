@@ -9,7 +9,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem } from './talk.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -126,6 +126,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     adaptiveCount: db.prepare('SELECT COUNT(*) AS n FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.seq IS NULL'),
     writtenRooms: db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.room IS NOT NULL'),
     writtenDays: db.prepare('SELECT DISTINCT local_date FROM journal WHERE user_id = ? ORDER BY local_date DESC'),
+    firstDay: db.prepare('SELECT MIN(local_date) AS d FROM journal WHERE user_id = ?'),
     metCount: db.prepare(`SELECT COUNT(*) AS n FROM (
       SELECT node_id FROM journal WHERE user_id = :uid UNION SELECT node_id FROM favorites WHERE user_id = :uid
       UNION SELECT node_id FROM notes WHERE user_id = :uid
@@ -297,6 +298,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (q.writtenOn.get(uid, date)) return res.status(409).json({ error: 'already_answered_today' });
     if (q.entry.get(uid, nodeId) || todaysPick(uid, date) !== nodeId) return res.status(409).json({ error: 'not_todays_node' });
     q.insertEntry.run(uid, nodeId, text, date);
+    db.prepare("INSERT OR IGNORE INTO recall (user_id, node_id, step, due_date) VALUES (?, ?, 0, date(?, '+1 day'))").run(uid, nodeId, date);
     q.insertEvent.run(uid, 'respond', nodeId, date);
     res.json({ node: fullNode(q.node.get(nodeId), uid, date) });
   });
@@ -859,14 +861,66 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const uid = req.user.id; const date = localDate(req.query.date);
     const written = Boolean(q.writtenOn.get(uid, date));
     const j = journey(uid, date, written);
-    if (!written || j.day < 7 || j.day % 7 !== 0) return res.json({ due: false });
     const last = new Map(sq.lastOn.all(uid).map((r) => [r.stance_id, r.d]));
-    if ([...last.values()].includes(date)) return res.json({ due: false }); // already checked today
+    // By the calendar, not the walk: a week or more since the last check (or since they started), on their next visit.
+    const lastCheck = [...last.values()].sort().at(-1) ?? aq.firstDay.get(uid)?.d;
+    if (!written || j.day < 3 || !lastCheck || daysBetween(lastCheck, date) < 7) return res.json({ due: false });
     const pick = [...stances].sort((x, y) => (last.get(x.id) ?? '').localeCompare(last.get(y.id) ?? '') || x.id.localeCompare(y.id))[0];
     const before = sq.one.get(uid, pick.id);
     res.json({ due: true, day: j.day, debate: { id: pick.id, question: pick.question, a: { who: pick.a.who, claim: pick.a.claim }, b: { who: pick.b.who, claim: pick.b.claim } },
       before: before ? { agree: before.agree, date: last.get(pick.id) ?? before.updated_at.slice(0, 10) } : null });
   });
+  // ── Daily review: spaced recall of the ideas they wrote on, by calendar days ──
+  const RECALL_DAYS = [1, 3, 7, 16, 35];
+  const rq = {
+    backfill: db.prepare(`INSERT OR IGNORE INTO recall (user_id, node_id, step, due_date)
+      SELECT j.user_id, j.node_id, 0, date(j.local_date, '+1 day') FROM journal j WHERE j.user_id = ?`),
+    due: db.prepare(`SELECT r.node_id, r.step, r.due_date, n.title, n.thinker, n.plain_face, n.prompt, j.body, j.local_date FROM recall r
+      JOIN nodes n ON n.id = r.node_id JOIN journal j ON j.user_id = r.user_id AND j.node_id = r.node_id
+      WHERE r.user_id = ? AND r.due_date <= ? AND j.local_date < ? AND r.step < ? AND (r.last_date IS NULL OR r.last_date < ?)
+      ORDER BY r.due_date, j.local_date LIMIT 1`),
+    get: db.prepare('SELECT step FROM recall WHERE user_id = ? AND node_id = ?'),
+    set: db.prepare('UPDATE recall SET step = ?, due_date = ?, last_date = ? WHERE user_id = ? AND node_id = ?'),
+    doneToday: db.prepare('SELECT 1 FROM recall WHERE user_id = ? AND last_date = ?'),
+  };
+  app.get('/api/recall', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.query.date);
+    rq.backfill.run(uid);
+    if (rq.doneToday.get(uid, date)) return res.json({ due: null });
+    const r = rq.due.get(uid, date, date, RECALL_DAYS.length, date);
+    res.json({ due: r ? { id: r.node_id, title: r.title, thinker: r.thinker, line: firstLine(r.plain_face).split(/(?<=[.!?])\s/)[0], prompt: r.prompt, yours: r.body, wrote_on: r.local_date, step: r.step } : null });
+  });
+  app.post('/api/recall', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const { node_id: id, result } = req.body ?? {};
+    const row = rq.get.get(uid, id);
+    if (!row || !['got', 'fuzzy'].includes(result)) return res.status(400).json({ error: 'bad_recall' });
+    const step = result === 'got' ? row.step + 1 : 0;
+    const next = step < RECALL_DAYS.length ? shiftDay(date, RECALL_DAYS[step]) : shiftDay(date, 3650);
+    rq.set.run(step, next, date, uid, id);
+    res.json({ step, next: step < RECALL_DAYS.length ? next : null });
+  });
+
+  // ── A problem to consider: one concrete situation that tests the idea, ending in a question. Written once by
+  // Claude (when Talk is on) and kept; only for ideas the user may already read. ──
+  const pq2 = { get: db.prepare('SELECT body FROM problems WHERE node_id = ?'), put: db.prepare('INSERT OR IGNORE INTO problems (node_id, body) VALUES (?, ?)') };
+  const writing = new Map(); // node id -> the promise of a problem being written (so two requests share one call)
+  app.get('/api/problem/:id', auth, async (req, res) => {
+    const n = q.node.get(req.params.id);
+    if (!n || n.type === 'practice') return res.status(404).json({ error: 'not_found' });
+    const states = talkStates(req.user.id, localDate(req.query.date));
+    if (hiddenIn(states, n)) return res.status(404).json({ error: 'not_found' });
+    const have = pq2.get.get(n.id);
+    if (have) return res.json({ problem: have.body });
+    if (!talk) return res.json({ problem: null });
+    try {
+      if (!writing.has(n.id)) writing.set(n.id, writeProblem(talk, n).finally(() => writing.delete(n.id)));
+      const body = await writing.get(n.id);
+      if (body) pq2.put.run(n.id, body);
+      res.json({ problem: body });
+    } catch (e) { console.warn(`Problem for ${n.id}: ${e.status ?? ''} ${e.message}`); res.json({ problem: null }); }
+  });
+
   app.get('/api/stance', auth, (req, res) => {
     const saved = Object.fromEntries(sq.all.all(req.user.id).map((a) => [a.stance_id, { agree: a.agree, basis: a.basis }]));
     res.json({ questions: stances.map((x) => ({ id: x.id, question: x.question, a: { who: x.a.who, claim: x.a.claim }, b: { who: x.b.who, claim: x.b.claim } })), basis: BASIS, saved, journey: journeyFor(req.user.id) });

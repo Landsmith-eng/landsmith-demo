@@ -134,3 +134,19 @@ export async function answer(talk, { system, messages, onText, readIdea }) {
 
 // [[id]] markers in a reply, for the app to turn into links.
 export const referencedIds = (text) => [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((m) => m[1]))];
+
+// One problem to consider for an idea: a short, concrete situation where the idea is put to the test, then a single
+// question, with no answer given. Plain text, two to four sentences plus the question.
+export async function writeProblem(talk, n) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 16000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low' },
+    system: 'You write short "problems to consider" for Continuum, a daily philosophy app. Given one idea, write a concrete, everyday situation (two to four sentences, with ordinary people and a real decision) in which the idea is put to the test, then one open question that asks the reader what they would do or think, and why. Do not give an answer, do not name the thinker, and use no headings, lists or formatting. Under 110 words.',
+    messages: [{ role: 'user', content: `The idea: "${n.title}"${n.thinker ? ` (${n.thinker})` : ''}.\nIn plain words: ${n.plain_face}` }],
+  });
+  if (msg.stop_reason === 'refusal') return null;
+  return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || null;
+}

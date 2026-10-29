@@ -539,3 +539,7 @@ html.gazing { overflow: hidden; }
 .reader-bar .chip { font-size: 14px; padding: 8px 12px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent);
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,.12); }
 .panel.reading .panel-inner { box-shadow: -3px 0 0 var(--warm); }
+
+.lesson { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.lesson-text { font-family: var(--display); font-size: 1.08rem; line-height: 1.5; margin: .3em 0 .5em; }
+.lesson .yours { margin: 8px 0; }

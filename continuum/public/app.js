@@ -874,6 +874,10 @@ function doneView(data, { reveal = false } = {}) {
     : 'That\'s today\'s card. Walk as far as you like; a new card arrives tomorrow.';
   setNav('today');
   const intro = h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg));
+  // After writing: today's small lessons. A problem to consider for today's idea, a review of an earlier one, and
+  // (about once a week) a debate to check your bearings.
+  problemCard(intro, data.node);
+  recallCard(intro);
   bearings(intro);
   showConcept(data.node, [], {
     intro,
@@ -1244,7 +1248,7 @@ const TALK_MODES = {
   talk: { label: 'Talk', placeholder: 'Say what you think…' },
   weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
 };
-function showTalk({ about = null, mode = 'talk', seed = null, practice = null } = {}) {
+function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false } = {}) {
   setNav('talk');
   stopTalkVoice();
   return guarded(async () => {
@@ -1424,22 +1428,65 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null } 
       compose,
       status);
     if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    if (seed) { ta.value = seed; submit(); }
+    if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    else if (seed) { ta.value = seed; submit(); }
     if (log.lastElementChild) keepInView(log.lastElementChild);
   });
 }
 
-// Bearings: every seventh day of the walk, after writing, one of the great debates comes back. The earlier choice is
-// shown; a new one is welcomed whether it moved or held. It sits quietly on Today's card.
+// A problem to consider: one concrete situation that puts the idea to the test, and a question. Think it through in
+// Talk, or just carry it through the day.
+async function problemCard(host, node) {
+  const r = await api(`/api/problem/${encodeURIComponent(node.id)}?date=${today()}`).catch(() => null);
+  if (!r?.problem) return;
+  host.append(h('div', { class: 'lesson' },
+    h('div', { class: 'eyebrow' }, 'A problem to consider'),
+    h('p', { class: 'lesson-text' }, r.problem),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `A problem to consider, from "${node.title}": ${r.problem} Here is what I think: ` , draft: true }) }, 'Think it through')));
+}
+// The daily review: an earlier idea, on a spaced schedule. First, what do you remember? Then its plain words and what
+// you wrote, and "Got it" (it comes back later) or "Fuzzy" (it comes back tomorrow).
+async function recallCard(host) {
+  const r = await api(`/api/recall?date=${today()}`).catch(() => null);
+  const d = r?.due;
+  if (!d) return;
+  const box = h('div', { class: 'lesson' },
+    h('div', { class: 'eyebrow' }, "Today's review"),
+    h('p', { class: 'lesson-text' }, `What do you remember of "${d.title}"?`),
+    h('p', { class: 'muted small' }, 'Say it to yourself in a sentence, then look.'));
+  const reveal = h('button', { type: 'button', class: 'btn ghost' }, 'Remind me');
+  reveal.addEventListener('click', () => {
+    const mark = (result) => async () => {
+      const p = await api('/api/recall', { method: 'POST', body: { node_id: d.id, result, date: today() } }).catch(() => null);
+      rate.replaceWith(h('p', { class: 'muted small' }, result === 'got'
+        ? (p?.next ? `Good. It will come back on ${p.next}.` : 'Good. That one is yours now.')
+        : 'It will come back tomorrow. Fuzzy is how remembering starts.'));
+    };
+    const rate = h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' },
+      h('button', { type: 'button', class: 'btn', onclick: mark('got') }, 'Got it'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: mark('fuzzy') }, 'Fuzzy'));
+    reveal.replaceWith(
+      h('p', { class: 'plain' }, d.line),
+      h('p', { class: 'muted small' }, `On ${d.wrote_on} it asked: ${d.prompt}`),
+      h('div', { class: 'yours' }, d.yours),
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => walkTo(d.id, []) }, `Open "${d.title}" again`),
+      rate);
+  });
+  box.append(reveal);
+  host.append(box);
+}
+
+// Bearings: once a week or more has passed on the calendar, after writing, one of the great debates comes back. The
+// earlier choice is shown; a new one is welcomed whether it moved or held. It sits quietly on Today's card.
 async function bearings(host) {
   const b = await api(`/api/bearings?date=${today()}`).catch(() => null);
   if (!b?.due) return;
   const q = b.debate;
   const label = Object.fromEntries(caseChoices(q));
   const box = h('div', { class: 'bearings' },
-    h('div', { class: 'eyebrow' }, `Day ${b.day} · check your bearings`),
+    h('div', { class: 'eyebrow' }, 'Check your bearings'),
     h('p', { class: 'stop-view' }, q.question),
-    b.before && h('p', { class: 'muted small' }, `On ${b.before.date} you chose: ${label[b.before.agree]}. A week of new ideas later, where are you now?`),
+    b.before && h('p', { class: 'muted small' }, `On ${b.before.date} you chose: ${label[b.before.agree]}. With the ideas you have met since, where are you now?`),
     !b.before && h('p', { class: 'muted small' }, `${q.a.who}: ${q.a.claim} ${q.b.who}: ${q.b.claim}`));
   const choices = h('div', { class: 'choices compact' }, caseChoices(q).map(([v, l]) => h('button', {
     type: 'button', class: 'choice', onclick: async () => {

@@ -127,23 +127,45 @@ test('the interview: answers saved and changed, a journey from firm views held b
   } finally { server.close(); }
 });
 
-test('bearings: every seventh day of the walk, after writing, one debate comes back with the earlier choice', async () => {
+test('bearings: a debate comes back once a week has passed on the calendar, on the next visit after writing', async () => {
   const { server, call } = await boot();
   try {
     const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
     await call('/api/stance', { answers: [{ id: 'death', agree: 2, basis: 'instinct' }], date: day(0) });
-    for (let n = 0; n < 7; n++) {
+    // A light user: three visits in the first week, then back after a month.
+    for (const n of [0, 2, 4, 30]) {
       const t = (await call(`/api/today?date=${day(n)}`)).json;
-      assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // not before writing
+      assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // never before writing
       await call('/api/respond', { node_id: t.node.id, body: 'x', date: day(n) });
       const b = (await call(`/api/bearings?date=${day(n)}`)).json;
-      assert.equal(b.due, n === 6, `day ${n + 1}`);
+      assert.equal(b.due, n === 30, `day ${n}`);
       if (b.due) {
-        assert.equal(b.day, 7);
         assert.notEqual(b.debate.id, 'death'); // a debate never visited comes first
         await call('/api/stance', { answers: [{ id: b.debate.id, agree: 0 }], date: day(n) });
-        assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // once a day
+        assert.equal((await call(`/api/bearings?date=${day(n)}`)).json.due, false); // not again for a week
       }
     }
+  } finally { server.close(); }
+});
+
+test('daily review: an idea written on comes back after 1, 3, 7… days; fuzzy brings it back tomorrow', async () => {
+  const { server, call } = await boot();
+  try {
+    const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
+    const t = (await call(`/api/today?date=${day(0)}`)).json;
+    await call('/api/respond', { node_id: t.node.id, body: 'Atoms, yes.', date: day(0) });
+    assert.equal((await call(`/api/recall?date=${day(0)}`)).json.due, null); // not the same day
+    let r = (await call(`/api/recall?date=${day(1)}`)).json.due;
+    assert.equal(r.id, t.node.id);
+    assert.equal(r.yours, 'Atoms, yes.');
+    assert.ok(r.line.length > 10 && r.prompt);
+    let p = (await call('/api/recall', { node_id: r.id, result: 'got', date: day(1) })).json;
+    assert.equal(p.next, day(4)); // three days on
+    assert.equal((await call(`/api/recall?date=${day(1)}`)).json.due, null); // one a day
+    assert.equal((await call(`/api/recall?date=${day(3)}`)).json.due, null);
+    r = (await call(`/api/recall?date=${day(4)}`)).json.due;
+    p = (await call('/api/recall', { node_id: r.id, result: 'fuzzy', date: day(4) })).json;
+    assert.equal(p.next, day(5));
+    assert.equal((await call('/api/recall', { node_id: r.id, result: 'meh', date: day(5) })).status, 400);
   } finally { server.close(); }
 });

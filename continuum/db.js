@@ -110,6 +110,23 @@ CREATE TABLE IF NOT EXISTS stance_history (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Daily review: each idea the user wrote on comes back on a spaced schedule (calendar days 1, 3, 7, 16, 35).
+CREATE TABLE IF NOT EXISTS recall (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  step INTEGER NOT NULL DEFAULT 0,
+  due_date TEXT NOT NULL,
+  last_date TEXT,
+  PRIMARY KEY (user_id, node_id)
+);
+
+-- A problem to consider for an idea: written once (by Claude, when Talk is on) and kept for everyone.
+CREATE TABLE IF NOT EXISTS problems (
+  node_id TEXT PRIMARY KEY REFERENCES nodes(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Conversations with the map (Talk). messages is the API conversation as JSON, appended to and never edited.
 CREATE TABLE IF NOT EXISTS talks (
   id INTEGER PRIMARY KEY,

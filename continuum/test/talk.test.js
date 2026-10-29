@@ -132,3 +132,19 @@ test('talk: weighing an opinion adds the weigh instructions and returns web sour
     assert.equal((await call('/api/talk', { text: 'x', mode: 'nope', date: D })).status, 400);
   } finally { server.close(); }
 });
+
+test('a problem to consider: written once by Claude, kept, and never for an idea the user may not see yet', async () => {
+  const calls = [];
+  const client = { beta: { messages: { create: async (params) => { calls.push(params); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Mara finds a wallet. What should she do, and why?' }] }; } } } };
+  const { server, call } = await boot(createTalk({ client }));
+  try {
+    const id = 'sartre_existence_precedes_essence';
+    const a = await (await call(`/api/problem/${id}?date=${D}`)).json();
+    assert.equal(a.problem, 'Mara finds a wallet. What should she do, and why?');
+    assert.match(calls[0].messages[0].content, /Existence precedes essence/);
+    assert.equal(calls[0].output_config.effort, 'low');
+    await call(`/api/problem/${id}?date=${D}`);
+    assert.equal(calls.length, 1); // kept, not written again
+    assert.equal((await call(`/api/problem/epicurus_absence_of_pain?date=${D}`)).status, 404); // an upcoming daily card
+  } finally { server.close(); }
+});
