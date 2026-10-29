@@ -1249,7 +1249,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
         results.hidden = false; browse.hidden = true;
       }, 220);
     });
-    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Surprise me ↝');
+    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Explore ↝');
     render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     if (search) box.focus();
