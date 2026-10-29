@@ -61,8 +61,12 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
-  if (!nodes.some((n) => n?.classList?.contains('stage'))) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? null, .35, { plain: true }); }
-  const banner = testDate() && h('div', { class: 'notice testdate', role: 'status' },
+  const staged = nodes.some((n) => n?.classList?.contains('stage'));
+  if (!staged) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
+  view.classList.toggle('glassy', !staged);
+  // On a plain page the title and the line under it stand on the picture; everything else sits on glass.
+  nodes.forEach((n, i) => { if (n?.tagName === 'P' && nodes[i - 1]?.tagName === 'H1') n.classList.add('lede'); });
+  const banner = testDate() && h('div', { class: 'notice testdate bare', role: 'status' },
     `Test date: ${testDate()} (real date ${realToday()}). `,
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
     h('button', { type: 'button', class: 'link', onclick: () => { store.del(DATE_KEY); showToday(); } }, 'use real date'));
@@ -71,7 +75,15 @@ function render(...nodes) {
 }
 
 // Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
-const TAB_BG = { practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp' };
+const TAB_BG = {
+  practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp',
+  talk: '/img/spares/daily_cafe_terrace.webp', // conversation at a café table, the oldest seminar there is
+};
+// Plates for pages outside the tabs: the debates stand on a bridge in the rain (two banks, one crossing).
+const PAGE_BG = { debates: '/img/spares/daily_bridge_rain.webp' };
+// Any other page gets one of the daily-life plates, the same one all day.
+const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
+const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
 // Plates with a meaning, shown when the situation fits: done for today (the owl), coming back after a gap (the
 // boat), a reluctant stretch (the dewy web), ready to grow or a changed mind (the braided river).
 const MOOD_BG = {
@@ -391,8 +403,15 @@ const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .1
 const wallpaper = document.getElementById('wallpaper');
 let wallMax = 1;
 // On a plain page (a tab) the picture is dim behind the text but clear in the empty space below it.
+// The picture's zoom from pinching (see below): how far in, and toward which point (percent of the screen).
+const wallZoom = { z: 1, ox: 50, oy: 50 };
+function applyWallZoom() {
+  wallpaper.style.setProperty('--wall-zoom', wallZoom.z.toFixed(3));
+  wallpaper.style.setProperty('--wall-origin', `${wallZoom.ox.toFixed(1)}% ${wallZoom.oy.toFixed(1)}%`);
+}
 function setWallpaper(src, maxFocus = 1, { plain = false } = {}) {
   wallMax = maxFocus;
+  if (src && wallpaper.querySelector('img')?.getAttribute('src') !== src) { Object.assign(wallZoom, { z: 1, ox: 50, oy: 50 }); applyWallZoom(); }
   wallpaper.classList.toggle('plain', plain);
   wallpaper.classList.toggle('nolook', !plain && maxFocus < 1); // a closed card's picture stays a hint, not a view
   if (!src) { wallpaper.classList.remove('on'); return; }
@@ -1508,6 +1527,7 @@ const caseChoices = (q) => [[2, `${q.a.who}'s case, clearly`], [1, `Leaning to $
 function showStance() {
   setNav('');
   return guarded(async () => {
+    pageBg = PAGE_BG.debates;
     const data = await api('/api/stance');
     const answers = { ...data.saved };
     let i = -1;
@@ -1599,8 +1619,10 @@ document.addEventListener('click', (e) => {
   else showToday();
 });
 
-// Text size by pinching: two fingers on the page scale the text (0.85x to 1.8x), which rewraps to fit the screen. The
-// paragraph under the fingers stays put. Remembered on this device. (Look mode has its own pinch, for the picture.)
+// Pinching: two fingers on the page scale the text (0.85x to 1.8x), which rewraps to fit the screen, and at the same
+// time lean into the picture behind it (1x to 3x, toward the point between the fingers; dragging the two fingers
+// moves across the picture). The paragraph under the fingers stays put. The text size is remembered on this device;
+// the picture's zoom lasts until the picture changes. (Look mode has its own pinch, for the picture alone.)
 const SCALE_KEY = 'continuum.textScale';
 const clampScale = (v) => Math.min(1.8, Math.max(.85, v));
 let textScale = clampScale(Number(store.get(SCALE_KEY)) || 1);
@@ -1611,11 +1633,21 @@ addEventListener('touchstart', (e) => {
   if (e.touches.length !== 2 || document.querySelector('.gaze, .intro')) return;
   const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
   const anchor = document.elementFromPoint(innerWidth / 2, cy);
-  pinch = { d0: spread(e.touches), s0: textScale, anchor, top: anchor?.getBoundingClientRect().top ?? 0 };
+  const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+  pinch = { d0: spread(e.touches), s0: textScale, anchor, top: anchor?.getBoundingClientRect().top ?? 0, z0: wallZoom.z, x0: cx, y0: cy, o0: { ...wallZoom } };
+  if (wallZoom.z <= 1.001) { wallZoom.ox = cx / innerWidth * 100; wallZoom.oy = cy / innerHeight * 100; pinch.o0 = { ...wallZoom }; }
+  wallpaper.classList.add('pinching');
 }, { passive: true });
 addEventListener('touchmove', (e) => {
   if (!pinch || e.touches.length !== 2) return;
-  const next = clampScale(pinch.s0 * (spread(e.touches) / pinch.d0) ** 0.6); // gentler than the fingers' spread
+  const ratio = spread(e.touches) / pinch.d0;
+  const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  wallZoom.z = Math.min(3, Math.max(1, pinch.z0 * ratio));
+  // Moving the fingers together slides the zoom's centre the other way, so the picture follows the hand.
+  wallZoom.ox = Math.min(100, Math.max(0, pinch.o0.ox - (cx - pinch.x0) / innerWidth * 100 / wallZoom.z));
+  wallZoom.oy = Math.min(100, Math.max(0, pinch.o0.oy - (cy - pinch.y0) / innerHeight * 100 / wallZoom.z));
+  applyWallZoom();
+  const next = clampScale(pinch.s0 * ratio ** 0.6); // gentler than the fingers' spread
   if (Math.abs(next - textScale) < .01) return;
   textScale = next;
   document.documentElement.style.setProperty('--text-scale', next.toFixed(3));
@@ -1623,7 +1655,7 @@ addEventListener('touchmove', (e) => {
 }, { passive: true });
 addEventListener('touchend', (e) => {
   if (!pinch || e.touches.length) return;
-  pinch = null; store.set(SCALE_KEY, textScale.toFixed(3)); queueWall();
+  pinch = null; store.set(SCALE_KEY, textScale.toFixed(3)); wallpaper.classList.remove('pinching'); queueWall();
 }, { passive: true });
 
 // The opening, once per visit: an empty hallway comes into focus, then the cat walks in as the name sharpens. A tap
