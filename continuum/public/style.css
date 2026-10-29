@@ -749,3 +749,4 @@ html.map-full { overflow: hidden; }
 .map-journey li { margin: 4px 0; }
 .map-links .eyebrow { margin-top: 12px; }
 html.map-full main > :not(.map) { visibility: hidden; }
+#wallpaper.plain.bright::after { background: linear-gradient(to bottom, rgba(6, 12, 9, .5) 0, rgba(6, 12, 9, .36) 35%, rgba(6, 12, 9, .44) 100%); }

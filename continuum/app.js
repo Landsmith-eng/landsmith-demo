@@ -1,7 +1,7 @@
 // Express app for Continuum. Kept separate from server.js so tests can mount it on an in-memory DB.
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { rooms } from './content/rooms.js';
@@ -1365,7 +1365,21 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // ElevenLabs problems show in the server window, so they can be fixed (the phone falls back to its own voice).
   const ttsWarn = (what, e) => console.warn(`ElevenLabs refused ${what}: ${e.message}${e.why ? ` (${e.why})` : ''}`);
   // ── Reading aloud with ElevenLabs (when ELEVENLABS_API_KEY is set). The key never leaves the server. ──
+  // Bright plates (public/img/bright/*.webp): sunlit, happy scenes the phone shows by day. Listed fresh each time,
+  // so a new picture dropped into the folder is used at once.
+  const BRIGHT_DIR = join(PUBLIC_DIR, 'img', 'bright');
+  app.get('/api/plates', (req, res) => {
+    let bright = [];
+    try { bright = readdirSync(BRIGHT_DIR).filter((f) => /\.webp$/.test(f)).sort().map((f) => `/img/bright/${f}`); } catch { /* none yet */ }
+    res.json({ bright });
+  });
   app.get('/api/tts', auth, (req, res) => res.json({ enabled: Boolean(tts), voice_id: tts?.voiceId ?? null }));
+  // The phone reports each step of speaking in, so a glitch shows in the server window.
+  app.post('/api/voicelog', auth, (req, res) => {
+    const clean = (x) => String(x ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
+    console.log(`Voice (${req.user.name}): ${clean(req.body?.event)}${req.body?.detail ? ` · ${clean(req.body.detail)}` : ''}`);
+    res.json({ ok: true });
+  });
   // Speech to text: the phone records, the server has ElevenLabs write it down (when ELEVENLABS_API_KEY is set).
   app.get('/api/stt', auth, (req, res) => res.json({ enabled: Boolean(tts?.transcribe) }));
   app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {

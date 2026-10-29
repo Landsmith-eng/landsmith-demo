@@ -115,3 +115,29 @@ Save each as `public/img/spares/<file>.webp`; Talk and the debates borrow daily 
 | `parthenon_fire_circle` | The Parthenon (groups) | A ring of chairs around a small fire in a garden at dusk, figures blurred, lanterns in the trees, fireflies. After Whistler's nocturnes (1870s). |
 | `recall_fog_path` | Daily review | A garden path in morning fog, the near stones sharp and the far ones fading into white, a hare stopped on the path. After George Inness's late landscapes (1890s). |
 | `problem_crossroads` | A problem to consider | A country crossroads at evening with a wooden signpost (blank arms, no lettering), a fox pausing at the fork. After Constable's lanes (1820s). |
+
+## Batch 5: bright and happy (Carey)
+
+Shown by day (7 a.m. to 5 p.m. on the phone's clock) behind the tabs and plain pages; the calmer plates return in
+the evening. Save each as `public/img/bright/<file>.webp`; no code change is needed, each is picked up at once.
+Use this style block instead of the usual one:
+
+> A bright, joyful background plate for a phone app, portrait 2:3. Sunlit, warm and clear, painterly (gouache or
+> plein-air oil), no text, no lettering, no faces in close-up. Fresh colours: sky blue, sea green, butter yellow,
+> coral, white clouds. The upper half is open sky or soft space so text can sit over it; the life of the scene is in
+> the lower third. Happy, lively, never busy.
+
+| File | Background prompt (after the style block) |
+|---|---|
+| `kites_park` | People flying kites in a wide green park on a breezy day, kites high in a blue sky with puffy clouds, children running, a dog leaping. After Monet's summer meadows (1870s). |
+| `beach_morning` | A sunny beach in the morning, small waves, bathers and striped umbrellas far off, gulls overhead, a sandcastle in the foreground. After Sorolla's beach scenes (1900s). |
+| `happy_clouds` | Big bright cumulus clouds over rolling fields of wheat and poppies, swallows swooping low, a farm track. After Constable's cloud studies (1820s). |
+| `birds_lift` | A flock of birds lifting off a sunny harbour wall into a blue sky, sailboats with white sails, bunting on the quay. After Boudin's harbours (1860s). |
+| `balloons_dawn` | Hot-air balloons rising at sunrise over a green valley and a river, a few people waving from a hill. Bright and gentle, after Turner's morning light. |
+| `blossom_picnic` | A picnic under a tree in full blossom, petals drifting in the air, a blanket and a basket, figures relaxed in the sun. After Hiroshige's cherry-blossom prints. |
+| `sunflowers_bees` | A field of sunflowers under a summer sky, bees and a butterfly, a straw hat hung on a fence post. After Van Gogh's summer fields (1888). |
+| `bubbles_square` | Children chasing soap bubbles in a sunny town square, a fountain sparkling, pigeons scattering. After Renoir's festive outdoor scenes. |
+| `coast_cyclist` | A cyclist on a coastal road above a turquoise sea, wildflowers along the verge, white houses on the hill. After Dufy's bright Riviera views (1920s). |
+| `sailing_regatta` | A summer regatta, small sailboats leaning in a brisk wind, flags and clear water, a lighthouse far off. After Monet's regatta at Argenteuil (1872). |
+| `garden_swing` | A garden swing under an apple tree on a sunny afternoon, a child mid-swing, hens pecking, washing on a line. After Fragonard's lightness, in a modern key. |
+| `meadow_morning` | A dewy meadow at sunrise with a path through tall grass, a hare leaping, larks rising, mist lifting from a stream. Bright, after Corot's early mornings. |

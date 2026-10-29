@@ -66,7 +66,7 @@ function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
   document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
-  if (!staged) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
+  if (!staged) { unstage(); setWallpaper(pageBg ?? brightFor(currentTab ?? 'page') ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
   view.classList.toggle('glassy', !staged);
   // On a plain page the title and the line under it stand on the picture; everything else sits on glass.
   nodes.forEach((n, i) => { if (n?.tagName === 'P' && nodes[i - 1]?.tagName === 'H1') n.classList.add('lede'); });
@@ -115,6 +115,17 @@ function doors() {
 }
 // Any other page gets one of the daily-life plates, the same one all day.
 const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
+// By day (7 in the morning to 5 in the afternoon, on the phone's clock) the tabs and plain pages stand on bright,
+// happy plates from public/img/bright, one per page and day; in the evening the calmer plates return. Pages with a
+// plate that carries a meaning (the debates, the Parthenon, homework…) keep it.
+let brightPlates = [];
+fetch('/api/plates').then((r) => r.json()).then((j) => { brightPlates = j.bright ?? []; }).catch(() => {});
+const daytime = () => { const hr = new Date().getHours(); return hr >= 7 && hr < 17; };
+const brightFor = (key) => {
+  if (!brightPlates.length || !daytime()) return null;
+  const n = [...`${today()}|${key}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return brightPlates[n % brightPlates.length];
+};
 const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
 // Plates with a meaning, shown when the situation fits: done for today (the owl), coming back after a gap (the
 // boat), a reluctant stretch (the dewy web), ready to grow or a changed mind (the braided river).
@@ -450,6 +461,7 @@ function setWallpaper(src, maxFocus = 1, { plain = false } = {}) {
   wallpaper.classList.toggle('plain', plain);
   wallpaper.classList.toggle('nolook', !plain && maxFocus < 1); // a closed card's picture stays a hint, not a view
   if (!src) { wallpaper.classList.remove('on'); return; }
+  wallpaper.classList.toggle('bright', src.includes('/img/bright/')); // a sunlit plate needs a little more shade for the words
   for (const img of wallpaper.querySelectorAll('img')) if (img.getAttribute('src') !== src) img.setAttribute('src', src);
   wallpaper.classList.add('on'); focusWall();
 }
@@ -680,6 +692,11 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const ANDROID = /Android/i.test(navigator.userAgent);
 const canRecord = Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 let sttOn = null;
+// What happened, in the server window: each step of speaking in, so a glitch on a phone can be traced.
+const voiceLog = (event, detail = '') => { fetch('/api/voicelog', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ event, detail: String(detail).slice(0, 300) }) }).catch(() => {}); };
+// The way of speaking in can be chosen in the Voice sheet: auto (ElevenLabs when the server has it), or the phone's.
+const STT_KEY = 'continuum.speakin';
+const speakInWay = () => store.get(STT_KEY) ?? 'auto';
 const sttEnabled = async () => { if (sttOn === null) sttOn = await api('/api/stt').then((r) => r.enabled).catch(() => null); return Boolean(sttOn); };
 if (canRecord) sttEnabled();
 const canSpeakIn = () => Boolean(Recognition || (canRecord && sttOn !== false));
@@ -704,26 +721,30 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
     const release = () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ear?.close().catch(() => {}); stream = null; ear = null; };
     return {
       async start() {
-        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch { release(); return blocked(); }
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (e) { voiceLog('microphone refused', e?.name); release(); return blocked(); }
         if (!listening) return release(); // stopped while asking for the microphone
         const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
-        try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch { release(); sttOn = false; listening = false; show('off'); return notice('Recording is not available on this phone; using its own voice typing instead. Tap Speak again.'); }
+        try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch (e) { voiceLog('recorder failed', `${type} ${e?.name}`); release(); sttOn = false; listening = false; show('off'); return notice('Recording is not available on this phone; using its own voice typing instead. Tap Speak again.'); }
         chunks = []; cancelled = false; lastVoice = Date.now(); began = Date.now();
         rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        rec.onerror = (e) => voiceLog('recorder error', e?.error?.name ?? '');
         rec.onstop = async () => {
-          const secs = (Date.now() - began) / 1000;
+          const secs = (Date.now() - began) / 1000; const earState = ear?.state ?? 'none';
           release();
-          if (cancelled) return;
+          if (cancelled) { voiceLog('cancelled', `${secs.toFixed(1)} s`); return; }
           const blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/webm' });
+          voiceLog('recorded', `${secs.toFixed(1)} s, ${Math.round(blob.size / 1024)} KB, ${blob.type}, ear ${earState}`);
           if (secs < .7 || blob.size < 1000) { notice('I did not catch anything. Tap Speak, talk, then tap again when you are done.'); return done(''); }
           show('busy');
           try {
             const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] || 'audio/webm' }, body: blob });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw Object.assign(new Error(j.error || `http_${r.status}`), { why: j.why, status: r.status });
+            voiceLog('written down', `${(j.text ?? '').length} characters`);
             if (!j.text) notice('Nothing was heard in that recording. Try again a little closer to the phone.');
             put(j.text ?? ''); done(j.text ?? '');
           } catch (e) {
+            voiceLog('not written down', `${e.status ?? ''} ${e.message} ${e.why ?? ''}`);
             // ElevenLabs said no (often a key without speech-to-text access): use the phone's own voice typing from now on.
             if (e.status === 502 && Recognition) sttOn = false;
             notice(`Could not write that down${e.why ? `: ${e.why}` : ''}.${e.status === 502 && Recognition ? ' Switching to the phone\'s own voice typing; tap Speak again.' : ' Try again, or type it.'}`);
@@ -763,11 +784,11 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
         else session = list.map((x) => x[0].transcript).join(' ');
         hush(); put(`${heard} ${session}`);
       };
-      r.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') blocked(); };
+      r.onerror = (e) => { voiceLog('phone recognition error', e.error); if (e.error === 'not-allowed' || e.error === 'service-not-allowed') blocked(); };
       r.onend = () => {
         heard = `${heard} ${session}`.replace(/\s+/g, ' ').trim(); rec = null;
         if (listening) { try { listen(); return; } catch { listening = false; } }
-        clearTimeout(quiet); put(heard); done(heard);
+        clearTimeout(quiet); voiceLog('phone recognition done', `${heard.length} characters`); put(heard); done(heard);
       };
       r.start();
     }
@@ -786,7 +807,8 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
     // Made right at the tap, before anything is awaited, so Android lets it run.
     let ear = null;
     try { ear = new (window.AudioContext || window.webkitAudioContext)(); ear.resume?.().catch(() => {}); } catch { ear = null; }
-    const useRecorder = canRecord && await sttEnabled();
+    const useRecorder = canRecord && speakInWay() !== 'phone' && await sttEnabled();
+    voiceLog('start', useRecorder ? 'ElevenLabs recording' : Recognition ? `phone recognition${ANDROID ? ' (Android, phrase by phrase)' : ''}` : 'none');
     if (!useRecorder) ear?.close().catch(() => {});
     engine = useRecorder ? recorder(ear) : Recognition ? recognizer() : null;
     if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
@@ -801,6 +823,23 @@ voiceBtn.addEventListener('click', () => chooseVoice());
 speech?.getVoices(); // starts loading the phone's voice list
 addEventListener('pagehide', () => { speech?.cancel(); audioEl.pause(); });
 
+// Speaking into the app: which way (ElevenLabs writes down a recording; or the phone's own voice typing), and a test
+// that shows what was heard, so a glitch can be seen and named.
+function speakInSection() {
+  const ta = h('textarea', { rows: '2', placeholder: 'Tap Test, say a sentence, then tap again.', 'aria-label': 'Microphone test' });
+  const out = h('p', { class: 'muted small', role: 'status' });
+  const dict = dictation(ta, { label: 'Test the microphone', onDone: (said) => { out.textContent = said ? `Heard ${said.split(/\s+/).length} words. If they are wrong or repeated, try the other way above.` : 'Nothing came through. Check the message at the top, and the server window.'; } });
+  const way = (k, label) => h('button', { type: 'button', class: `chip ${speakInWay() === k ? 'on' : ''}`, 'aria-pressed': String(speakInWay() === k), onclick: (e) => {
+    store.set(STT_KEY, k); if (k !== 'phone') sttOn = null;
+    e.currentTarget.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === e.currentTarget; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+  } }, label);
+  return h('div', {},
+    h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Speaking in'),
+    h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Speaking in' },
+      way('auto', sttOn === false ? 'ElevenLabs (off on the server)' : 'ElevenLabs: most exact'),
+      Recognition && way('phone', 'The phone\'s voice typing')),
+    ta, h('div', { class: 'row', style: 'justify-content:flex-start' }, dict?.button ?? h('span', { class: 'muted small' }, 'This phone cannot record.')), out);
+}
 async function chooseVoice() {
   stopReading();
   const sample = 'Some things are up to us, and some are not.';
@@ -841,6 +880,7 @@ async function chooseVoice() {
         preview(sheet.querySelector('.voice-row[aria-checked="true"]')?.dataset.key ?? '');
       },
     }, label))),
+    speakInSection(),
     h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Voice'),
     h('p', { class: 'muted small' }, 'Tap a voice to hear it.'),
     row('Default', on ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
@@ -1623,7 +1663,8 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     });
     const mic = dict?.button;
     const stopMic = () => dict?.stop();
-    compose.append(h('div', { class: 'row' }, mic || h('span'), send));
+    compose.append(h('div', { class: 'row' }, mic || h('span'), send),
+      h('button', { type: 'button', class: 'link small', style: 'padding:4px 0', onclick: () => chooseVoice() }, 'Microphone: test it, or switch how it listens'));
     if (current === 'act') {
       log.replaceChildren(h('div', { class: 'talk-turn from-map' },
         `Where do you live? Name a town or a zip code, and I will look for current ways to act on "${practice.title}" near you: volunteering, drives, and civic roles like working the polls. The place is used only for this search and not kept.`));
