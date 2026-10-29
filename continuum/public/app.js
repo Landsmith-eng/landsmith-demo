@@ -318,7 +318,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showHomework(node) }, 'Homework sheet'),
       node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
       node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showParthenon({ idea: node }) }, 'Discuss it with your group'),
-      h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today')),
+      h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today\'s question')),
   ]));
   return P;
 }
@@ -409,7 +409,7 @@ function showPractice({ practice = null, size = null } = {}) {
         endBox.replaceChildren(
           h('h2', {}, after.streak > 1 ? `Done. ${after.streak} days in a row.` : 'Done. That is how a habit starts.'),
           h('p', { class: 'plain' }, sz === 'tiny' ? 'Ten seconds counts. Tomorrow, the same again, or a little more.' : 'Small, repeated, and yours.'),
-          h('div', { class: 'end-links' }, h('button', { type: 'button', class: 'btn ghost', onclick: showToday }, 'Back to today')));
+          h('div', { class: 'end-links' }, h('button', { type: 'button', class: 'btn ghost', onclick: showToday }, 'Back to today\'s question')));
       } catch { finish.disabled = false; }
     });
 
@@ -1053,7 +1053,7 @@ function cardLinks(node, trail) {
   const back = trail.length ? trail[trail.length - 1] : null;
   return [
     h('button', { type: 'button', class: 'chip', onclick: () => (back ? walkTo(back.id, trail.slice(0, -1)) : showToday()) },
-      back ? `← ${back.thinker ?? back.title}` : '← Today'),
+      back ? `← ${back.thinker ?? back.title}` : '← Begin'),
     node.year != null && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('timeline', { focus: node.id }) }, 'Timeline'),
     node.room && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('rooms', { focus: node.id }) }, 'Room'),
     node.source_face && favoriteButton(node),
@@ -2032,16 +2032,16 @@ function intro(then = () => {}) {
 // opening; again any time from the Diary. Ends by offering the seven questions.
 const TOUR_KEY = 'continuum.tour';
 const TOUR = [
-  { text: 'Welcome to Continuum. Each day brings one idea from the long conversation of human wisdom. You write what you think first, before you read a word of it. Then the idea opens, one part at a time.' },
-  { target: '.tabs [data-nav=today]', text: 'Today is your card for the day. Answer its question in a sentence or two. There are no wrong answers.' },
-  { target: '.tabs [data-nav=practice]', text: 'Practice turns ideas into habits. It starts at ten seconds a day, and grows as you keep going.' },
-  { target: '.tabs [data-nav=journal]', text: 'Your Diary keeps everything you write, the notes you leave on any idea, and the lines you keep. It suggests new roads, chosen from your own words.' },
-  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with the whole map, by voice or in writing. Bring a debate you had with a friend, something in the news, or a goal. It remembers what you have said, and will push back when you are very sure. What you talk about shapes the ideas Continuum brings you next.' },
-  { target: '.tabs [data-nav=review]', text: 'Review shows your week: what you wrote, where you wandered, and what changed your mind.' },
-  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme, and a Map of how they connect. Wander anywhere.' },
-  { target: '#listen', text: 'Listen reads any idea aloud. Voice sets the voice and the speed.' },
-  { text: 'Two more things. Pinch the page with two fingers to make the text larger. And on any picture, tap Look to step inside it for a while.' },
-  { text: 'That is the tour. If you like, seven great debates come next: questions people have argued over for thousands of years, each answered by two camps. Say which case speaks to you more. The debates are still open, and your choices only help Continuum plan your journey.' },
+  { text: 'Welcome to Continuum, a journey of discovery. Explore the ideas that shaped how we think, what we value, and how we live: from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
+  { text: 'Why bother? Most of what we believe, we picked up without ever choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
+  { target: '.tabs [data-nav=today]', text: 'Begin is where each day starts. One question, answered in a sentence or two before you read anything, so it starts from you. Then the idea opens, one part at a time: what it means, the original words, and who agreed and who argued. About two minutes.' },
+  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with all of it, by voice or in writing. Bring a debate you had with a friend, something in the news, or a goal. It remembers what you have said, and pushes back when you are very sure. What you talk about chooses what comes next.' },
+  { target: '.tabs [data-nav=talk]', text: 'Inside Talk is the Parthenon: small groups of friends talking over one question together, live. Start a group, send the link, and ask the moderator to say where everyone stands.' },
+  { target: '.tabs [data-nav=journal]', text: 'Your Diary keeps everything you write, and your views over time. When your thinking shifts, Continuum notices, and asks what changed.' },
+  { target: '.tabs [data-nav=practice]', text: 'Practice turns ideas into habits, starting at ten seconds a day, and growing as you keep going.' },
+  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme, and a Map of how they connect. Tap any idea on the Map, and it will suggest a journey from there. Review, next to it, shows your week.' },
+  { target: '#listen', text: 'Two small things. Listen reads any idea aloud. And pinch with two fingers to make the words bigger, and to look closer at the picture.' },
+  { text: 'That is the tour. Next, if you like: seven great debates, each answered by two camps. Say which case speaks to you more. Nothing is graded; your choices just help Continuum plan your first journey.' },
 ];
 let tourState = null;
 function tour({ fromStart = true } = {}) {
