@@ -106,3 +106,29 @@ test('talk: a hidden idea cannot be opened; a daily limit keeps the bill predict
     assert.equal((await call('/api/talk', { text: '', date: D })).status, 400);
   } finally { server.close(); }
 });
+
+test('talk: weighing an opinion adds the weigh instructions and returns web sources; finding local help keeps nothing', async () => {
+  const fake = fakeClaude([
+    { stop_reason: 'pause_turn', content: [{ type: 'server_tool_use', id: 'st1', name: 'web_search', input: { query: 'x' } }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'In its strongest form: people deserve a say.', citations: [{ type: 'web_search_result_location', url: 'https://example.org/a', title: 'A source', cited_text: 'x' }] }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'The county food bank sorts donations on Saturdays: https://example.org/food' }] },
+  ]);
+  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }));
+  try {
+    const out = await lines(await call('/api/talk', { text: 'Voting should be compulsory.', mode: 'weigh', date: D }));
+    const done = out.at(-1);
+    assert.deepEqual(done.sources, [{ url: 'https://example.org/a', title: 'A source' }]);
+    const req = fake.requests[0];
+    assert.equal(req.messages.at(-1).role, 'system');
+    assert.match(req.messages.at(-1).content, /strongest form/);
+    assert.ok(req.tools.some((t) => t.type === 'web_search_20260209'));
+    assert.equal(fake.requests.length, 2); // the paused turn was resumed
+    // Finding local volunteering: the place is not kept.
+    const before = db.prepare('SELECT COUNT(*) AS n FROM talks').get().n;
+    const act = await lines(await call('/api/talk', { text: 'Invest in people, near Phoenix, AZ 85013', mode: 'act', date: D }));
+    assert.equal(act[0].id, null);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM talks').get().n, before);
+    assert.doesNotMatch(db.prepare("SELECT group_concat(messages) AS m FROM talks").get().m ?? '', /Phoenix/);
+    assert.equal((await call('/api/talk', { text: 'x', mode: 'nope', date: D })).status, 400);
+  } finally { server.close(); }
+});

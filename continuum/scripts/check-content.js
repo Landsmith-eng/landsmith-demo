@@ -93,10 +93,12 @@ for (const msg of content.imageIssues) bad(msg);
   const seen = new Set();
   for (const q of stances) {
     if (seen.has(q.id)) bad(`stances.js: duplicate ${q.id}`); seen.add(q.id);
-    for (const k of ['with', 'other']) {
-      const n = byId.get(q[k]);
-      if (!n) bad(`stances.js: ${q.id}.${k} is not an idea (${q[k]})`);
-      else if (n.seq != null) bad(`stances.js: ${q.id}.${k} is a daily card; use a walk-only idea`);
+    if (!q.question?.endsWith('?')) bad(`stances.js: ${q.id} needs a question ending in "?"`);
+    for (const k of ['a', 'b']) {
+      const n = byId.get(q[k]?.idea);
+      if (!n) bad(`stances.js: ${q.id}.${k}.idea is not an idea (${q[k]?.idea})`);
+      else if (n.seq != null) bad(`stances.js: ${q.id}.${k}.idea is a daily card; use a walk-only idea`);
+      if (!q[k]?.who || !q[k]?.claim) bad(`stances.js: ${q.id}.${k} needs who and claim`);
     }
     if (byId.get(q.practice)?.type !== 'practice') bad(`stances.js: ${q.id}.practice is not a practice (${q.practice})`);
   }

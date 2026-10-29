@@ -218,6 +218,8 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('p', { class: 'plain' }, o.gist),
       h('blockquote', { class: `quote role-${o.role}` }, o.quote),
       o.echoes && bubble(o.echoes, go(o.echoes.id), o.echo_note, 'Echoes'),
+      h('button', { type: 'button', class: 'btn ghost weigh-btn', onclick: () => showTalk({ mode: 'weigh',
+        seed: `Weigh this opinion from ${node.title.split(':')[0]} (${ROLE_LABEL[o.role] ?? o.role}, ${o.author}). In plain words: ${o.gist} In its own words: "${o.quote}"` }) }, 'Weigh this opinion'),
     ]));
   }
   if (node.entry) {
@@ -361,6 +363,11 @@ function showPractice({ practice = null, size = null } = {}) {
       panel('yours', 'Before you go', [
         h('div', { class: 'eyebrow' }, 'Before you go'), h('label', { class: 'prompt' }, steps?.intention ?? 'One thing to carry with you'),
         intention, h('div', { class: 'row' }, h('span'), finish), endBox,
+      ]),
+      panel('related', 'Act on it', [
+        h('div', { class: 'eyebrow' }, 'Act on it near you'),
+        h('p', { class: 'plain' }, 'Practice can reach past yourself: a soup kitchen, a shelter, a gift drive, working the polls. Continuum can look for current opportunities where you live.'),
+        h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ mode: 'act', practice: plan.practice }) }, 'Find a way to act on this near you'),
       ]),
       panel('related', 'Other practices', [
         h('div', { class: 'eyebrow' }, 'Or choose another practice'),
@@ -1090,10 +1097,10 @@ function showJournal() {
     const st = await api('/api/stance').catch(() => null);
     const journey = st && (st.journey.answered
       ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'), journeyView(st.journey),
-          h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showStance() }, 'Change your answers'))
+          h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showStance() }, 'Revisit the debates'))
       : h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'),
-          h('p', { class: 'muted small' }, 'A short interview, seven views people hold, helps Continuum plan a journey that suits you.'),
-          h('button', { type: 'button', class: 'btn ghost', onclick: () => showStance() }, 'Take the interview')));
+          h('p', { class: 'muted small' }, 'Seven great debates, each answered by two camps. Your choices help Continuum plan a journey that suits you.'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showStance() }, 'Open the debates')));
     const again = h('p', { class: 'muted small', style: 'margin-top:28px' },
       h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => tour() }, 'Take the spoken tour again'));
     render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), journey, roads, threads, entries, again);
@@ -1179,7 +1186,11 @@ function togglePlay(view) {
   }
 }
 
-function showTalk({ about = null } = {}) {
+const TALK_MODES = {
+  talk: { label: 'Talk', placeholder: 'Say what you think…' },
+  weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
+};
+function showTalk({ about = null, mode = 'talk', seed = null, practice = null } = {}) {
   setNav('talk');
   stopTalkVoice();
   return guarded(async () => {
@@ -1190,6 +1201,7 @@ function showTalk({ about = null } = {}) {
         h('p', { class: 'muted' }, 'It is not switched on yet. To turn it on, add ANTHROPIC_API_KEY to the .env file next to the server and restart it.'));
     }
     let convoId = state.id;
+    let current = mode;
     const refs = { ...state.refs };
     const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
     const bubble = (who, text, done = true) => {
@@ -1214,6 +1226,10 @@ function showTalk({ about = null } = {}) {
       b.replaceChildren(h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again));
       return view;
     }
+    // The pages a web search drew on, under the reply.
+    const sourceList = (sources) => sources?.length > 0 && h('div', { class: 'talk-sources' },
+      h('div', { class: 'eyebrow' }, 'Sources'),
+      h('ul', {}, sources.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, x.title)))));
     state.turns.forEach((x) => bubble(x.who, x.text));
     if (!state.turns.length) {
       log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
@@ -1228,6 +1244,18 @@ function showTalk({ about = null } = {}) {
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
 
     const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '2000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
+    // Talk or Weigh an opinion (a voice of reason): what the next message asks for. Act (from a practice) is its own page.
+    const modeChips = current !== 'act' && h('div', { class: 'size-chips talk-modes', role: 'group', 'aria-label': 'Mode' },
+      Object.entries(TALK_MODES).map(([k, m]) => {
+        const b = h('button', { type: 'button', class: `chip ${k === current ? 'on' : ''}`, 'aria-pressed': String(k === current) }, m.label);
+        b.addEventListener('click', () => {
+          current = k; ta.placeholder = m.placeholder;
+          b.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === b; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+          ta.focus();
+        });
+        return b;
+      }));
+    ta.placeholder = current === 'act' ? 'Your town, or zip code' : TALK_MODES[current].placeholder;
     if (about) ta.value = `I have just been reading "${about.title}". `;
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
     const status = h('div', { class: 'muted small', role: 'status' });
@@ -1238,16 +1266,18 @@ function showTalk({ about = null } = {}) {
       if (gap > 0) window.scrollBy(0, gap);
     };
     async function submit() {
-      const text = ta.value.trim();
-      if (!text || send.disabled) return;
+      const typed = ta.value.trim();
+      if (!typed || send.disabled) return;
+      const sendAs = current === 'act' ? 'act' : current === 'weigh' ? 'weigh' : null;
+      const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
       stopTalkVoice(); stopMic();
       send.disabled = true; ta.value = ''; status.textContent = '';
-      bubble('you', text);
+      bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text);
       const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
       keepInView(out);
       let reply = ''; let view = null;
       try {
-        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today() }) });
+        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), ...(sendAs ? { mode: sendAs } : {}) }) });
         if (!res.ok) {
           const e = await res.json().catch(() => ({}));
           throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
@@ -1262,12 +1292,16 @@ function showTalk({ about = null } = {}) {
             const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
             if (!line) continue;
             const m = JSON.parse(line);
-            if (m.t === 'start') { convoId = m.id; store.set(TALK_KEY, String(m.id)); }
+            if (m.t === 'start') { if (m.id) { convoId = m.id; store.set(TALK_KEY, String(m.id)); } }
             else if (m.t === 'text') {
               reply += m.d; out.classList.remove('thinking'); out.replaceChildren(...replyNodes(reply.trimStart(), refs, false));
               keepInView(out);
             }
-            else if (m.t === 'done') { Object.assign(refs, m.refs); view = finishReply(out, reply.trim()); keepInView(out); }
+            else if (m.t === 'done') {
+              Object.assign(refs, m.refs); view = finishReply(out, reply.trim());
+              const src = sourceList(m.sources); if (src) out.append(src);
+              keepInView(out);
+            }
             else if (m.t === 'error') throw new Error(m.error);
           }
         }
@@ -1321,21 +1355,30 @@ function showTalk({ about = null } = {}) {
     });
 
     compose.append(h('div', { class: 'row' }, mic || h('span'), send));
+    if (current === 'act') {
+      log.replaceChildren(h('div', { class: 'talk-turn from-map' },
+        `Where do you live? Name a town or a zip code, and I will look for current ways to act on "${practice.title}" near you: volunteering, drives, and civic roles like working the polls. The place is used only for this search and not kept.`));
+    }
     render(
-      h('h1', {}, 'Talk'),
-      h('p', { class: 'muted small' }, 'A conversation with the ideas on the map. It challenges what you hold firmly, backs you when you are onto something, and suggests practices and readings. Tap any sentence of a reply to hear it from there.'),
-      h('div', { class: 'theme-chips' }, speakToggle, fresh),
+      h('h1', {}, current === 'act' ? 'Act on it near you' : 'Talk'),
+      h('p', { class: 'muted small' }, current === 'act'
+        ? 'Found with a web search, so check each one before you go.'
+        : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
+      modeChips,
+      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && fresh),
       log,
       compose,
       status);
     if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    if (seed) { ta.value = seed; submit(); }
     if (log.lastElementChild) keepInView(log.lastElementChild);
   });
 }
 
 // The interview: seven views people hold, one at a time, asked gently. Where do you stand, and how did you come to it?
 // It is not a test: it only shapes the journey. Answers can be changed any time; skipping is fine.
-const AGREE_CHOICES = [[2, 'Strongly agree'], [1, 'Lean toward agreeing'], [0, 'Not sure'], [-1, 'Lean toward disagreeing'], [-2, 'Strongly disagree']];
+// Which case speaks to you more: 2 = the first camp, clearly ... -2 = the second camp, clearly.
+const caseChoices = (q) => [[2, `${q.a.who}'s case, clearly`], [1, `Leaning to ${q.a.who}`], [0, 'Both have a point'], [-1, `Leaning to ${q.b.who}`], [-2, `${q.b.who}'s case, clearly`]];
 function showStance() {
   setNav('');
   return guarded(async () => {
@@ -1345,10 +1388,10 @@ function showStance() {
     const step = () => {
       if (i < 0) {
         return render(h('div', { class: 'interview' },
-          h('div', { class: 'eyebrow' }, 'A short interview'),
-          h('h1', {}, 'Where are you starting from?'),
-          h('p', { class: 'plain' }, 'Seven views that people hold. For each, say where you stand, and how you came to it. There are no right answers, and nothing here is judged.'),
-          h('p', { class: 'muted' }, 'Continuum uses your answers only to plan a journey that suits you: voices who share your views and give them reasons, voices who see things another way, and practices to try. You can change any answer later, or skip one.'),
+          h('div', { class: 'eyebrow' }, 'Seven great debates'),
+          h('h1', {}, 'Where does the argument stand?'),
+          h('p', { class: 'plain' }, 'Seven questions people have argued over for thousands of years. Two camps answer each one. Read both cases, and say which speaks to you more.'),
+          h('p', { class: 'muted' }, 'The debates are still open, and nothing here is graded. Continuum uses your choices only to plan a journey: each camp at its best, and practices to try. You can change a choice later, or skip a debate.'),
           h('div', { class: 'row', style: 'margin-top:20px' },
             h('button', { type: 'button', class: 'link', onclick: () => showToday() }, 'Maybe later'),
             h('button', { type: 'button', class: 'btn', onclick: () => { i = 0; step(); } }, 'Begin'))));
@@ -1359,20 +1402,22 @@ function showStance() {
         type: 'button', class: `choice ${a.agree === value ? 'on' : ''}`, 'aria-pressed': String(a.agree === value),
         onclick: () => { answers[q.id] = { ...a, agree: value }; if (value === 0) { answers[q.id].basis = null; i++; } step(); },
       }, label);
+      const camp = (c, k) => h('div', { class: `camp camp-${k}` }, h('div', { class: 'eyebrow' }, `${c.who}'s camp`), h('p', {}, c.claim));
       const basis = a.agree != null && a.agree !== 0 && h('div', { class: 'basis' },
-        h('p', { class: 'prompt' }, 'How did you come to this view?'),
+        h('p', { class: 'prompt' }, 'How well do you know this debate?'),
         Object.entries(data.basis).map(([k, label]) => h('button', {
           type: 'button', class: `choice ${a.basis === k ? 'on' : ''}`, onclick: () => { answers[q.id] = { ...a, basis: k }; i++; step(); },
         }, label)));
       render(h('div', { class: 'interview' },
-        h('div', { class: 'eyebrow' }, `${i + 1} of ${data.questions.length} · a view some people hold`),
-        h('h1', { class: 'view' }, q.view),
-        h('p', { class: 'prompt' }, 'Where do you stand?'),
-        h('div', { class: 'choices' }, AGREE_CHOICES.map(([v, l]) => choice(v, l))),
+        h('div', { class: 'eyebrow' }, `Debate ${i + 1} of ${data.questions.length}`),
+        h('h1', { class: 'view' }, q.question),
+        h('div', { class: 'camps' }, camp(q.a, 'a'), camp(q.b, 'b')),
+        h('p', { class: 'prompt' }, 'Which case speaks to you more?'),
+        h('div', { class: 'choices' }, caseChoices(q).map(([v, l]) => choice(v, l))),
         basis,
         h('div', { class: 'row', style: 'margin-top:18px' },
           h('button', { type: 'button', class: 'link', onclick: () => { i = Math.max(-1, i - 1); step(); } }, 'Back'),
-          h('button', { type: 'button', class: 'link', onclick: () => { delete answers[q.id]; i++; step(); } }, 'Skip this one'))));
+          h('button', { type: 'button', class: 'link', onclick: () => { delete answers[q.id]; i++; step(); } }, 'Skip this debate'))));
       document.querySelector('.interview .choice.on, .interview .choice')?.focus({ preventScroll: true });
     };
     async function finish() {
@@ -1382,7 +1427,7 @@ function showStance() {
         h('div', { class: 'eyebrow' }, 'Your journey'),
         h('h1', {}, r.journey.stops.length ? 'Places worth a visit' : 'Thank you'),
         r.journey.stops.length
-          ? h('p', { class: 'muted' }, 'Drawn from your answers. Start with a voice who shares your view and gives it reasons, then visit one who sees it another way. The journey also shapes your daily cards, and it lives in your Diary.')
+          ? h('p', { class: 'muted' }, 'Drawn from the debates. For each, hear the camp that spoke to you at its best, then the other camp at its best. The journey also shapes your daily cards, and it lives in your Diary.')
           : h('p', { class: 'muted' }, 'Your daily cards will follow your own curiosity. You can take the interview again from your Diary.'),
         journeyView(r.journey),
         h('div', { class: 'row', style: 'margin-top:20px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => showToday() }, 'On to today'))));
@@ -1398,12 +1443,12 @@ function journeyView(j) {
     j.stops.map((st, k) => h('section', { class: 'stop' },
       h('div', { class: 'eyebrow' }, `Stop ${k + 1}`),
       h('p', { class: 'stop-view' }, st.lead),
-      link(st.shares, 'A voice who shares it, with reasons'),
-      link(st.differs, 'A voice who sees it another way'),
+      link(st.shares, 'The case that spoke to you, at its best'),
+      link(st.differs, 'The other camp, at its best'),
       link(st.practice, 'A practice to try'))),
     j.open.length > 0 && h('section', { class: 'stop' },
-      h('div', { class: 'eyebrow' }, 'Questions you are open on'),
-      j.open.map((o) => h('div', {}, h('p', { class: 'stop-view' }, `"${o.view}"`), o.ideas.map((c) => link(c, ''))))));
+      h('div', { class: 'eyebrow' }, 'Debates you are still weighing'),
+      j.open.map((o) => h('div', {}, h('p', { class: 'stop-view' }, o.question), o.ideas.map((c) => link(c, ''))))));
 }
 
 // One step of the walk. `trail` is the path taken to get here, shown as breadcrumbs.
@@ -1491,7 +1536,7 @@ const TOUR = [
   { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme. Wander anywhere. Only the daily cards stay hidden until their day.' },
   { target: '#listen', text: 'Listen reads any idea aloud. Voice sets the voice and the speed.' },
   { text: 'Two more things. Pinch the page with two fingers to make the text larger. And on any picture, tap Look to step inside it for a while.' },
-  { text: 'That is the tour. If you like, a short interview comes next: seven views people hold, and where you stand on each. There are no right answers. It only helps Continuum plan a journey that suits you.' },
+  { text: 'That is the tour. If you like, seven great debates come next: questions people have argued over for thousands of years, each answered by two camps. Say which case speaks to you more. The debates are still open, and your choices only help Continuum plan your journey.' },
 ];
 let tourState = null;
 function tour({ fromStart = true } = {}) {
@@ -1524,7 +1569,7 @@ function tour({ fromStart = true } = {}) {
     bar.firstChild.style.width = `${((i + 1) / TOUR.length) * 100}%`;
     text.textContent = step.text;
     back.disabled = i === 0;
-    next.textContent = i === TOUR.length - 1 ? 'Begin the interview' : 'Next';
+    next.textContent = i === TOUR.length - 1 ? 'Open the debates' : 'Next';
     const el = step.target && document.querySelector(step.target);
     const r = el && el.getBoundingClientRect();
     if (r && r.width) {

@@ -9,7 +9,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES } from './talk.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -194,8 +194,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     // Their journey from the interview comes first: the next stop they have not written on.
     const inPool = new Set(pool.map((n) => n.id));
     for (const stop of journeyFor(uid).stops) {
-      for (const [card, why] of [[stop.shares, 'shares the view, and gives it reasons'], [stop.differs, 'sees it another way']]) {
-        if (card && inPool.has(card.id)) return { id: card.id, why: `From your journey: on "${stop.view.replace(/\.$/, '')}", this one ${why}.` };
+      for (const [card, why] of [[stop.shares, 'makes the case that spoke to you, at its best'], [stop.differs, 'makes the other camp\'s case, at its best']]) {
+        if (card && inPool.has(card.id)) return { id: card.id, why: `From your journey: on "${stop.question}", this one ${why}.` };
       }
     }
     const adaptiveDays = aq.adaptiveCount.get(uid).n;
@@ -841,18 +841,18 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       .filter((x) => x.st).sort((x, y) => y.w - x.w || x.st.id.localeCompare(y.st.id)).slice(0, 4).map(({ a, st }) => {
         const agrees = a.agree > 0;
         return {
-          stance: st.id, view: st.view, agree: a.agree, basis: a.basis,
-          lead: `${{ 2: 'You agree', 1: 'You lean toward agreeing', '-1': 'You lean toward disagreeing', '-2': 'You disagree' }[a.agree]}: "${st.view}"`,
-          shares: card(agrees ? st.with : st.other), differs: card(agrees ? st.other : st.with), practice: card(st.practice),
+          stance: st.id, question: st.question, agree: a.agree, basis: a.basis,
+          lead: `On "${st.question}", ${(agrees ? st.a : st.b).who}'s case spoke to you${Math.abs(a.agree) === 2 ? ' clearly' : ' a little more'}.`,
+          shares: card((agrees ? st.a : st.b).idea), differs: card((agrees ? st.b : st.a).idea), practice: card(st.practice),
         };
       });
     const open = answers.filter((a) => a.agree === 0).map((a) => stanceById.get(a.stance_id)).filter(Boolean)
-      .map((st) => ({ stance: st.id, view: st.view, ideas: [card(st.with), card(st.other)] }));
+      .map((st) => ({ stance: st.id, question: st.question, ideas: [card(st.a.idea), card(st.b.idea)] }));
     return { answered: answers.length, stops, open };
   }
   app.get('/api/stance', auth, (req, res) => {
     const saved = Object.fromEntries(sq.all.all(req.user.id).map((a) => [a.stance_id, { agree: a.agree, basis: a.basis }]));
-    res.json({ questions: stances.map((x) => ({ id: x.id, view: x.view })), basis: BASIS, saved, journey: journeyFor(req.user.id) });
+    res.json({ questions: stances.map((x) => ({ id: x.id, question: x.question, a: { who: x.a.who, claim: x.a.claim }, b: { who: x.b.who, claim: x.b.claim } })), basis: BASIS, saved, journey: journeyFor(req.user.id) });
   });
   app.post('/api/stance', auth, (req, res) => {
     const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
@@ -887,12 +887,12 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         n.type === 'practice' ? 'practice' : n.field, themesOf(n.id).map((t) => t.name).join('; ') || '-', clip(n.plain_face, 150)].join(' | '))
       .join('\n');
   }
-  const AGREE = { 2: 'strongly agrees', 1: 'leans toward agreeing', 0: 'is unsure', '-1': 'leans toward disagreeing', '-2': 'strongly disagrees' };
+  const AGREE = { 2: 'clearly finds the first camp\'s case stronger', 1: 'leans to the first camp', 0: 'finds both have a point', '-1': 'leans to the second camp', '-2': 'clearly finds the second camp\'s case stronger' };
   const interviewLines = (uid) => {
     const rows = sq.all.all(uid);
     if (!rows.length) return '';
-    return `\n\nFrom the welcome interview (for planning their journey; be gentle, never treat it as a position to attack):\n${rows.map((a) => {
-      const qn = stanceById.get(a.stance_id); return qn ? `- "${qn.view}": ${AGREE[a.agree]}${a.basis ? ` (${BASIS[a.basis].toLowerCase()})` : ''}` : '';
+    return `\n\nFrom the great debates, the welcome interview (for planning their journey; these are open questions, never a position to attack):\n${rows.map((a) => {
+      const qn = stanceById.get(a.stance_id); return qn ? `- "${qn.question}" (first camp: ${qn.a.who}; second: ${qn.b.who}): ${AGREE[a.agree]}${a.basis ? ` (${BASIS[a.basis].toLowerCase()})` : ''}` : '';
     }).filter(Boolean).join('\n')}`;
   };
   function talkDiary(uid, states) {
@@ -950,10 +950,15 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!text) return res.status(400).json({ error: 'empty' });
     if (text.length > MAX_USER_TEXT) return res.status(400).json({ error: 'too_long' });
     if (tq.today.get(uid, date).n >= talkDailyLimit) return res.status(429).json({ error: 'daily_limit' });
-    let t = Number(req.body?.id) ? tq.get.get(Number(req.body.id), uid) : null;
-    if (!t) t = { id: Number(tq.create.run(uid).lastInsertRowid), messages: '[]' };
+    const mode = req.body?.mode;
+    if (mode != null && !(mode in MODES)) return res.status(400).json({ error: 'bad_mode' });
+    // Finding local volunteering is a one-off: the place they name is not kept (no conversation is stored).
+    const keep = mode !== 'act';
+    let t = keep && Number(req.body?.id) ? tq.get.get(Number(req.body.id), uid) : null;
+    if (!t) t = keep ? { id: Number(tq.create.run(uid).lastInsertRowid), messages: '[]' } : { id: null, messages: '[]' };
     const messages = JSON.parse(t.messages);
     messages.push({ role: 'user', content: text });
+    if (mode) messages.push({ role: 'system', content: MODES[mode] });
     q.insertEvent.run(uid, 'talk', null, date);
     res.set({ 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
     const send = (o) => res.write(`${JSON.stringify(o)}\n`);
@@ -962,9 +967,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     try {
       const states = talkStates(uid, date);
       const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date });
-      await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
-      tq.save.run(JSON.stringify(messages), t.id);
-      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)) });
+      const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
+      if (keep) tq.save.run(JSON.stringify(messages), t.id);
+      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources });
     } catch (e) {
       console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);
       send({ t: 'error', error: e.status === 401 ? 'The Anthropic key did not work. The server window says more.' : 'Something went wrong reaching Claude. Try again in a moment.' });

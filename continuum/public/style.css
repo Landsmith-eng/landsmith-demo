@@ -518,3 +518,14 @@ html.gazing { overflow: hidden; }
 .stop-view { font-family: var(--display); font-size: 1.1rem; margin: .2em 0 .5em; }
 .stop-line { margin: 8px 0; }
 .stop-line > .muted { display: block; margin-bottom: 4px; }
+
+.talk-modes { margin: 4px 0 8px; }
+.talk-sources { margin-top: 10px; font-family: var(--sans); font-size: .85rem; }
+.talk-sources ul { margin: 4px 0 0; padding-left: 1.1em; }
+.talk-sources a { color: var(--accent); word-break: break-word; }
+.weigh-btn { margin-top: 14px; }
+
+.camps { display: grid; gap: 10px; margin: 4px 0 14px; }
+.camp { border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; }
+.camp-b { border-left-color: var(--warm); }
+.camp p { margin: .2em 0 0; font-family: var(--display); font-size: 1.05rem; line-height: 1.5; }

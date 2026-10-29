@@ -118,6 +118,7 @@ test('the interview: answers saved and changed, a journey from firm views held b
     assert.equal(j.stops[1].shares.id, 'xunzi_human_nature_is_bad'); // disagreeing: the sides swap
     assert.equal(j.open[0].stance, 'meaning');
     assert.doesNotMatch(JSON.stringify(j), /wrong|bias|test/i);
+    assert.match(j.stops[0].lead, /Ecclesiastes's case spoke to you clearly/);
     // Changing an answer, and taking one back.
     await call('/api/stance', { answers: [{ id: 'death', agree: null }] });
     assert.equal((await call('/api/stance')).json.journey.stops[0].stance, 'human_nature');
