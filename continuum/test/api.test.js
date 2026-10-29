@@ -273,3 +273,11 @@ test('re-seeding keeps journal entries', () => {
   seedContent(db, content);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM journal WHERE user_id = 1').get().n, 14);
 });
+
+test('admin invite: makes a personal link that signs the person in', async () => {
+  assert.equal((await call('/admin/api/invite', { method: 'POST', body: { name: 'Carey' } })).status, 403);
+  const r = await call('/admin/api/invite', { method: 'POST', body: { name: 'Carey' }, headers: { 'x-admin-key': 'k' } });
+  assert.equal(r.status, 200);
+  const token = new URL(r.json.link).searchParams.get('u');
+  assert.equal((await call('/api/today?date=2026-12-01', { token })).status, 200);
+});

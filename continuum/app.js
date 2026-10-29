@@ -34,6 +34,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // Why the day's card was chosen, shown on the card.
   if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
   const app = express();
+  app.set('trust proxy', 1); // behind Render's (or a tunnel's) HTTPS proxy, links use https
   app.use(express.json({ limit: '32kb' }));
 
   const q = {
@@ -878,6 +879,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   });
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.
+  // A personal link for someone new, made from the admin page (the same as `npm run invite`, for a hosted server).
+  app.post('/admin/api/invite', admin, (req, res) => {
+    const name = typeof req.body?.name === 'string' ? req.body.name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    if (!name) return res.status(400).json({ error: 'name_required' });
+    const token = randomBytes(12).toString('base64url');
+    db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run(token, name);
+    res.json({ name, link: `${req.protocol}://${req.get('host')}/?u=${token}` });
+  });
   app.get('/admin/api/stats', admin, (req, res) => {
     const users = db.prepare('SELECT id, name, created_at FROM users ORDER BY id').all();
     const days = db.prepare('SELECT DISTINCT local_date FROM events WHERE user_id = ? ORDER BY local_date');
