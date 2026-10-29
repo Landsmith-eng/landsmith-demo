@@ -240,6 +240,48 @@ const MOTIFS = {
   },
 };
 
+// The sky over every motif: now and then a comet streaks across, and a real constellation (its stars and lines, at
+// roughly their true shapes) fades in near an edge, lingers, and fades out. Rare and faint, so it stays a surprise.
+const FIGURES = [
+  // [x, y] in a unit box, then the lines between stars.
+  { stars: [[0, .3], [.17, .26], [.32, .3], [.46, .38], [.52, .62], [.8, .7], [.86, .42]], lines: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]] }, // the Plough (Big Dipper)
+  { stars: [[.3, 0], [.72, .06], [.4, .45], [.5, .48], [.6, .51], [.22, .95], [.78, 1], [.47, .7]], lines: [[0, 2], [1, 4], [2, 3], [3, 4], [2, 5], [4, 6], [3, 7]] }, // Orion
+  { stars: [[0, .2], [.25, .7], [.5, .35], [.75, .85], [1, .4]], lines: [[0, 1], [1, 2], [2, 3], [3, 4]] }, // Cassiopeia
+  { stars: [[.5, 0], [.4, .4], [.62, .45], [.35, .95], [.58, 1]], lines: [[0, 1], [0, 2], [1, 2], [1, 3], [2, 4], [3, 4]] }, // Lyra
+  { stars: [[.1, .1], [.3, .25], [.55, .3], [.8, .2], [.5, .6], [.55, .95]], lines: [[0, 1], [1, 2], [2, 3], [2, 4], [4, 5]] }, // Cygnus (the Northern Cross)
+];
+const sky = { comets: [], figure: null, nextComet: 0, nextFigure: 0 };
+function drawSky(c, w, h, now, ink) {
+  if (!sky.nextComet) { sky.nextComet = now + rnd(6000, 16000); sky.nextFigure = now + rnd(14000, 30000); }
+  if (now > sky.nextComet) {
+    const fromLeft = Math.random() < .5, a = rnd(.25, .6) * (fromLeft ? 1 : -1) + (fromLeft ? 0 : Math.PI), v = rnd(7, 11);
+    sky.comets.push({ x: fromLeft ? rnd(-40, w * .5) : rnd(w * .5, w + 40), y: rnd(-30, h * .35), vx: Math.cos(a) * v, vy: Math.abs(Math.sin(a)) * v, life: 0, len: rnd(70, 140) });
+    sky.nextComet = now + rnd(14000, 40000);
+  }
+  for (const k of sky.comets) {
+    k.x += k.vx; k.y += k.vy; k.life++;
+    const fade = Math.min(1, k.life / 8) * Math.max(0, 1 - k.life / 90), sp = Math.hypot(k.vx, k.vy);
+    const tx = k.x - k.vx / sp * k.len, ty = k.y - k.vy / sp * k.len;
+    const g = c.createLinearGradient(k.x, k.y, tx, ty); g.addColorStop(0, ink(.55 * fade)); g.addColorStop(1, ink(0));
+    c.strokeStyle = g; c.lineWidth = 1.6; c.beginPath(); c.moveTo(k.x, k.y); c.lineTo(tx, ty); c.stroke();
+    c.fillStyle = ink(.7 * fade); c.beginPath(); c.arc(k.x, k.y, 1.8, 0, TAU); c.fill();
+  }
+  sky.comets = sky.comets.filter((k) => k.life < 90 && k.x > -200 && k.x < w + 200 && k.y < h + 200);
+  if (!sky.figure && now > sky.nextFigure) {
+    const f = FIGURES[Math.floor(rnd(0, FIGURES.length))], size = rnd(.28, .4) * Math.min(w, h);
+    sky.figure = { f, size, x: rnd(.05, .95) * (w - size), y: rnd(.04, .3) * h, born: now, life: rnd(9000, 13000) };
+  }
+  if (sky.figure) {
+    const { f, size, x, y, born, life } = sky.figure, age = (now - born) / life;
+    if (age >= 1) { sky.figure = null; sky.nextFigure = now + rnd(40000, 90000); return; }
+    const a = Math.sin(Math.PI * age); // in, linger, out
+    const pt = ([px, py]) => [x + px * size, y + py * size];
+    c.strokeStyle = ink(.22 * a); c.lineWidth = 1;
+    for (const [i, j] of f.lines) { const [x1, y1] = pt(f.stars[i]), [x2, y2] = pt(f.stars[j]); c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }
+    f.stars.forEach((st, i) => { const [sx, sy] = pt(st); c.fillStyle = ink((.45 + .2 * Math.sin(now / 500 + i)) * a); c.beginPath(); c.arc(sx, sy, 2.4, 0, TAU); c.fill(); });
+  }
+}
+
 // One canvas for the whole app. setMotif swaps the motif with a short cross-fade; null hides it.
 let canvas, ctx, state = {}, current = null, colour = '120,160,130', raf = 0, started = 0;
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -256,6 +298,7 @@ function frame(now) {
   ctx.clearRect(0, 0, w, h);
   const ink = (a) => `rgba(${colour},${a})`;
   MOTIFS[current].draw(ctx, state, w, h, now - started, ink);
+  if (!reduced()) drawSky(ctx, w, h, now, ink);
   if (!reduced() && !document.hidden) raf = requestAnimationFrame(frame);
 }
 function rgbOf(el) {
