@@ -62,16 +62,22 @@ test('themes index: every theme with its question and dated ideas; cards list th
     assert.ok(ca.nodes.some((n) => n.id === 'sophocles_antigone' && n.title));
     // A practice stays in its theme even though it has no date.
     assert.ok(json.themes.find((t) => t.id === 'death').nodes.some((n) => n.id === 'practice_keep_death_in_view'));
-    // Upcoming daily ideas stay hidden inside themes.
+    // Ideas with their own illustration are no longer held back: the Buddha is named in his theme on day 1.
     const suffering = json.themes.find((t) => t.id === 'suffering').nodes.find((n) => n.id === 'buddha_craving_root_of_suffering');
-    assert.equal(suffering.state, 'upcoming');
-    assert.equal(suffering.title, null);
+    assert.ok(suffering.daily);
+    assert.notEqual(suffering.state, 'upcoming');
+    assert.match(suffering.title, /\S/);
+    // Today's unwritten card is marked as today's wherever it sits in the index.
+    const today = (await call('/api/today?date=2026-11-01')).json.node.id;
+    const inThemes = json.themes.flatMap((t) => t.nodes).filter((n) => n.id === today);
+    assert.ok(inThemes.length > 0 && inThemes.every((n) => n.state === 'today'), today);
+    assert.ok(json.themes.flatMap((t) => t.nodes).every((n) => n.state !== 'upcoming'));
     const node = await call('/api/node/sophocles_antigone?date=2026-11-01');
     assert.ok(node.json.node.themes.some((t) => t.id === 'conscience_authority'));
   } finally { server.close(); }
 });
 
-test('search finds themes and ideas, by title or by text, and never reveals upcoming daily ideas', async () => {
+test('search finds themes and ideas, by title or by text, including illustrated daily ideas, and gives entries only (no faces)', async () => {
   const { server, call } = await boot();
   try {
     let r = await call('/api/search?q=conscience&date=2026-11-01');
@@ -82,9 +88,13 @@ test('search finds themes and ideas, by title or by text, and never reveals upco
     // Text match inside a face.
     r = await call('/api/search?q=unwritten%20laws&date=2026-11-01');
     assert.ok(r.json.ideas.some((n) => n.id === 'sophocles_antigone'));
-    // The Buddha is a daily card not reached on day 1: not in results.
+    // The Buddha has his own illustration but is no longer held back: found on day 1.
     r = await call('/api/search?q=craving&date=2026-11-01');
-    assert.ok(!r.json.ideas.some((n) => n.id === 'buddha_craving_root_of_suffering'));
+    const buddha = r.json.ideas.find((n) => n.id === 'buddha_craving_root_of_suffering');
+    assert.ok(buddha && buddha.daily && buddha.title);
+    assert.ok(r.json.ideas.every((n) => n.state !== 'upcoming'));
+    // Results are map entries, never the idea's text: nothing to read before writing, even for today's card.
+    for (const n of r.json.ideas) for (const k of ['plain_face', 'source_face', 'prompt']) assert.equal(n[k], undefined, `${n.id} ${k}`);
     assert.deepEqual((await call('/api/search?q=a')).json.ideas, []);
   } finally { server.close(); }
 });

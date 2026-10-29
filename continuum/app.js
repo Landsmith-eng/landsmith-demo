@@ -9,10 +9,12 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
+// Welcoming first questions, for a first day with nothing to go on yet: short, vivid, and open to anyone.
+export const STARTERS = ['socrates_unexamined_life', 'plato_ring_of_gyges', 'nozick_experience_machine', 'singer_drowning_child', 'epictetus_up_to_us'];
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,7 +30,7 @@ CREATE TABLE IF NOT EXISTS daily_pick (
 
 export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80 } = {}) {
   db.exec(DAILY_PICK_TABLE);
-  // Why an adaptive card was chosen (after the first line), shown on the card.
+  // Why the day's card was chosen, shown on the card.
   if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
   const app = express();
   app.use(express.json({ limit: '32kb' }));
@@ -43,17 +45,6 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     lastWritten: db.prepare('SELECT node_id FROM journal WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'),
     // Daily pick (concept doc): an unvisited neighbour of yesterday's node, else the next node in the starter line.
     // "Unvisited" = not written; among those, prefer ones the user hasn't already walked to and read.
-    neighbourPick: db.prepare(`
-      SELECT n.id FROM edges e
-      JOIN nodes n ON n.id = CASE WHEN e.from_id = :last THEN e.to_id ELSE e.from_id END
-      WHERE (e.from_id = :last OR e.to_id = :last) AND n.seq IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id)
-      ORDER BY EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id), n.seq
-      LIMIT 1`),
-    linePick: db.prepare(`
-      SELECT n.id FROM nodes n
-      WHERE n.seq IS NOT NULL AND NOT EXISTS (SELECT 1 FROM journal j WHERE j.user_id = ? AND j.node_id = n.id)
-      ORDER BY n.seq LIMIT 1`),
     writtenOn: db.prepare('SELECT node_id FROM journal WHERE user_id = ? AND local_date = ?'),
     entry: db.prepare('SELECT body, local_date FROM journal WHERE user_id = ? AND node_id = ?'),
     writtenCount: db.prepare('SELECT COUNT(*) AS n FROM journal WHERE user_id = ?'),
@@ -104,7 +95,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     daysActive: db.prepare(`SELECT COUNT(DISTINCT local_date) AS n FROM events WHERE user_id = ? AND local_date BETWEEN ? AND ?`),
     firstAndLast: db.prepare(`
       SELECT n.id, n.title, n.thinker, n.prompt, j.body, j.local_date FROM journal j JOIN nodes n ON n.id = j.node_id
-      WHERE j.user_id = ? AND n.seq IS NOT NULL ORDER BY n.seq`),
+      WHERE j.user_id = ? ORDER BY j.local_date, j.created_at`),
   };
 
   // The diary of discovery: notes, and what they connect to.
@@ -122,11 +113,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   };
 
   const aq = {
-    // Ideas that can be a daily card after the first line: not written on yet, not a practice, with a question.
+    // Ideas that can be a daily card: not written on yet, not a practice, with a question.
     pool: db.prepare(`SELECT n.id, n.room, EXISTS (SELECT 1 FROM events v WHERE v.user_id = :uid AND v.kind = 'walk' AND v.node_id = n.id) AS walked
       FROM nodes n WHERE n.type != 'practice' AND n.prompt IS NOT NULL AND n.prompt != ''
         AND NOT EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id) ORDER BY n.id`),
-    adaptiveCount: db.prepare('SELECT COUNT(*) AS n FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.seq IS NULL'),
+    adaptiveCount: db.prepare('SELECT COUNT(*) AS n FROM journal WHERE user_id = ?'),
     writtenRooms: db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.room IS NOT NULL'),
     writtenDays: db.prepare('SELECT DISTINCT local_date FROM journal WHERE user_id = ? ORDER BY local_date DESC'),
     firstDay: db.prepare('SELECT MIN(local_date) AS d FROM journal WHERE user_id = ?'),
@@ -180,29 +171,40 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     // and forth, or a clock change). Choose again rather than serve a card that is already answered.
     if (saved && !q.entry.get(uid, saved.node_id)) return saved.node_id;
     if (saved) q.dropPick.run(uid, date);
-    const last = q.lastWritten.get(uid);
-    const pick = (last && q.neighbourPick.get({ last: last.node_id, uid })) || q.linePick.get(uid) || adaptivePick(uid, date);
+    const pick = adaptivePick(uid, date);
     if (!pick) return null;
     q.savePick.run(uid, date, pick.id, pick.why ?? null);
     return pick.id;
   }
 
-  // After the first line: each day's card comes from the whole map, steered by the user's own discoveries (the same
-  // scoring as the diary's roads), preferring ideas they have not yet read. Every fifth adaptive day is a gentle
-  // challenge instead: an idea from a room they have never written in.
+  // Each day's card comes from the whole map, from the first day: their journey from the debates first, then the
+  // user's own discoveries (the same scoring as the diary's roads), preferring ideas they have not yet read. Every
+  // fifth day is a gentle challenge instead: an idea from a room they have never written in. With nothing to go on
+  // yet (no debates answered, nothing written), the first days open with one of a few welcoming questions.
   function adaptivePick(uid, date) {
     const pool = aq.pool.all({ uid });
     if (!pool.length) return null;
     const d = discovery(uid, () => false);
     const fresh = pool.filter((n) => !n.walked);
-    // Their journey from the interview comes first: the next stop they have not written on.
     const inPool = new Set(pool.map((n) => n.id));
+    // What they have been talking about lately comes first: an idea that bears on a view, goal or question they
+    // voiced in the last week, not yet written on (fresh ones first).
+    for (const v of vq.since.all(uid, shiftDay(date, -7))) {
+      const ids = JSON.parse(v.ideas).filter((id) => inPool.has(id));
+      const id = ids.find((x) => fresh.some((n) => n.id === x)) ?? ids[0];
+      if (id) return { id, why: `You talked about ${v.topic} (${v.local_date}). This idea speaks to it.` };
+    }
+    // Then their journey from the debates: the next stop they have not written on.
     for (const stop of journeyFor(uid).stops) {
       for (const [card, why] of [[stop.shares, 'makes the case that spoke to you, at its best'], [stop.differs, 'makes the other camp\'s case, at its best']]) {
         if (card && inPool.has(card.id)) return { id: card.id, why: `From your journey: on "${stop.question}", this one ${why}.` };
       }
     }
     const adaptiveDays = aq.adaptiveCount.get(uid).n;
+    if (!adaptiveDays && !d.met.size) {
+      const start = STARTERS.filter((id) => inPool.has(id));
+      if (start.length) return { id: start[hash(`${uid}|start`) % start.length], why: 'A first question, to begin anywhere.' };
+    }
     if (adaptiveDays % 5 === 4) {
       const wroteIn = new Set(aq.writtenRooms.all(uid).map((r) => r.room));
       const away = (fresh.length ? fresh : pool).filter((n) => n.room && !wroteIn.has(n.room));
@@ -303,7 +305,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     q.insertEntry.run(uid, nodeId, text, date);
     db.prepare("INSERT OR IGNORE INTO recall (user_id, node_id, step, due_date) VALUES (?, ?, 0, date(?, '+1 day'))").run(uid, nodeId, date);
     q.insertEvent.run(uid, 'respond', nodeId, date);
-    res.json({ node: fullNode(q.node.get(nodeId), uid, date) });
+    const answered = q.node.get(nodeId);
+    noteFrom(uid, date, text, `Their answer to "${answered.prompt}" (on "${answered.title}"), written before reading it.`, 'answer');
+    res.json({ node: fullNode(answered, uid, date) });
   });
 
   // The rabbit hole: any node opens fully, with no bottom enforced. The one exception is today's
@@ -437,7 +441,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       ...notes.map((n) => ({ kind: 'note', id: n.id, title: n.title, thinker: n.thinker, field: n.field, body: n.body, date: n.local_date, at: n.updated_at })),
       ...kept.map((f) => ({ kind: 'kept', id: f.id, title: f.title, thinker: f.thinker, field: f.field, body: firstLine(f.source_face) || f.title, date: f.created_at.slice(0, 10), at: f.created_at })),
     ].sort((x, y) => (y.date + y.at).localeCompare(x.date + x.at));
-    res.json({ counts: { met: met.size, notes: notes.length, answers: answers.length, kept: kept.length }, roads, threads, entries: items });
+    const views = vq.recent.all(uid, 80).map((v) => ({ id: v.id, kind: v.kind, topic: v.topic, body: v.body, date: v.local_date, source: v.source }));
+    res.json({ counts: { met: met.size, notes: notes.length, answers: answers.length, kept: kept.length }, roads, threads, entries: items, views, experience: experienceOf(uid) });
+  });
+  // A noted view can be taken out of the ledger (it was noted wrongly, or the user would rather it were not kept).
+  app.delete('/api/views/:id', auth, (req, res) => {
+    vq.drop.run(Number(req.params.id), req.user.id);
+    res.json({ ok: true });
   });
 
   // "Keep this line": a favourite is a source passage the user wants to find again.
@@ -485,7 +495,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const todayId = q.writtenOn.get(uid, date) ? null : todaysPick(uid, date);
     return q.timeline.all({ uid }).map((n) => {
       const daily = n.seq != null;
-      const state = n.written ? 'written' : n.id === todayId ? 'today' : daily ? 'upcoming' : n.visited ? 'visited' : 'unseen';
+      const state = n.written ? 'written' : n.id === todayId ? 'today' : n.visited ? 'visited' : 'unseen';
       const hidden = state === 'upcoming';
       return {
         id: n.id, thinker: n.thinker, year: n.year, field: n.field, type: n.type, room: n.room, daily, state,
@@ -959,8 +969,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     } catch (e) { console.warn(`Problem for ${n.id}: ${e.status ?? ''} ${e.message}`); res.json({ problem: null }); }
   });
 
-  // ── Homework sheets: one per idea, written once by Claude and kept for everyone. The sheet is written from the idea
-  // as Talk sees it, with every daily card except this one held back, so it can never give a later card away. ──
+  // ── Homework sheets: one per idea, written once by Claude and kept for everyone, from the idea as Talk sees it. ──
   const hwq = {
     get: db.prepare('SELECT body FROM homework WHERE node_id = ?'),
     put: db.prepare('INSERT OR IGNORE INTO homework (node_id, body) VALUES (?, ?)'),
@@ -968,7 +977,6 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     answer: db.prepare(`INSERT INTO homework_answers (user_id, node_id, part, body, local_date) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (user_id, node_id, part) DO UPDATE SET body = excluded.body, local_date = excluded.local_date`),
     clear: db.prepare('DELETE FROM homework_answers WHERE user_id = ? AND node_id = ? AND part = ?'),
-    daily: db.prepare('SELECT id FROM nodes WHERE seq IS NOT NULL'),
   };
   const PART_RE = /^(terms|reading_[0-9]|argument|objection|apply|essay)$/;
   const homeworkWriting = new Map();
@@ -986,8 +994,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!talk) return res.json({ ...base, sheet: null, talk: false });
     try {
       if (!homeworkWriting.has(n.id)) {
-        const held = new Map(hwq.daily.all().filter((d) => d.id !== n.id).map((d) => [d.id, 'upcoming']));
-        homeworkWriting.set(n.id, writeHomework(talk, n, talkIdea(uid, date, held, n.id)).finally(() => homeworkWriting.delete(n.id)));
+        homeworkWriting.set(n.id, writeHomework(talk, n, talkIdea(uid, date, new Map(), n.id)).finally(() => homeworkWriting.delete(n.id)));
       }
       const sheet = await homeworkWriting.get(n.id);
       if (sheet) hwq.put.run(n.id, JSON.stringify(sheet));
@@ -1020,10 +1027,20 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       sq.save.run(req.user.id, a.id, a.agree, a.basis ?? before?.basis ?? null);
       sq.log.run(req.user.id, a.id, a.agree, localDate(req.body?.date));
     }
+    // Answers change the journey: if today's card is not written yet, let it be chosen again from the new journey.
+    const day = localDate(req.body?.date);
+    if (!q.writtenOn.get(req.user.id, day)) q.dropPick.run(req.user.id, day);
     res.json({ journey: journeyFor(req.user.id) });
   });
 
   // ── Talk: a conversation with the map's collective wisdom (when ANTHROPIC_API_KEY is set). ──
+  const vq = {
+    add: db.prepare('INSERT INTO views (user_id, kind, topic, body, ideas, source, local_date) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    recent: db.prepare('SELECT id, kind, topic, body, ideas, source, local_date FROM views WHERE user_id = ? ORDER BY local_date DESC, id DESC LIMIT ?'),
+    since: db.prepare('SELECT id, kind, topic, body, ideas, local_date FROM views WHERE user_id = ? AND local_date >= ? ORDER BY local_date DESC, id DESC'),
+    drop: db.prepare('DELETE FROM views WHERE id = ? AND user_id = ?'),
+    talkCount: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND kind = 'talk'"),
+  };
   const tq = {
     create: db.prepare('INSERT INTO talks (user_id) VALUES (?)'),
     get: db.prepare('SELECT id, messages FROM talks WHERE id = ? AND user_id = ?'),
@@ -1032,6 +1049,40 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     today: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND kind = 'talk' AND local_date = ?"),
   };
   const clip = (t, n) => { const x = (t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+
+  // ── The views ledger: what the user said they believe, want or wonder, noted by Claude after a conversation or a
+  // daily answer (quietly, in the background). It steers the next daily ideas and comes back in Talk to compare. ──
+  function noteFrom(uid, date, said, context, source) {
+    if (!talk || !said || said.length < 25) return Promise.resolve(null);
+    const states = talkStates(uid, date);
+    const visible = [...states].filter(([, st]) => st !== 'today').map(([id]) => id).concat(tq.practices.all().map((p) => p.id));
+    const catalogue = visible.map((id) => q.node.get(id)).filter(Boolean).map((n) => `${n.id} | ${n.title}`).join('\n');
+    const known = new Set(visible);
+    return noteViews(talk, { said: clip(said, 4000), context: clip(context, 600), catalogue })
+      .then((r) => {
+        for (const v of r?.views ?? []) {
+          if (!['view', 'goal', 'question'].includes(v.kind) || !v.topic || !v.text) continue;
+          const ideas = (v.ideas ?? []).filter((id) => known.has(id)).slice(0, 3);
+          vq.add.run(uid, v.kind, clip(v.topic, 60), clip(v.text, 400), JSON.stringify(ideas), source, date);
+        }
+        return r;
+      })
+      .catch((e) => { console.warn(`Noting views: ${e.status ?? ''} ${e.message}`); return null; });
+  }
+  // How far along they are, so Talk can meet them there and the walk can go deeper with time.
+  function experienceOf(uid) {
+    const written = q.writtenCount.get(uid).n;
+    const talks = vq.talkCount.get(uid).n;
+    const stage = written < 5 ? 'beginning' : written < 20 ? 'exploring' : written < 60 ? 'deepening' : 'seasoned';
+    const how = {
+      beginning: 'just beginning: keep to one idea at a time, everyday words and examples, and short questions.',
+      exploring: 'exploring: they know a handful of ideas; connect new ones to those, and name the rival camps.',
+      deepening: 'deepening: bring in the original texts, the strongest objections, and how the ideas changed over time.',
+      seasoned: 'seasoned: treat them as a serious reader; press on assumptions, compare traditions, and ask hard follow-ups.',
+    }[stage];
+    return { stage, written, talks, text: `${written} ideas written on, ${talks} conversations; ${how}` };
+  }
+  const viewsText = (uid) => vq.recent.all(uid, 40).map((v) => `${v.local_date} | ${v.kind}: ${v.topic} | ${v.body}`).join('\n');
   // What the user may see, one line each: never an upcoming daily card or today's unwritten card.
   // states: id -> the user's state for it (mapEntries), computed once per request.
   const hiddenIn = (states, n) => n.type !== 'practice' && ['upcoming', 'today'].includes(states.get(n.id));
@@ -1123,9 +1174,12 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     let reply = '';
     try {
       const states = talkStates(uid, date);
-      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date });
+      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text });
       const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
-      if (keep) tq.save.run(JSON.stringify(messages), t.id);
+      if (keep) {
+        tq.save.run(JSON.stringify(messages), t.id);
+        noteFrom(uid, date, text, `In a conversation${mode ? ` (${mode})` : ''}; the reply began: ${reply.slice(0, 300)}`, 'talk');
+      }
       send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources });
     } catch (e) {
       console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);

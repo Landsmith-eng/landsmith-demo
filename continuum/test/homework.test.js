@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
-import { createTalk } from '../talk.js';
+import { createTalk, HOMEWORK_SCHEMA } from '../talk.js';
 import * as content from '../content/index.js';
 
 const SHEET = { key_terms: [{ term: 'T', meaning: 'M' }], close_reading: [{ question: 'Q', model_answer: 'A' }],
@@ -19,26 +19,39 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
 });
 after(() => server.close());
+// Only the homework writer's calls (Talk also notes views in the background after a daily answer).
+const sheetCalls = () => calls.filter((c) => c.output_config?.format?.schema === HOMEWORK_SCHEMA);
 const call = (path, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'x-continuum-token': 'hw', 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
   .then(async (r) => ({ status: r.status, json: await r.json() }));
 
-test('a homework sheet is written once, kept, and holds back later daily cards', async () => {
-  const walkOnly = content.nodes.find((n) => n.seq == null && n.type !== 'practice');
-  const a = await call(`/api/homework/${walkOnly.id}?date=2026-01-05`);
+const D = '2026-01-05';
+let walkOnly; // an idea that is not today's card, so it is open to read
+
+test('a homework sheet is written once, kept, links every neighbour, and is closed for today\'s unwritten card', async () => {
+  const today = (await call(`/api/today?date=${D}`)).json.node.id;
+  walkOnly = content.nodes.find((n) => n.seq == null && n.type !== 'practice' && n.id !== today);
+  const a = await call(`/api/homework/${walkOnly.id}?date=${D}`);
   assert.equal(a.status, 200); assert.deepEqual(a.json.sheet, SHEET);
-  await call(`/api/homework/${walkOnly.id}?date=2026-01-05`);
-  assert.equal(calls.length, 1, 'kept after the first writing');
-  assert.equal(calls[0].output_config.format.type, 'json_schema');
-  // The idea's context lists none of the daily cards among its links.
-  const daily = new Set(content.nodes.filter((n) => n.seq != null).map((n) => n.id));
-  const ctx = JSON.parse(calls[0].messages[0].content.split('\n\n').slice(1).join('\n\n'));
-  assert.ok(ctx.links.every((l) => !daily.has(l.id)));
-  const later = content.nodes.find((n) => n.seq === 9);
-  assert.equal((await call(`/api/homework/${later.id}?date=2026-01-05`)).status, 404);
+  await call(`/api/homework/${walkOnly.id}?date=${D}`);
+  assert.equal(sheetCalls().length, 1, 'kept after the first writing');
+  assert.equal(sheetCalls()[0].output_config.format.type, 'json_schema');
+  // The sheet is kept for everyone, so its context holds nothing back: every linked idea is listed.
+  const ctx = JSON.parse(sheetCalls()[0].messages[0].content.split('\n\n').slice(1).join('\n\n'));
+  const linked = new Set(content.edges.flatMap((e) => (e.from === walkOnly.id ? [e.to] : e.to === walkOnly.id ? [e.from] : [])));
+  assert.deepEqual(new Set(ctx.links.map((l) => l.id)), linked);
+  // A card with its own illustration that is not today's card is open too.
+  const daily = content.nodes.find((n) => n.seq != null && n.id !== today);
+  assert.equal((await call(`/api/homework/${daily.id}?date=${D}`)).status, 200);
+  // Today's own card stays closed until it is written: no sheet, and no answers saved against it.
+  assert.equal((await call(`/api/homework/${today}?date=${D}`)).status, 404);
+  assert.equal((await call(`/api/homework/${today}`, { part: 'essay', body: 'x', date: D })).status, 404);
+  assert.equal((await call('/api/respond', { node_id: today, body: 'my take', date: D })).status, 200);
+  const opened = await call(`/api/homework/${today}?date=${D}`);
+  assert.equal(opened.status, 200); assert.deepEqual(opened.json.sheet, SHEET);
+  assert.equal(sheetCalls().length, 3);
 });
 
 test('homework answers are saved per part and come back', async () => {
-  const walkOnly = content.nodes.find((n) => n.seq == null && n.type !== 'practice');
   assert.equal((await call(`/api/homework/${walkOnly.id}`, { part: 'essay', body: 'My essay', date: '2026-01-05' })).status, 200);
   assert.equal((await call(`/api/homework/${walkOnly.id}`, { part: 'nonsense', body: 'x', date: '2026-01-05' })).status, 400);
   const r = await call(`/api/homework/${walkOnly.id}?date=2026-01-05`);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, seedContent } from '../db.js';
-import { createApp } from '../app.js';
+import { createApp, STARTERS } from '../app.js';
 import * as content from '../content/index.js';
 
 async function boot() {
@@ -25,16 +25,14 @@ test('diary: notes on any idea, threads between ideas met, and roads chosen from
     assert.deepEqual(d.counts, { met: 0, notes: 0, answers: 0, kept: 0 });
     assert.deepEqual([d.roads, d.threads, d.entries], [[], [], []]);
 
-    // Day one: write on Democritus, then walk to an idea linked to it.
+    // Day one: write on today's card, then walk to an idea linked to it.
     const today = (await call(`/api/today?date=${D1}`)).json.node.id;
-    await call('/api/respond', { node_id: today, body: 'Atoms and void: I am not sure.', date: D1 });
-    const nb = (await call(`/api/node/${today}?date=${D1}`)).json.node.neighbours
-      .find((r) => !db.prepare('SELECT seq FROM nodes WHERE id = ?').get(r.id).seq);
+    await call('/api/respond', { node_id: today, body: 'I am not sure about this at all.', date: D1 });
+    const nb = (await call(`/api/node/${today}?date=${D1}`)).json.node.neighbours.find((r) => r.type !== 'practice');
     await call(`/api/node/${nb.id}?date=${D1}`);
 
     // A note on the walked idea, using a word that appears in an idea not yet opened.
-    const daily = new Set(db.prepare('SELECT id FROM nodes WHERE seq IS NOT NULL').all().map((r) => r.id));
-    const target = db.prepare("SELECT id, plain_face FROM nodes WHERE seq IS NULL AND type != 'practice' AND id != ? ORDER BY id").all(nb.id)
+    const target = db.prepare("SELECT id, plain_face FROM nodes WHERE type != 'practice' AND id NOT IN (?, ?) ORDER BY id").all(nb.id, today)
       .map((n) => ({ ...n, word: (n.plain_face.match(/\b[a-z]{9,}\b/g) ?? [])[0] })).find((n) => n.word);
     const r = await call('/api/note', { node_id: nb.id, body: `This made me think about ${target.word}.`, date: D1 });
     assert.equal(r.status, 200);
@@ -44,13 +42,19 @@ test('diary: notes on any idea, threads between ideas met, and roads chosen from
     assert.deepEqual(d.counts, { met: 2, notes: 1, answers: 1, kept: 0 });
     // The link between the two ideas they met is a thread, in words.
     assert.ok(d.threads.some((t) => [t.first.id, t.second.id].sort().join() === [today, nb.id].sort().join() && t.verb));
-    // Roads: never an idea already met, never a daily card (upcoming ones stay hidden), each with a reason.
+    // Roads: never an idea already met, each with a reason.
     assert.ok(d.roads.length >= 1 && d.roads.length <= 3);
     for (const road of d.roads) {
-      assert.ok(!daily.has(road.id) && road.id !== nb.id && road.id !== today);
+      assert.ok(road.id !== nb.id && road.id !== today);
       assert.ok(road.why && road.title);
     }
     assert.ok(d.roads.some((x) => x.why.startsWith(`You wrote "${target.word}"`)), JSON.stringify(d.roads));
+    // The next day, before writing, today's own card is never offered as a road (it stays closed until written).
+    const D2 = '2026-11-02';
+    const next = (await call(`/api/diary?date=${D2}`)).json;
+    const todayD2 = (await call(`/api/today?date=${D2}`)).json.node.id;
+    assert.ok(next.roads.length >= 1);
+    assert.ok(next.roads.every((x) => x.id !== todayD2 && x.id !== nb.id && x.id !== today), JSON.stringify(next.roads));
     // Entries: the note and the answer, newest first, each pinned to its idea.
     assert.deepEqual(d.entries.map((e) => e.kind).sort(), ['answer', 'note']);
     assert.ok(d.entries.find((e) => e.kind === 'answer').prompt);
@@ -62,38 +66,46 @@ test('diary: notes on any idea, threads between ideas met, and roads chosen from
   } finally { server.close(); }
 });
 
-test('after the first 14: adaptive daily cards with a reason, a gentle challenge every fifth day, and the walk counted', async () => {
+test('adaptive daily cards from the first day: a welcoming starter, a reason on every card, a gentle challenge every fifth written day, and the walk counted', async () => {
   const { db, server, call } = await boot();
   try {
     const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
-    let n = 0;
-    for (; n < 14; n++) {
-      const t = (await call(`/api/today?date=${day(n)}`)).json;
-      assert.equal(t.journey.day, n + 1);
-      assert.equal(t.journey.streak, n);
-      await call('/api/respond', { node_id: t.node.id, body: 'Fear of losing what I love.', date: day(n) });
-    }
-    const line = new Set(db.prepare('SELECT id FROM nodes WHERE seq IS NOT NULL').all().map((r) => r.id));
+    const wroteRooms = () => new Set(db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE n.room IS NOT NULL').all().map((r) => r.room));
+    // Rooms the user has not written in that still hold an unwritten idea with a question: a challenge is possible.
+    const awayOpen = () => {
+      const wrote = wroteRooms();
+      return db.prepare(`SELECT DISTINCT room FROM nodes WHERE type != 'practice' AND prompt IS NOT NULL AND prompt != '' AND room IS NOT NULL
+        AND id NOT IN (SELECT node_id FROM journal)`).all().some((r) => !wrote.has(r.room));
+    };
     const picks = [];
-    for (let k = 0; k < 5; k++, n++) {
+    let challenges = 0;
+    for (let n = 0; n < 20; n++) {
       const t = (await call(`/api/today?date=${day(n)}`)).json;
       assert.equal(t.state, 'write');
-      assert.ok(!line.has(t.node.id) && !picks.includes(t.node.id));
+      assert.ok(!picks.includes(t.node.id), `day ${n + 1} repeats ${t.node.id}`);
+      assert.ok(t.node.prompt);
       assert.ok(t.node.why, `day ${n + 1} has a reason`);
       assert.equal(t.journey.day, n + 1);
       assert.equal(t.journey.streak, n);
-      picks.push(t.node.id);
-      if (k === 4) {
-        assert.match(t.node.why, /gentle challenge/);
+      // Stable for the day.
+      assert.equal((await call(`/api/today?date=${day(n)}`)).json.node.id, t.node.id);
+      if (n === 0) {
+        assert.ok(STARTERS.includes(t.node.id), t.node.id);
+        assert.match(t.node.why, /first question/);
+      }
+      if (n % 5 === 4 && awayOpen()) {
+        assert.match(t.node.why, /gentle challenge/, `day ${n + 1}`);
         const room = db.prepare('SELECT room FROM nodes WHERE id = ?').get(t.node.id).room;
-        const wroteIn = db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id').all().map((r) => r.room);
-        assert.ok(!wroteIn.includes(room));
-      } else assert.doesNotMatch(t.node.why, /gentle challenge/);
-      assert.equal((await call('/api/respond', { node_id: t.node.id, body: 'Some thoughts on fear.', date: day(n) })).status, 200);
+        assert.ok(!wroteRooms().has(room), `day ${n + 1}: ${room} already written in`);
+        challenges++;
+      } else assert.doesNotMatch(t.node.why, /gentle challenge/, `day ${n + 1}`);
+      picks.push(t.node.id);
+      assert.equal((await call('/api/respond', { node_id: t.node.id, body: 'Fear of losing what I love.', date: day(n) })).status, 200);
     }
+    assert.ok(challenges >= 2, `only ${challenges} gentle challenges in 20 days`);
     // A missed day breaks the run but not the count.
-    const t = (await call(`/api/today?date=${day(n + 1)}`)).json;
-    assert.equal(t.journey.day, 20);
+    const t = (await call(`/api/today?date=${day(21)}`)).json;
+    assert.equal(t.journey.day, 21);
     assert.equal(t.journey.streak, 0);
   } finally { server.close(); }
 });

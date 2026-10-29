@@ -4,7 +4,7 @@ import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
 import * as content from '../content/index.js';
 
-test('gallery/timeline: every idea in date order and in a room, upcoming daily ideas hidden, user state marked', async () => {
+test('gallery/timeline: every idea in date order and in a room, named and pictured, today\'s card and user state marked', async () => {
   const db = openDb(':memory:');
   seedContent(db, content);
   db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
@@ -20,34 +20,39 @@ test('gallery/timeline: every idea in date order and in a room, upcoming daily i
     // Gallery rooms: every idea sits in one of the listed rooms.
     assert.ok(rooms.length >= 10);
     assert.ok(nodes.every((n) => rooms.some((r) => r.id === n.room)), 'every idea has a room');
-    // Upcoming daily cards carry no picture either; Epicurus has one but is not reached yet.
-    assert.equal(get(nodes, 'epicurus_absence_of_pain').backdrop, null);
     const ideas = content.nodes.filter((n) => n.type !== 'practice');
     assert.equal(nodes.length, ideas.length);
     assert.ok(nodes.every((n, i) => i === 0 || nodes[i - 1].year <= n.year), 'sorted by year');
-    assert.equal(nodes.filter((n) => n.daily).length, 14);
+    // The 14 ideas with their own illustration are still marked daily, but none is held back: named, with their picture.
+    const daily = nodes.filter((n) => n.daily);
+    assert.equal(daily.length, 14);
+    for (const n of daily) {
+      const c = content.nodes.find((x) => x.id === n.id);
+      assert.ok(n.title, n.id);
+      assert.equal(n.backdrop, c.image?.src ?? null, n.id);
+    }
+    assert.ok(nodes.every((n) => n.state !== 'upcoming'));
 
-    // Day 1: Democritus is today's card (title shown, the card shows it anyway); the other 13 are hidden.
-    assert.equal(get(nodes, 'democritus_atoms_and_void').state, 'today');
-    assert.equal(get(nodes, 'democritus_atoms_and_void').title, 'Everything is atoms and void');
-    const upcoming = nodes.filter((n) => n.state === 'upcoming');
-    assert.equal(upcoming.length, 13);
-    assert.ok(upcoming.every((n) => n.title === null && n.daily && n.thinker));
-    assert.ok(nodes.filter((n) => !n.daily).every((n) => n.state === 'unseen' && n.title));
+    // Day 1: exactly one card is today's (title shown, the card shows it anyway); everything else is unseen and named.
+    const today = await call('/api/today?date=2026-11-01');
+    const t1 = today.node.id;
+    assert.deepEqual(nodes.filter((n) => n.state === 'today').map((n) => n.id), [t1]);
+    assert.equal(get(nodes, t1).title, today.node.title);
+    assert.ok(nodes.filter((n) => n.id !== t1).every((n) => n.state === 'unseen' && n.title));
 
-    await call('/api/respond', { node_id: 'democritus_atoms_and_void', body: 'x', date: '2026-11-01' });
-    await call('/api/node/socrates_unexamined_life?date=2026-11-01');
+    const walk = ideas.find((n) => n.id !== t1).id;
+    await call('/api/respond', { node_id: t1, body: 'x', date: '2026-11-01' });
+    await call(`/api/node/${walk}?date=2026-11-01`);
     ({ nodes } = await call('/api/timeline?date=2026-11-01'));
-    assert.equal(get(nodes, 'democritus_atoms_and_void').state, 'written');
-    assert.equal(get(nodes, 'socrates_unexamined_life').state, 'visited');
-    // Written today: no "today" card until tomorrow, and Epicurus stays hidden until then.
+    assert.equal(get(nodes, t1).state, 'written');
+    assert.equal(get(nodes, walk).state, 'visited');
+    // Written today: no "today" card until tomorrow.
     assert.equal(nodes.filter((n) => n.state === 'today').length, 0);
-    assert.equal(get(nodes, 'epicurus_absence_of_pain').title, null);
 
     ({ nodes } = await call('/api/timeline?date=2026-11-02'));
-    assert.equal(get(nodes, 'epicurus_absence_of_pain').state, 'today');
-    assert.match(get(nodes, 'epicurus_absence_of_pain').title, /absence of pain/);
-    const epi = content.nodes.find((n) => n.id === 'epicurus_absence_of_pain');
-    assert.equal(get(nodes, 'epicurus_absence_of_pain').backdrop, epi.image?.src ?? null);
+    const t2 = (await call('/api/today?date=2026-11-02')).node;
+    assert.deepEqual(nodes.filter((n) => n.state === 'today').map((n) => n.id), [t2.id]);
+    assert.equal(get(nodes, t2.id).title, t2.title);
+    assert.equal(get(nodes, t1).state, 'written');
   } finally { server.close(); }
 });

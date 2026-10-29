@@ -1,10 +1,11 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, seedContent } from '../db.js';
-import { createApp } from '../app.js';
+import { createApp, STARTERS } from '../app.js';
 import * as line from '../content/line_poc.js';
 import * as content from '../content/index.js';
 import { TYPES, RELS, DIRECTED } from '../content/model.js';
+import { stances } from '../content/stances.js';
 
 let server, base, db;
 const TOKEN = 'tester-token';
@@ -15,6 +16,7 @@ before(async () => {
   seedContent(db, content);
   db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run(TOKEN, 'Tester');
   db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('walker', 'Walker');
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('debater', 'Debater');
   server = createApp(db, { adminKey: 'k' }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -100,35 +102,42 @@ test('no token -> 401', async () => {
   assert.equal((await call('/api/today', { token: 'nope' })).status, 401);
 });
 
-test('day 1: card and question only; nothing to read before writing', async () => {
+const todayOf = async (date, token = TOKEN) => (await call(`/api/today?date=${date}`, { token })).json.node.id;
+const cards = {}; // date -> the card written that day (by the tester)
+
+test('day 1: a welcoming first question, card and question only; nothing to read before writing', async () => {
   const r = await call('/api/today?date=2026-11-01');
   assert.equal(r.json.state, 'write');
-  assert.equal(r.json.node.id, 'democritus_atoms_and_void');
+  assert.ok(STARTERS.includes(r.json.node.id), r.json.node.id);
   assert.ok(r.json.node.prompt);
   assert.equal(r.json.node.plain_face, undefined);
   assert.equal(r.json.node.source_face, undefined);
   // Walking to today's own card before writing doesn't open it either.
-  const w = await call('/api/node/democritus_atoms_and_void?date=2026-11-01');
+  const w = await call(`/api/node/${r.json.node.id}?date=2026-11-01`);
   assert.equal(w.json.today, true);
   assert.equal(w.json.node.plain_face, undefined);
+  cards['2026-11-01'] = r.json.node.id;
 });
 
 test('cannot answer a different node or an empty take', async () => {
-  assert.equal((await write('nozick_experience_machine', '2026-11-01')).status, 409);
-  assert.equal((await write('democritus_atoms_and_void', '2026-11-01', '  ')).status, 400);
+  const other = content.nodes.find((n) => n.type !== 'practice' && n.id !== cards['2026-11-01']).id;
+  assert.equal((await write(other, '2026-11-01')).status, 409);
+  assert.equal((await write(cards['2026-11-01'], '2026-11-01', '  ')).status, 400);
 });
 
 test('write -> plain face, source and grouped neighbours; one card per day', async () => {
-  let r = await write('democritus_atoms_and_void', '2026-11-01', 'Matters more, oddly.');
+  const id = cards['2026-11-01'];
+  let r = await write(id, '2026-11-01', 'Matters more, oddly.');
   assert.equal(r.status, 200);
   assert.ok(r.json.node.plain_face);
-  assert.match(r.json.node.source_face, /atoms and void/);
-  assert.ok(r.json.node.neighbours.some((n) => n.id === 'epicurus_absence_of_pain' && n.relation === 'extended' && n.dir === 'out'));
+  assert.ok(r.json.node.source_face);
+  assert.ok(r.json.node.neighbours.length > 0);
 
   r = await call('/api/today?date=2026-11-01');
   assert.equal(r.json.state, 'done_today');
   assert.equal(r.json.node.entry.body, 'Matters more, oddly.');
-  assert.equal((await write('epicurus_absence_of_pain', '2026-11-01')).status, 409);
+  const next = r.json.node.neighbours.find((n) => n.type !== 'practice').id;
+  assert.equal((await write(next, '2026-11-01')).status, 409);
 });
 
 test('the walk is open: any node, including practices, with no bottom enforced', async () => {
@@ -140,50 +149,54 @@ test('the walk is open: any node, including practices, with no bottom enforced',
   assert.ok(p.json.node.neighbours.every((n) => n.relation === 'lands_on' && n.dir === 'in'));
 });
 
-test('daily pick: unvisited neighbour of yesterday\'s node, stable for the day even after walking', async () => {
-  let r = await call('/api/today?date=2026-11-02');
-  assert.equal(r.json.node.id, 'epicurus_absence_of_pain'); // only neighbour of Democritus
-  await write('epicurus_absence_of_pain', '2026-11-02');
-
-  // Epicurus neighbours, unvisited: Lucretius(3), Zeno(4), Buddha(7), Nozick(14). Lowest seq first...
-  r = await call('/api/today?date=2026-11-03');
-  assert.equal(r.json.node.id, 'lucretius_death_nothing_to_us');
-  // ...and walking around (even to other candidates) doesn't swap today's card.
-  await call('/api/node/zeno_live_according_to_nature?date=2026-11-03');
-  r = await call('/api/today?date=2026-11-03');
-  assert.equal(r.json.node.id, 'lucretius_death_nothing_to_us');
+test('daily pick: a new card, stable for the day even after walking', async () => {
+  const id = await todayOf('2026-11-02');
+  assert.notEqual(id, cards['2026-11-01']);
+  await call('/api/node/zeno_live_according_to_nature?date=2026-11-02');
+  await call('/api/node/camus_myth_of_sisyphus?date=2026-11-02');
+  assert.equal(await todayOf('2026-11-02'), id);
+  assert.equal((await write(id, '2026-11-02')).status, 200);
+  cards['2026-11-02'] = id;
 });
 
-test('daily pick prefers neighbours the user has not already read on a walk', async () => {
-  await write('democritus_atoms_and_void', '2026-11-01', 'x', 'walker');
-  await write('epicurus_absence_of_pain', '2026-11-02', 'x', 'walker');
-  await call('/api/node/lucretius_death_nothing_to_us?date=2026-11-02', { token: 'walker' });
-  await call('/api/node/zeno_live_according_to_nature?date=2026-11-02', { token: 'walker' });
-  const r = await call('/api/today?date=2026-11-03', { token: 'walker' });
-  assert.equal(r.json.node.id, 'buddha_craving_root_of_suffering');
+test('daily pick prefers ideas the user has not already read on a walk', async () => {
+  const first = await todayOf('2026-11-01', 'walker');
+  await write(first, '2026-11-01', 'x', 'walker');
+  const walked = ['lucretius_death_nothing_to_us', 'zeno_live_according_to_nature'];
+  for (const id of walked) await call(`/api/node/${id}?date=2026-11-01`, { token: 'walker' });
+  const second = await todayOf('2026-11-02', 'walker');
+  assert.ok(!walked.includes(second));
+  await write(second, '2026-11-02', 'x', 'walker');
 });
 
-test('missed days skip nothing; all 14 nodes come up exactly once, then the walk goes on, chosen from the map', async () => {
-  const seen = new Set(['democritus_atoms_and_void', 'epicurus_absence_of_pain']);
+test('missed days skip nothing and nothing repeats; each card says why it was chosen, and the walk is counted', async () => {
+  const seen = new Set(Object.values(cards));
   for (let d = 3; d <= 14; d++) {
     const date = `2026-11-${String(d * 2).padStart(2, '0')}`; // every other day
     const r = await call(`/api/today?date=${date}`);
     assert.equal(r.json.state, 'write', date);
     assert.ok(!seen.has(r.json.node.id), `repeat ${r.json.node.id}`);
-    seen.add(r.json.node.id);
+    seen.add(r.json.node.id); cards[date] = r.json.node.id;
     assert.equal((await write(r.json.node.id, date, `day ${d}`)).status, 200);
   }
   assert.equal(seen.size, 14);
-  // Day 15: not the end. A card from beyond the first line, never one already written, with the day counted.
   const r = await call('/api/today?date=2026-12-01');
   assert.equal(r.json.state, 'write');
   assert.ok(!seen.has(r.json.node.id));
   assert.ok(r.json.node.prompt);
   assert.equal(r.json.journey.day, 15);
   assert.ok(r.json.journey.met >= 14);
-  // The same card all day.
   assert.equal((await call('/api/today?date=2026-12-01')).json.node.id, r.json.node.id);
   assert.equal((await call('/api/journal')).json.journal.length, 14);
+});
+
+test('answering the debates before writing lets today\'s card come from the journey', async () => {
+  await call('/api/today?date=2026-11-01', { token: 'debater' });
+  const q = stances[0];
+  await call('/api/stance', { method: 'POST', token: 'debater', body: { date: '2026-11-01', answers: [{ id: q.id, agree: 2, basis: 'instinct' }] } });
+  const r = await call('/api/today?date=2026-11-01', { token: 'debater' });
+  assert.equal(r.json.node.id, q.a.idea);
+  assert.match(r.json.node.why, /journey/i);
 });
 
 test('admin stats require the key and report return visits and walk depth', async () => {
@@ -210,22 +223,22 @@ test('favourites: keep a line, see it in the journal, let it go', async () => {
 });
 
 test('reactions: only after writing, one per node, latest wins', async () => {
-  const body = { node_id: 'seneca_evening_review', value: 'changed', date: '2026-12-01' };
+  const id = cards['2026-11-01'];
+  const body = { node_id: id, value: 'changed', date: '2026-12-01' };
   assert.equal((await call('/api/reaction', { method: 'POST', body: { ...body, value: 'meh' } })).status, 400);
-  // The walker user never wrote on Seneca: must write first.
-  assert.equal((await call('/api/reaction', { method: 'POST', body, token: 'walker' })).status, 409);
+  const unwritten = content.nodes.find((n) => n.type !== 'practice' && n.source_face && !Object.values(cards).includes(n.id)).id;
+  assert.equal((await call('/api/reaction', { method: 'POST', body: { ...body, node_id: unwritten } })).status, 409);
   let r = await call('/api/reaction', { method: 'POST', body });
   assert.equal(r.json.reaction, 'changed');
   r = await call('/api/reaction', { method: 'POST', body: { ...body, value: 'unchanged' } });
   assert.equal(r.json.reaction, 'unchanged');
-  r = await call('/api/node/seneca_evening_review?date=2026-12-01');
+  r = await call(`/api/node/${id}?date=2026-12-01`);
   assert.equal(r.json.node.reaction, 'unchanged');
-  assert.equal((await call('/api/journal')).json.journal.find((e) => e.id === 'seneca_evening_review').reaction, 'unchanged');
+  assert.equal((await call('/api/journal')).json.journal.find((e) => e.id === id).reaction, 'unchanged');
 });
 
-test('review: a week and everything, with practices landed on and day-1/last bookends', async () => {
-  await call('/api/reaction', { method: 'POST', body: { node_id: 'nozick_experience_machine', value: 'somewhat', date: '2026-11-28' } });
-  // Walk to a practice twice so it tops "where it kept landing".
+test('review: a week and everything, with practices landed on and first/last bookends', async () => {
+  await call('/api/reaction', { method: 'POST', body: { node_id: cards['2026-11-28'], value: 'somewhat', date: '2026-11-28' } });
   await call('/api/node/practice_keep_death_in_view?date=2026-11-28');
   await call('/api/node/practice_keep_death_in_view?date=2026-11-28');
   await call('/api/node/epictetus_up_to_us?date=2026-11-28');
@@ -234,7 +247,6 @@ test('review: a week and everything, with practices landed on and day-1/last boo
   assert.equal(r.status, 200);
   assert.equal(r.json.from, '2026-11-22');
   assert.equal(r.json.to, '2026-11-28');
-  // Entries were written every other day on even dates: 22, 24, 26, 28.
   assert.deepEqual(r.json.entries.map((e) => e.local_date), ['2026-11-22', '2026-11-24', '2026-11-26', '2026-11-28']);
   assert.equal(r.json.practices[0].id, 'practice_keep_death_in_view');
   assert.equal(r.json.practices[0].count, 2);
@@ -247,14 +259,13 @@ test('review: a week and everything, with practices landed on and day-1/last boo
   assert.equal(r.json.from, null);
   assert.equal(r.json.entries.length, 14);
   assert.deepEqual(r.json.reactions, { changed: 0, somewhat: 1, unchanged: 1 });
-  assert.equal(r.json.bookends.first.id, 'democritus_atoms_and_void');
-  assert.equal(r.json.bookends.last.id, 'nozick_experience_machine');
+  assert.equal(r.json.bookends.first.id, cards['2026-11-01']);
+  assert.equal(r.json.bookends.last.id, cards['2026-11-28']);
   assert.match(r.json.bookends.first.body, /\S/);
 
-  // A user with nothing in the window gets an empty, well-formed review.
   r = await call('/api/review?days=7&date=2030-01-01', { token: 'walker' });
   assert.deepEqual(r.json.entries, []);
-  assert.equal(r.json.bookends.last.id, 'epicurus_absence_of_pain'); // walker wrote twice; bookends span the whole line
+  assert.ok(r.json.bookends.last.id);
   assert.equal((await call('/api/review', { token: 'nobody-yet' })).status, 401);
 });
 

@@ -27,10 +27,8 @@ test('image entries need a real file, a kind, alt text and a credit', () => {
 });
 
 test('closed card gets a faded backdrop; the full image arrives only after writing', async () => {
-  const image = { src: '/img/nodes/democritus_atoms_and_void.webp', kind: 'illustration', alt: good.alt, credit: good.credit, credit_url: null };
-  const nodes = content.nodes.map((n) => (n.id === 'democritus_atoms_and_void' ? { ...n, image } : n));
   const db = openDb(':memory:');
-  seedContent(db, { nodes, edges: content.edges });
+  seedContent(db, content);
   db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
   const server = createApp(db, {}).listen(0);
   await new Promise((r) => server.once('listening', r));
@@ -39,22 +37,31 @@ test('closed card gets a faded backdrop; the full image arrives only after writi
     method: body ? 'POST' : 'GET', headers: { 'x-continuum-token': 't', 'content-type': 'application/json' }, body: body && JSON.stringify(body),
   }).then((r) => r.json());
   try {
+    // Whatever day 1's card is, give it a picture of its own to test with.
+    const id = (await call('/api/today?date=2026-11-01')).node.id;
+    const image = { src: `/img/nodes/${id}.webp`, kind: 'illustration', alt: good.alt, credit: good.credit, credit_url: null };
+    db.prepare('UPDATE nodes SET image = ? WHERE id = ?').run(JSON.stringify(image), id);
     const today = await call('/api/today?date=2026-11-01');
-    assert.equal(today.node.id, 'democritus_atoms_and_void');
+    assert.equal(today.node.id, id); // stable for the day
     // The closed card carries the picture's address only, for the faded backdrop: no alt text or credit yet.
     assert.equal(today.node.backdrop, image.src);
     assert.equal(today.node.image, undefined);
     assert.equal(JSON.stringify(today).includes(image.alt), false);
-    const after = await call('/api/respond', { node_id: 'democritus_atoms_and_void', body: 'x', date: '2026-11-01' });
+    const after = await call('/api/respond', { node_id: id, body: 'x', date: '2026-11-01' });
     assert.deepEqual(after.node.image, image);
-    // Walking to a daily node you have not written on yet: no picture, no misreading.
-    const ahead = await call('/api/node/epicurus_absence_of_pain?date=2026-11-01');
-    assert.equal(ahead.node.entry, null);
-    assert.equal(ahead.node.image, null);
-    assert.equal(ahead.node.misreading, null);
-    const written = await call('/api/respond', { node_id: 'epicurus_absence_of_pain', body: 'y', date: '2026-11-02' });
-    const real = content.nodes.find((n) => n.id === 'epicurus_absence_of_pain');
-    assert.deepEqual(written.node.image, real.image ?? null);
+    // Walking to an illustrated idea you have not written on yet: no picture, no misreading (both belong to the reveal).
+    const next = (await call('/api/today?date=2026-11-02')).node.id;
+    const ahead = content.nodes.find((n) => n.seq != null && n.image && n.misreading && n.id !== id && n.id !== next);
+    const walked = await call(`/api/node/${ahead.id}?date=2026-11-01`);
+    assert.equal(walked.node.entry, null);
+    assert.equal(walked.node.image, null);
+    assert.equal(walked.node.misreading, null);
+    // Tomorrow's card, written: its own picture and misreading arrive with the reveal.
+    const written = await call('/api/respond', { node_id: next, body: 'y', date: '2026-11-02' });
+    const real = db.prepare('SELECT image, misreading FROM nodes WHERE id = ?').get(next);
+    assert.deepEqual(written.node.image, real.image ? JSON.parse(real.image) : null);
     assert.equal(written.node.misreading, real.misreading);
+    // The idea walked to earlier still withholds its picture on later days, until it is written on.
+    assert.equal((await call(`/api/node/${ahead.id}?date=2026-11-02`)).node.image, null);
   } finally { server.close(); }
 });

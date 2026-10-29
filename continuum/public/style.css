@@ -698,3 +698,14 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .mic.on { border-color: var(--accent); color: var(--accent); animation: mic-breathe 1.8s ease-in-out infinite; }
 @keyframes mic-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
+
+/* Ways in: doors to a conversation, from the first day */
+.doors { margin-top: 26px; }
+.door-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.door { font-size: .9rem; padding: 8px 14px; }
+/* Your views over time */
+.view-topic { margin: 0 0 22px; }
+.view-topic h3 { margin: 0 0 6px; text-transform: none; }
+.view-row { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 10px; }
+.view-row p { margin: .2em 0; }
+.view-drop { padding: 0; font-size: .8rem; }

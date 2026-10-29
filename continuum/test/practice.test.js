@@ -82,29 +82,39 @@ test('practice: opening the app most days but practising on few of them makes to
   } finally { server.close(); }
 });
 
-test('compass: holding ground brings a gentle challenge; curiosity follows what you write on; nothing upcoming is revealed', async () => {
+test('compass: holding ground brings a gentle challenge; curiosity follows what you write on; today\'s unwritten card is never suggested', async () => {
   const { server, call } = await boot();
   try {
-    const line = ['democritus_atoms_and_void', 'epicurus_absence_of_pain', 'lucretius_death_nothing_to_us'];
-    for (const [i, id] of line.entries()) {
+    const written = [];
+    for (let i = 0; i < 3; i++) {
       const date = `2026-11-0${i + 1}`;
-      assert.equal((await call(`/api/today?date=${date}`)).json.node.id, id);
-      await call('/api/respond', { node_id: id, body: 'x', date });
+      const id = (await call(`/api/today?date=${date}`)).json.node.id;
+      assert.equal((await call('/api/respond', { node_id: id, body: 'x', date })).status, 200);
       await call('/api/reaction', { node_id: id, value: 'unchanged', date });
+      written.push(id);
     }
-    const c = (await call('/api/compass?from=lucretius_death_nothing_to_us&date=2026-11-03')).json;
+    const last = written.at(-1);
+    const c = (await call(`/api/compass?from=${last}&date=2026-11-03`)).json;
     assert.equal(c.challenge.kind, 'held');
     assert.match(c.challenge.why, /held your ground/);
     assert.ok(c.curiosity, 'a curiosity suggestion from the themes written on');
     for (const s of [c.challenge, c.curiosity]) {
-      assert.notEqual(s.entry.state, 'upcoming');
       assert.notEqual(s.entry.state, 'today');
-      assert.notEqual(s.entry.id, 'lucretius_death_nothing_to_us');
+      assert.notEqual(s.entry.state, 'written');
+      assert.notEqual(s.entry.id, last);
     }
     assert.notEqual(c.challenge.entry.id, c.curiosity.entry.id);
     assert.equal(c.practice_nudge, 'Ten seconds of practice');
     await call('/api/practice', { practice_id: 'practice_keep_death_in_view', size: 'tiny', date: '2026-11-03' });
     assert.equal((await call('/api/compass?date=2026-11-03')).json.practice_nudge, null);
+    // The next day, before writing: neither suggestion is today's own card, which stays closed until written.
+    const today = (await call('/api/today?date=2026-11-04')).json.node.id;
+    const n = (await call(`/api/compass?from=${last}&date=2026-11-04`)).json;
+    assert.ok(n.challenge || n.curiosity);
+    for (const s of [n.challenge, n.curiosity].filter(Boolean)) {
+      assert.notEqual(s.entry.id, today);
+      assert.notEqual(s.entry.state, 'today');
+    }
   } finally { server.close(); }
 });
 

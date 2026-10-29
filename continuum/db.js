@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS recall (
 );
 
 -- A problem to consider for an idea: written once (by Claude, when Talk is on) and kept for everyone.
+-- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
+-- choose their next ideas and, later, to compare what they say now with what they said then.
+CREATE TABLE IF NOT EXISTS views (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,                   -- view | goal | question
+  topic TEXT NOT NULL,
+  body TEXT NOT NULL,
+  ideas TEXT NOT NULL DEFAULT '[]',     -- JSON: node ids it bears on
+  source TEXT NOT NULL,                 -- talk | answer
+  local_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- Homework sheets: one per idea, written once by Claude and kept (JSON, see HOMEWORK_SCHEMA in talk.js).
 CREATE TABLE IF NOT EXISTS homework (
   node_id TEXT PRIMARY KEY REFERENCES nodes(id),

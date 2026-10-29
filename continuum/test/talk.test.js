@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
-import { createTalk, TALK_MODEL } from '../talk.js';
+import { createTalk, TALK_MODEL, VIEWS_SCHEMA } from '../talk.js';
 import * as content from '../content/index.js';
 
 // A stand-in for the Anthropic SDK client: plays scripted turns and records each request.
@@ -49,26 +49,32 @@ test('talk: off without a key', async () => {
   } finally { server.close(); }
 });
 
-test('talk: answers from the map, opens ideas to quote them, uses the diary, and never shows upcoming cards', async () => {
-  const fake = fakeClaude([
-    { stop_reason: 'tool_use', content: [
-      { type: 'thinking', thinking: '', signature: 'sig' },
-      { type: 'text', text: 'Let me look.' },
-      { type: 'tool_use', id: 'tu1', name: 'read_idea', input: { id: 'democritus_atoms_and_void' } }] },
-    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'You wrote about fear. [[democritus_atoms_and_void]] would ask what fear is made of.' }] },
-  ]);
-  const { server, call, lines } = await boot(createTalk({ client: fake.client }));
+test('talk: answers from the map, opens ideas to quote them, uses the diary, and never shows today\'s unwritten card', async () => {
+  const turns = []; // scripted once the day's cards are known
+  const fake = fakeClaude(turns);
+  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }));
   try {
-    // Write today's card first, so the diary has something in it.
-    const today = (await (await call(`/api/today?date=${D}`)).json()).node.id;
-    await call('/api/respond', { node_id: today, body: 'I fear losing what I love.', date: D });
-    const out = await lines(await call('/api/talk', { text: 'Is it foolish to be afraid of death?', date: D }));
+    // Write day 1's card, so the diary has something in it; day 2's card is then today's, still unwritten.
+    const written = (await (await call(`/api/today?date=${D}`)).json()).node.id;
+    await call('/api/respond', { node_id: written, body: 'I fear losing what I love.', date: D });
+    const D2 = '2026-11-02';
+    const today = (await (await call(`/api/today?date=${D2}`)).json()).node.id;
+    assert.notEqual(today, written);
+    const title = db.prepare('SELECT title FROM nodes WHERE id = ?').get(written).title;
+    turns.push(
+      { stop_reason: 'tool_use', content: [
+        { type: 'thinking', thinking: '', signature: 'sig' },
+        { type: 'text', text: 'Let me look.' },
+        { type: 'tool_use', id: 'tu1', name: 'read_idea', input: { id: written } }] },
+      { stop_reason: 'end_turn', content: [{ type: 'text', text: `You wrote about fear. [[${written}]] would ask what fear is made of.` }] },
+    );
+    const out = await lines(await call('/api/talk', { text: 'Is it foolish to be afraid of death?', date: D2 }));
     assert.equal(out[0].t, 'start');
     const text = out.filter((o) => o.t === 'text').map((o) => o.d).join('');
-    assert.match(text, /Let me look\..*\[\[democritus_atoms_and_void\]\]/s);
+    assert.match(text, new RegExp(`Let me look\\..*\\[\\[${written}\\]\\]`, 's'));
     const done = out.at(-1);
     assert.equal(done.t, 'done');
-    assert.equal(done.refs.democritus_atoms_and_void.title, 'Everything is atoms and void');
+    assert.equal(done.refs[written].title, title);
 
     const [first, second] = fake.requests;
     assert.equal(first.model, TALK_MODEL);
@@ -76,9 +82,12 @@ test('talk: answers from the map, opens ideas to quote them, uses the diary, and
     assert.deepEqual(first.betas, ['server-side-fallback-2026-07-01']);
     const system = first.system.map((b) => b.text).join('\n');
     assert.match(system, /I fear losing what I love\./); // the diary
-    assert.match(system, /democritus_atoms_and_void \| Everything is atoms and void/); // the map
-    // Upcoming daily cards are not on the map the model sees.
-    assert.doesNotMatch(system, /epicurus_absence_of_pain/);
+    assert.ok(system.includes(`${written} | ${title}`)); // the map
+    // Illustrated daily ideas are on the map now (none is held back as upcoming)...
+    const daily = db.prepare('SELECT id, title FROM nodes WHERE seq IS NOT NULL AND id NOT IN (?, ?)').all(written, today);
+    assert.ok(daily.every((n) => system.includes(`${n.id} | ${n.title}`)));
+    // ...but today's own card, not yet written, is not on the map the model sees.
+    assert.ok(!system.includes(`${today} |`), `${today} is in the catalogue`);
     // The tool result carried the source text, and the turn was sent back unedited (thinking block included).
     const result = second.messages.at(-1).content[0];
     assert.equal(result.type, 'tool_result');
@@ -86,20 +95,23 @@ test('talk: answers from the map, opens ideas to quote them, uses the diary, and
     assert.equal(second.messages.at(-2).content[0].type, 'thinking');
 
     // The transcript shows only the user's words and the replies.
-    const tr = await (await call(`/api/talk?date=${D}&id=${out[0].id}`)).json();
+    const tr = await (await call(`/api/talk?date=${D2}&id=${out[0].id}`)).json();
     assert.deepEqual(tr.turns.map((x) => x.who), ['you', 'map']);
-    assert.ok(tr.refs.democritus_atoms_and_void);
+    assert.ok(tr.refs[written]);
   } finally { server.close(); }
 });
 
-test('talk: a hidden idea cannot be opened; a daily limit keeps the bill predictable', async () => {
-  const fake = fakeClaude([
-    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu1', name: 'read_idea', input: { id: 'epicurus_absence_of_pain' } }] },
-    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Fair enough.' }] },
-  ]);
+test('talk: today\'s unwritten card cannot be opened; a daily limit keeps the bill predictable', async () => {
+  const turns = [];
+  const fake = fakeClaude(turns);
   const { server, call, lines } = await boot(createTalk({ client: fake.client }), { talkDailyLimit: 1 });
   try {
-    await lines(await call('/api/talk', { text: 'Tell me about Epicurus.', date: D }));
+    const today = (await (await call(`/api/today?date=${D}`)).json()).node.id;
+    turns.push(
+      { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu1', name: 'read_idea', input: { id: today } }] },
+      { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Fair enough.' }] },
+    );
+    await lines(await call('/api/talk', { text: 'Tell me about today\'s card.', date: D }));
     const result = fake.requests[1].messages.at(-1).content[0];
     assert.equal(result.is_error, true);
     assert.equal((await call('/api/talk', { text: 'Again', date: D })).status, 429);
@@ -133,18 +145,29 @@ test('talk: weighing an opinion adds the weigh instructions and returns web sour
   } finally { server.close(); }
 });
 
-test('a problem to consider: written once by Claude, kept, and never for an idea the user may not see yet', async () => {
+test('a problem to consider: written once by Claude, kept, and never for today\'s card before it is written', async () => {
   const calls = [];
   const client = { beta: { messages: { create: async (params) => { calls.push(params); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Mara finds a wallet. What should she do, and why?' }] }; } } } };
+  // Only the problem writer's calls (Talk also notes views in the background after a daily answer).
+  const problemCalls = () => calls.filter((c) => c.output_config?.format?.schema !== VIEWS_SCHEMA);
   const { server, call } = await boot(createTalk({ client }));
   try {
+    const today = (await (await call(`/api/today?date=${D}`)).json()).node.id;
     const id = 'sartre_existence_precedes_essence';
+    assert.notEqual(id, today);
     const a = await (await call(`/api/problem/${id}?date=${D}`)).json();
     assert.equal(a.problem, 'Mara finds a wallet. What should she do, and why?');
-    assert.match(calls[0].messages[0].content, /Existence precedes essence/);
-    assert.equal(calls[0].output_config.effort, 'low');
+    assert.match(problemCalls()[0].messages[0].content, /Existence precedes essence/);
+    assert.equal(problemCalls()[0].output_config.effort, 'low');
     await call(`/api/problem/${id}?date=${D}`);
-    assert.equal(calls.length, 1); // kept, not written again
-    assert.equal((await call(`/api/problem/epicurus_absence_of_pain?date=${D}`)).status, 404); // an upcoming daily card
+    assert.equal(problemCalls().length, 1); // kept, not written again
+    // Today's card stays closed until written; then its problem may be written too.
+    assert.equal((await call(`/api/problem/${today}?date=${D}`)).status, 404);
+    assert.equal(problemCalls().length, 1);
+    assert.equal((await call('/api/respond', { node_id: today, body: 'my take', date: D })).status, 200);
+    const b = await call(`/api/problem/${today}?date=${D}`);
+    assert.equal(b.status, 200);
+    assert.equal((await b.json()).problem, 'Mara finds a wallet. What should she do, and why?');
+    assert.equal(problemCalls().length, 2);
   } finally { server.close(); }
 });

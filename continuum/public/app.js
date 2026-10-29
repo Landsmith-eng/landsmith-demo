@@ -87,6 +87,8 @@ const PAGE_BG = {
   map: '/img/spares/map_observatory.webp', // an observatory open to the stars, a cat on the stair
   homework: '/img/spares/homework_reading_room.webp', // a reading room under green lamps, a cat asleep on the books
   weigh: '/img/spares/weigh_scales.webp', // brass scales by a window, a sparrow on one pan
+  news: '/img/rooms/now.webp', // the Now room
+  goal: '/img/spares/change_river.webp', // the braided river: a course being chosen
   teach: '/img/spares/teach_lecture_hall.webp', // an empty lecture hall, the board wiped clean: your turn to teach
   act: '/img/spares/act_kitchen.webp', // a community kitchen, soup served at long tables, a dog by the door
   parthenon: '/img/spares/parthenon_fire_circle.webp', // a ring of chairs round a fire at dusk: the Parthenon's groups
@@ -94,6 +96,19 @@ const PAGE_BG = {
   problem: '/img/spares/problem_crossroads.webp', // a crossroads with a blank signpost, a fox at the fork
 };
 const talkPlate = (mode) => PAGE_BG[mode] ?? TAB_BG.talk;
+// Ways in, offered from the first day: a conversation can start anywhere, and what is said shapes the walk.
+function doors() {
+  const door = (label, go) => h('button', { type: 'button', class: 'chip door', onclick: go }, label);
+  return h('div', { class: 'doors' },
+    h('div', { class: 'eyebrow' }, 'Or start a conversation'),
+    h('div', { class: 'door-row' },
+      door('A debate with a friend', () => showTalk({ mode: 'settle' })),
+      door('Something in the news', () => showTalk({ mode: 'news' })),
+      door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
+      door('A goal I have', () => showTalk({ mode: 'goal' })),
+      door('Look something up', () => showGallery('rooms', { search: true })),
+      door('Just talk', () => showTalk())));
+}
 // Any other page gets one of the daily-life plates, the same one all day.
 const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
 const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
@@ -940,7 +955,7 @@ function writeView(data) {
       node.why && h('p', { class: 'muted small why' }, node.why),
       hint('Scroll to the question'),
     ]),
-    panel('question', 'The question', [form]),
+    panel('question', 'The question', [form, doors()]),
   ], { background: node.backdrop ?? null, backgroundMax: .45 });
 }
 
@@ -952,9 +967,7 @@ function journeyLine(j) {
 }
 
 function doneView(data, { reveal = false } = {}) {
-  const msg = data.done === data.total && data.node.daily
-    ? `That was the last of the first ${data.total}. From tomorrow, each day's idea is chosen from your own discoveries.`
-    : 'That\'s today\'s card. Walk as far as you like; a new card arrives tomorrow.';
+  const msg = 'That\'s today\'s card. Walk as far as you like, or talk it over; tomorrow\'s idea is chosen from what you write and say.';
   setNav('today');
   const intro = h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg));
   // After writing: today's small lessons. A problem to consider for today's idea, a review of an earlier one, and
@@ -962,6 +975,7 @@ function doneView(data, { reveal = false } = {}) {
   problemCard(intro, data.node);
   recallCard(intro);
   bearings(intro);
+  intro.append(doors());
   showConcept(data.node, [], {
     intro,
     startAt: reveal ? 1 : 0,
@@ -1037,7 +1051,7 @@ const ERAS = [
 const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card: write first", upcoming: 'Coming up' };
 const openEntry = (n) => (n.state === 'today' ? showToday() : walkTo(n.id, []));
 
-function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false, theme = null, kind = 'all' } = {}) {
+function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false, theme = null, kind = 'all', search = false } = {}) {
   setNav('gallery');
   return guarded(async () => {
     const [{ nodes, rooms }, index] = await Promise.all([
@@ -1086,6 +1100,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝');
     render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
+    if (search) box.focus();
     const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
     if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
   });
@@ -1173,7 +1188,7 @@ function galleryTimeline(nodes, focus, featuredOnly) {
   const shown = featuredOnly ? nodes.filter((n) => n.daily) : nodes;
   const filter = h('div', { class: 'row', style: 'justify-content:flex-start;margin-top:-4px' },
     h('button', { type: 'button', class: `chip ${featuredOnly ? '' : 'on'}`, onclick: () => showGallery('timeline') }, 'Everyone'),
-    h('button', { type: 'button', class: `chip ${featuredOnly ? 'on' : ''}`, onclick: () => showGallery('timeline', { featuredOnly: true }) }, 'Only the 14 daily thinkers'));
+    h('button', { type: 'button', class: `chip ${featuredOnly ? 'on' : ''}`, onclick: () => showGallery('timeline', { featuredOnly: true }) }, 'Only the illustrated ideas'));
   const row = (n) => {
     const inner = [
       h('span', { class: 'tl-year' }, year(n.year)),
@@ -1258,9 +1273,31 @@ function showJournal() {
       : h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'),
           h('p', { class: 'muted small' }, 'Seven great debates, each answered by two camps. Your choices help Continuum plan a journey that suits you.'),
           h('button', { type: 'button', class: 'btn ghost', onclick: () => showStance() }, 'Open the debates')));
+    // Your views over time, by topic: what you said you think, want or wonder, as Talk noted it. Talk will bring
+    // these back to compare; a topic with more than one entry can be talked over directly.
+    const byTopic = new Map();
+    for (const v of d.views ?? []) byTopic.set(v.topic, [...(byTopic.get(v.topic) ?? []), v]);
+    const KIND = { view: 'A view', goal: 'A goal', question: 'A question' };
+    const views = byTopic.size
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your views over time'),
+        h('p', { class: 'muted small' }, 'Noted from what you said in Talk and wrote in your answers. Talk brings them back, to see what has changed and whether the reasons hold. Remove any that are wrong.'),
+        [...byTopic].map(([topic, vs]) => h('div', { class: 'view-topic' },
+          h('h3', {}, topic),
+          vs.map((v) => {
+            const row = h('div', { class: 'view-row' },
+              h('div', { class: 'eyebrow' }, `${v.date} · ${KIND[v.kind] ?? v.kind}`),
+              h('p', {}, v.body),
+              h('button', { type: 'button', class: 'link view-drop', 'aria-label': 'Remove this view', onclick: async () => { await api(`/api/views/${v.id}`, { method: 'DELETE' }).catch(() => {}); row.remove(); } }, 'Remove'));
+            return row;
+          }),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `My diary has my views on "${topic}" over time:\n${vs.slice().reverse().map((v) => `${v.date}: ${v.body}`).join('\n')}\nHave I changed my mind, and do my reasons hold up?`, draft: true }) },
+            vs.length > 1 ? 'Talk over how this has changed' : 'Test this view'))))
+      : h('section', { class: 'diary-block' }, h('h2', {}, 'Your views over time'),
+        h('p', { class: 'muted small' }, 'When you say what you think in Talk, or in your answers, Continuum notes your views and goals here, with the date. Later it brings them back to compare, and to choose ideas for you.'),
+        doors());
     const again = h('p', { class: 'muted small', style: 'margin-top:28px' },
       h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => tour() }, 'Take the spoken tour again'));
-    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), journey, roads, threads, entries, again);
+    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), views, journey, roads, threads, entries, again);
   });
 }
 
@@ -1349,6 +1386,9 @@ const TALK_MODES = {
   talk: { label: 'Talk', placeholder: 'Say what you think…' },
   weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
   teach: { label: 'Teach it back', placeholder: 'Explain an idea in your own words, as if to a friend…' },
+  settle: { label: 'A debate with a friend', placeholder: 'What did you disagree about? Say what you think, and what they think…' },
+  news: { label: 'In the news', placeholder: 'A headline or a story you want to make sense of…' },
+  goal: { label: 'A goal', placeholder: 'Something you want to do, change or become…' },
 };
 function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false, voice = false } = {}) {
   setNav('talk');
@@ -1589,6 +1629,10 @@ function showHomework(node) {
   });
 }
 
+// The review climbs as an idea comes back: first, what do you remember; then, use it; then, test it.
+const recallQuestion = (d) => (d.step <= 1 ? `What do you remember of "${d.title}"?`
+  : d.step === 2 ? `Where could "${d.title}" help you this week? Think of one real moment.`
+    : `Who would disagree with "${d.title}", and what would you say back?`);
 // A strip of the lesson's own plate above it: the fox at the crossroads, the hare on the fog path.
 const lessonPlate = (src) => h('div', { class: 'lesson-plate', 'aria-hidden': 'true' }, h('img', { src, alt: '', loading: 'lazy', decoding: 'async' }));
 async function problemCard(host, node) {
@@ -1613,7 +1657,7 @@ async function recallCard(host) {
   const box = h('div', { class: 'lesson' },
     lessonPlate(PAGE_BG.recall),
     h('div', { class: 'eyebrow' }, "Today's review"),
-    h('p', { class: 'lesson-text' }, `What do you remember of "${d.title}"?`),
+    h('p', { class: 'lesson-text' }, recallQuestion(d)),
     h('p', { class: 'muted small' }, 'Say it to yourself in a sentence, then look.'));
   const reveal = h('button', { type: 'button', class: 'btn ghost' }, 'Remind me');
   reveal.addEventListener('click', () => {
@@ -1831,9 +1875,9 @@ const TOUR = [
   { target: '.tabs [data-nav=today]', text: 'Today is your card for the day. Answer its question in a sentence or two. There are no wrong answers.' },
   { target: '.tabs [data-nav=practice]', text: 'Practice turns ideas into habits. It starts at ten seconds a day, and grows as you keep going.' },
   { target: '.tabs [data-nav=journal]', text: 'Your Diary keeps everything you write, the notes you leave on any idea, and the lines you keep. It suggests new roads, chosen from your own words.' },
-  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with the whole map. Argue a point, test a belief, or ask for a practice. It will push back when you are very sure.' },
+  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with the whole map, by voice or in writing. Bring a debate you had with a friend, something in the news, or a goal. It remembers what you have said, and will push back when you are very sure. What you talk about shapes the ideas Continuum brings you next.' },
   { target: '.tabs [data-nav=review]', text: 'Review shows your week: what you wrote, where you wandered, and what changed your mind.' },
-  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme. Wander anywhere. Only the daily cards stay hidden until their day.' },
+  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme, and a Map of how they connect. Wander anywhere.' },
   { target: '#listen', text: 'Listen reads any idea aloud. Voice sets the voice and the speed.' },
   { text: 'Two more things. Pinch the page with two fingers to make the text larger. And on any picture, tap Look to step inside it for a while.' },
   { text: 'That is the tour. If you like, seven great debates come next: questions people have argued over for thousands of years, each answered by two camps. Say which case speaks to you more. The debates are still open, and your choices only help Continuum plan your journey.' },

@@ -17,21 +17,23 @@ test('a remembered daily pick that was since written on another day is replaced,
     method: body ? 'POST' : 'GET', headers: { 'x-continuum-token': 't', 'content-type': 'application/json' }, body: body && JSON.stringify(body),
   }).then(async (r) => ({ status: r.status, json: await r.json() }));
   try {
-    await call('/api/today?date=2026-10-27');
-    assert.equal((await call('/api/respond', { node_id: 'democritus_atoms_and_void', body: 'day 1', date: '2026-10-27' })).status, 200);
-    // Jump to day 3 first: Epicurus is picked for 10-29 and remembered.
-    assert.equal((await call('/api/today?date=2026-10-29')).json.node.id, 'epicurus_absence_of_pain');
-    // Back to day 2: Epicurus is picked there too, and written there.
-    assert.equal((await call('/api/today?date=2026-10-28')).json.node.id, 'epicurus_absence_of_pain');
-    assert.equal((await call('/api/respond', { node_id: 'epicurus_absence_of_pain', body: 'day 2', date: '2026-10-28' })).status, 200);
+    const d1 = (await call('/api/today?date=2026-10-27')).json.node.id;
+    assert.equal((await call('/api/respond', { node_id: d1, body: 'day 1', date: '2026-10-27' })).status, 200);
+    // Jump to day 3 first: its card is picked for 10-29 and remembered.
+    const ahead = (await call('/api/today?date=2026-10-29')).json.node.id;
+    assert.equal((await call('/api/today?date=2026-10-29')).json.node.id, ahead);
+    // Back to day 2: with nothing new to go on, the same card is picked there too, and written there.
+    assert.equal((await call('/api/today?date=2026-10-28')).json.node.id, ahead);
+    assert.equal((await call('/api/respond', { node_id: ahead, body: 'day 2', date: '2026-10-28' })).status, 200);
     // Day 3 again: a fresh card, and it saves.
     const day3 = await call('/api/today?date=2026-10-29');
     assert.equal(day3.json.state, 'write');
-    assert.notEqual(day3.json.node.id, 'epicurus_absence_of_pain');
+    assert.notEqual(day3.json.node.id, ahead);
+    assert.notEqual(day3.json.node.id, d1);
     const saved = await call('/api/respond', { node_id: day3.json.node.id, body: 'day 3', date: '2026-10-29' });
     assert.equal(saved.status, 200);
     // A stale client posting an already-written card gets a clean "today has changed", never a server error.
-    const stale = await call('/api/respond', { node_id: 'epicurus_absence_of_pain', body: 'again', date: '2026-10-30' });
+    const stale = await call('/api/respond', { node_id: ahead, body: 'again', date: '2026-10-30' });
     assert.equal(stale.status, 409);
   } finally { server.close(); }
 });
