@@ -709,3 +709,22 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .view-row { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 10px; }
 .view-row p { margin: .2em 0; }
 .view-drop { padding: 0; font-size: .8rem; }
+
+/* The Parthenon */
+.pt-group { margin: 0 0 30px; }
+.pt-group h2 { margin: 0 0 4px; }
+.pt-topics { list-style: none; padding: 0; margin: 10px 0 0; }
+.pt-topics li { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin: 0 0 10px; }
+.pt-topic { padding: 0; text-align: left; color: var(--ink); font-family: var(--display); font-size: 1.2rem; line-height: 1.35; }
+.pt-new, .pt-topic-new { margin: 10px 0; }
+.pt-new .row, .pt-topic-new .row { flex-wrap: nowrap; }
+.pt-new input, .pt-topic-new input { flex: 1; min-width: 0; padding: 10px 14px; font: inherit; font-size: .95rem; }
+.pt-log { display: flex; flex-direction: column; gap: 14px; margin: 10px 0; }
+.pt-post { max-width: 92%; }
+.pt-post .pt-body { white-space: pre-wrap; line-height: 1.55; }
+.pt-post.from-them { align-self: flex-start; border-left: 3px solid var(--warm); padding-left: 12px; }
+.pt-post.from-me { align-self: flex-end; border-right: 3px solid var(--accent); padding-right: 12px; text-align: right; }
+.pt-post.from-mod { align-self: stretch; max-width: none; border-left: 3px solid var(--f-culture); padding-left: 12px; font-family: var(--display); font-size: 1.08rem; }
+.pt-writing { min-height: 1.4em; font-style: italic; }
+.pt-compose textarea { min-height: 0; }
+[hidden]{display:none !important}

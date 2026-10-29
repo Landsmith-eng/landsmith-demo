@@ -230,3 +230,28 @@ export async function noteViews(talk, { said, context = '', catalogue }) {
   if (msg.stop_reason !== 'end_turn') return null;
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
 }
+
+// The Parthenon's moderator: reads a group's discussion of one topic and helps it along, the way a good seminar leader
+// would. It never takes a side or names a winner. Plain text with [[id]] references to the map.
+export async function moderate(talk, { group, question, idea = null, posts, catalogue }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 16000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'medium' },
+    system: [
+      { type: 'text', text: `You are the moderator of a small discussion group in the Parthenon, part of Continuum, a daily philosophy app. Several people are talking over one question, live, often by voice; your words are read on phones and sometimes aloud. Help the conversation go deeper, like a fair and warm seminar leader. In short paragraphs that each begin with a plain label and a colon, and no other formatting:
+"Where the group stands:" the positions so far, each credited to who holds it by first name, in one or two sentences each, fairly and in their best light.
+"The strongest point on each side:" and the idea on the map that backs it, in double square brackets with its id exactly as listed, e.g. [[epictetus_up_to_us]].
+"What no one has said yet:" one consideration, objection or idea from the map that would change the conversation.
+"A question for everyone:" one question that makes each person test their own view.
+Never take a side, grade anyone, or declare a winner. Challenge ideas, never people. If someone seems distressed, respond with warmth first. If the discussion has barely started, keep to the last two labels and invite people in. About 150 to 250 words. Quote a source only if it is in the material below, word for word.
+
+Continuum's map (id | title):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
+    ],
+    messages: [{ role: 'user', content: `Group: ${group}\nThe question: ${question}${idea ? `\nIt starts from this idea on the map: ${idea}` : ''}\n\nThe discussion so far (oldest first):\n${posts || '(No one has spoken yet.)'}` }],
+  });
+  if (msg.stop_reason === 'refusal') return null;
+  return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || null;
+}

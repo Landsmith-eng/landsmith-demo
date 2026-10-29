@@ -121,6 +121,36 @@ CREATE TABLE IF NOT EXISTS recall (
 );
 
 -- A problem to consider for an idea: written once (by Claude, when Talk is on) and kept for everyone.
+-- The Parthenon: small invite-only groups that talk over one topic at a time, live, with Claude as moderator.
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  invite_code TEXT NOT NULL UNIQUE,     -- the link a member shares to bring someone in
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS group_members (
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS topics (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  question TEXT NOT NULL,
+  node_id TEXT REFERENCES nodes(id),    -- the idea it starts from, if any
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS posts (
+  id INTEGER PRIMARY KEY,
+  topic_id INTEGER NOT NULL REFERENCES topics(id),
+  user_id INTEGER REFERENCES users(id), -- NULL: the moderator (Claude)
+  body TEXT NOT NULL,
+  refs TEXT,                            -- JSON: ideas the moderator named, for links
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
 -- choose their next ideas and, later, to compare what they say now with what they said then.
 CREATE TABLE IF NOT EXISTS views (

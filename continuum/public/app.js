@@ -22,7 +22,8 @@ if (params.get('day')) {
   else if (/^[+-]?\d{1,3}$/.test(v)) store.set(DATE_KEY, shiftDate(realToday(), Number(v)));
   else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) store.set(DATE_KEY, v);
 }
-if (params.get('u') || params.get('day')) history.replaceState(null, '', location.pathname);
+if (params.get('join')) store.set('continuum.join', params.get('join'));
+if (params.get('u') || params.get('day') || params.get('join')) history.replaceState(null, '', location.pathname);
 const token = () => store.get(TOKEN_KEY) ?? '';
 
 function fmt(d) {
@@ -62,6 +63,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function render(...nodes) {
+  stopTopic(); // leaving a Parthenon topic closes its live line
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
   if (!staged) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
   view.classList.toggle('glassy', !staged);
@@ -106,6 +108,7 @@ function doors() {
       door('Something in the news', () => showTalk({ mode: 'news' })),
       door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
       door('A goal I have', () => showTalk({ mode: 'goal' })),
+      door('My group, in the Parthenon', () => showParthenon()),
       door('Look something up', () => showGallery('rooms', { search: true })),
       door('Just talk', () => showTalk())));
 }
@@ -286,6 +289,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node }) }, 'Talk it through'),
       node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showHomework(node) }, 'Homework sheet'),
       node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showParthenon({ idea: node }) }, 'Discuss it with your group'),
       h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today')),
   ]));
   return P;
@@ -1605,6 +1609,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     }
     render(
       h('h1', {}, current === 'act' ? 'Act on it near you' : 'Talk'),
+      current !== 'act' && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showParthenon() }, 'The Parthenon: talk with your group →')),
       h('p', { class: 'muted small' }, current === 'act'
         ? 'Found with a web search, so check each one before you go.'
         : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
@@ -2003,6 +2008,159 @@ function tour({ fromStart = true } = {}) {
   show(0);
 }
 function endTour() { if (!tourState) return; tourState.silence?.(); tourState.box.remove(); tourState = null; }
+// ── The Parthenon: small invite-only groups that talk over one question at a time, live. Everyone's posts arrive as
+// they are written; anyone can ask the moderator (Claude) to say where the group stands and what no one has said. ──
+const seeTo = (el) => el?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+const joinUrl = (code) => `${location.origin}/?join=${code}`;
+async function shareInvite(g) {
+  const url = joinUrl(g.invite_code);
+  const text = `Join "${g.name}" in the Parthenon, on Continuum: ${url}`;
+  try { if (navigator.share) { await navigator.share({ title: g.name, text, url }); return; } } catch { return; }
+  try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
+  catch { notice(url); }
+}
+function showParthenon({ idea = null } = {}) {
+  setNav('talk');
+  return guarded(async () => {
+    pageBg = PAGE_BG.parthenon;
+    const d = await api('/api/groups');
+    const newGroup = h('form', { class: 'pt-new', onsubmit: async (e) => {
+      e.preventDefault(); const name = e.target.elements.gname.value.trim(); if (!name) return;
+      const r = await api('/api/groups', { method: 'POST', body: { name } }); showParthenon({ idea });
+      notice('Your group is ready. Share its invite link to bring people in.'); void r;
+    } },
+      h('label', { for: 'gname', class: 'muted small' }, 'Start a group: a book club, friends, family, a class'),
+      h('div', { class: 'row' }, h('input', { id: 'gname', name: 'gname', type: 'text', maxlength: '60', placeholder: 'A name for the group', class: 'search' }), h('button', { type: 'submit', class: 'btn' }, 'Start')));
+    const groups = d.groups.map((g) => {
+      const q = h('input', { type: 'text', maxlength: '300', class: 'search', placeholder: 'A question for the group…', value: idea ? (idea.prompt ?? `What do you make of "${idea.title}"?`) : '' });
+      const start = h('form', { class: 'pt-topic-new', onsubmit: async (e) => {
+        e.preventDefault(); if (!q.value.trim()) return;
+        const r = await api(`/api/groups/${g.id}/topics`, { method: 'POST', body: { question: q.value.trim(), node_id: idea?.id ?? null } });
+        showTopic(r.id);
+      } }, h('div', { class: 'row' }, q, h('button', { type: 'submit', class: 'btn' }, idea ? 'Discuss' : 'Ask')));
+      return h('section', { class: 'pt-group' },
+        h('h2', {}, g.name),
+        h('div', { class: 'row', style: 'justify-content:flex-start' },
+          h('span', { class: 'muted small' }, `${g.members} ${g.members === 1 ? 'member' : 'members'}`),
+          h('button', { type: 'button', class: 'chip', onclick: () => shareInvite(g) }, 'Invite someone')),
+        start,
+        g.topics.length ? h('ul', { class: 'pt-topics' }, g.topics.map((t) => h('li', {},
+          h('button', { type: 'button', class: 'link pt-topic', onclick: () => showTopic(t.id) }, t.question),
+          h('div', { class: 'muted small' }, `${t.by} · ${t.posts} ${t.posts === 1 ? 'post' : 'posts'}${t.last_at ? ` · last ${t.last_at.slice(0, 16).replace('T', ' ')}` : ''}`))))
+          : h('p', { class: 'muted small' }, 'No questions yet. Ask the first one.'));
+    });
+    render(h('h1', {}, 'The Parthenon'),
+      h('p', {}, idea ? `Choose a group to discuss "${idea.title}".` : 'Small groups talking over one question at a time, together and live. Everyone can speak or write; the moderator, when asked, says where the group stands and what no one has said yet.'),
+      ...groups, newGroup,
+      h('p', { class: 'muted small bare' }, 'What you post is seen by the members of that group, and by the moderator when someone asks for it.'));
+  });
+}
+function showTopic(id) {
+  setNav('talk');
+  stopTopic();
+  return guarded(async () => {
+    pageBg = PAGE_BG.parthenon;
+    const t = await api(`/api/topics/${id}`);
+    const log = h('div', { class: 'pt-log', 'aria-live': 'polite' });
+    const writing = h('p', { class: 'muted small pt-writing', 'aria-live': 'polite' });
+    const seen = new Set();
+    const empty = h('p', { class: 'muted', hidden: t.posts.length > 0 }, 'No one has spoken yet. Say what you think first, then invite the others.');
+    const who = h('p', {}, `${t.group.name} · ${t.members.join(', ')}`);
+    const add = (p) => {
+      if (seen.has(p.id)) return; seen.add(p.id);
+      empty.hidden = true;
+      if (p.by && !t.members.includes(p.by)) { t.members.push(p.by); who.textContent = `${t.group.name} · ${t.members.join(', ')}`; }
+      const mine = p.user_id === t.me;
+      const el = h('div', { class: `pt-post ${p.moderator ? 'from-mod' : mine ? 'from-me' : 'from-them'}` },
+        h('div', { class: 'eyebrow' }, p.moderator ? 'The moderator' : mine ? 'You' : p.by),
+        p.moderator ? h('div', { class: 'pt-body' }, ...replyNodes(p.body, p.refs ?? {}, true)) : h('div', { class: 'pt-body' }, p.body));
+      log.append(el);
+      return el;
+    };
+    t.posts.forEach(add);
+    const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'Say what you think, and why…', 'aria-label': 'Your post' });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Post');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    let lastPing = 0;
+    ta.addEventListener('input', () => { if (Date.now() - lastPing > 4000) { lastPing = Date.now(); api(`/api/topics/${id}/typing`, { method: 'POST', body: {} }).catch(() => {}); } });
+    async function post() {
+      const body = ta.value.trim(); if (!body || send.disabled) return;
+      send.disabled = true; dict?.stop();
+      try { const r = await api(`/api/topics/${id}/posts`, { method: 'POST', body: { body, date: today() } }); ta.value = ''; seeTo(add(r.post) ?? log.lastElementChild); }
+      catch { status.textContent = 'Could not post. Try again.'; } finally { send.disabled = false; }
+    }
+    send.addEventListener('click', post);
+    const dict = dictation(ta, { onDone: () => {} });
+    const ask = t.moderator && h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+      ask.disabled = true; status.textContent = 'The moderator is reading the discussion…';
+      try { const r = await api(`/api/topics/${id}/moderator`, { method: 'POST', body: { date: today() } }); seeTo(add(r.post) ?? log.lastElementChild); status.textContent = ''; }
+      catch (e) { status.textContent = e.message === 'daily_limit' ? 'That is enough for today. The moderator will be here tomorrow.' : e.message === 'busy' ? 'The moderator is already answering.' : 'The moderator could not answer just now.'; }
+      finally { ask.disabled = false; }
+    } }, 'Ask the moderator');
+    render(h('h1', {}, t.question),
+      who,
+      t.idea && h('p', { class: 'bare' }, h('a', { href: '#', class: 'thread-link', onclick: (e) => { e.preventDefault(); walkTo(t.idea.id, []); } }, `It starts from: ${t.idea.title}`)),
+      h('section', { class: 'pt-thread' }, empty, log, writing),
+      h('section', { class: 'pt-compose' }, ta, h('div', { class: 'row' }, dict?.button ?? h('span'), send), status,
+        h('div', { class: 'row', style: 'justify-content:flex-start' }, ask, h('button', { type: 'button', class: 'chip', onclick: () => shareInvite(t.group) }, 'Invite someone'),
+          h('button', { type: 'button', class: 'chip', onclick: () => showParthenon() }, '← All groups'))));
+    if (log.lastElementChild) seeTo(log.lastElementChild);
+    // Live: new posts and "… is writing" from everyone in the group, as they happen. Reconnects if the line drops.
+    const run = { stop: false, ctl: null }; topicRun = run;
+    const timers = new Map();
+    const showWriting = () => { writing.textContent = timers.size ? `${[...timers.keys()].join(', ')} ${timers.size === 1 ? 'is' : 'are'} writing…` : ''; };
+    (async function listen() {
+      while (!run.stop && document.body.contains(log)) {
+        try {
+          run.ctl = new AbortController();
+          const res = await fetch(`/api/topics/${id}/live`, { headers: { 'x-continuum-token': token() }, signal: run.ctl.signal });
+          const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+          for (;;) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+              const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (!line) continue;
+              const m = JSON.parse(line);
+              if (m.t === 'post') {
+                const who = m.post.moderator ? 'The moderator' : m.post.by; clearTimeout(timers.get(who)); timers.delete(who); showWriting();
+                const el = add(m.post); if (el && m.post.user_id !== t.me) seeTo(el);
+              } else if (m.t === 'typing' && m.user_id !== t.me) {
+                clearTimeout(timers.get(m.name)); timers.set(m.name, setTimeout(() => { timers.delete(m.name); showWriting(); }, 7000)); showWriting();
+              }
+            }
+          }
+        } catch { /* dropped or stopped */ }
+        if (!run.stop) await new Promise((r) => setTimeout(r, 2000));
+      }
+    })();
+  });
+}
+let topicRun = null;
+function stopTopic() { if (topicRun) { topicRun.stop = true; topicRun.ctl?.abort(); topicRun = null; } }
+// Arriving from an invite link: someone new gives a first name and is in; someone already here is simply added.
+async function joinFromLink(code) {
+  const done = () => store.del('continuum.join');
+  if (token()) {
+    try { await api('/api/groups/join', { method: 'POST', body: { code } }); done(); notice('You have joined the group.'); return showParthenon(); }
+    catch (e) { if (e.status !== 401) { done(); notice(e.message === 'group_full' ? 'That group is full.' : 'That invite link did not work.'); return showToday(); } }
+  }
+  const info = await fetch(`/api/join/${encodeURIComponent(code)}`).then((r) => r.json()).catch(() => ({}));
+  pageBg = PAGE_BG.parthenon; setNav('');
+  if (!info.group) { done(); return render(h('h1', {}, 'The Parthenon'), h('p', {}, 'That invite link did not work. Ask for a new one.')); }
+  const name = h('input', { type: 'text', maxlength: '40', class: 'search', placeholder: 'Your first name', autocomplete: 'given-name' });
+  const go = h('button', { type: 'submit', class: 'btn' }, 'Join');
+  render(h('h1', {}, 'You are invited'),
+    h('p', {}, `to "${info.group}" in the Parthenon, a small group that talks over one question at a time. ${info.members} ${info.members === 1 ? 'person is' : 'people are'} in it.`),
+    h('form', { onsubmit: async (e) => {
+      e.preventDefault(); if (!name.value.trim()) return; go.disabled = true;
+      const r = await fetch('/api/join', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name: name.value.trim() }) }).then((x) => x.json()).catch(() => ({}));
+      if (!r.token) { go.disabled = false; return notice(r.error === 'group_full' ? 'That group is full.' : 'Could not join just now. Try again.'); }
+      store.set(TOKEN_KEY, r.token); done(); showParthenon();
+    } }, h('div', { class: 'row' }, name, go)),
+    h('p', { class: 'muted small' }, 'Continuum is a daily practice of human wisdom. Joining gives you your own copy, kept on this phone: keep this page as a bookmark to come back.'));
+}
+
 // The first time: a small invitation (a tap is needed before a page may speak), then the tour.
 function offerTour() {
   if (store.get(TOUR_KEY) || params.get('day')) return;
@@ -2017,4 +2175,5 @@ function offerTour() {
 }
 
 intro(offerTour);
-showToday();
+if (store.get('continuum.join')) joinFromLink(store.get('continuum.join'));
+else showToday();

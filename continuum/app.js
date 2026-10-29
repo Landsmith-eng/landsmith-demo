@@ -2,6 +2,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { rooms } from './content/rooms.js';
 import { themes } from './content/themes.js';
@@ -9,7 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
@@ -1010,6 +1011,152 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!PART_RE.test(part ?? '')) return res.status(400).json({ error: 'bad_part' });
     if (body) hwq.answer.run(uid, n.id, part, body, date); else hwq.clear.run(uid, n.id, part);
     res.json({ ok: true });
+  });
+
+  // ── The Parthenon: small invite-only groups, one topic at a time, with live posts from every member and Claude as a
+  // moderator anyone can call on. A member shares the group's invite link; someone new joins with just a first name.
+  const MAX_MEMBERS = 40;
+  const gq = {
+    group: db.prepare('SELECT * FROM groups WHERE id = ?'),
+    byCode: db.prepare('SELECT * FROM groups WHERE invite_code = ?'),
+    addGroup: db.prepare('INSERT INTO groups (name, invite_code, created_by) VALUES (?, ?, ?)'),
+    member: db.prepare('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?'),
+    join: db.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)'),
+    leave: db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?'),
+    count: db.prepare('SELECT COUNT(*) AS n FROM group_members WHERE group_id = ?'),
+    members: db.prepare('SELECT u.id, u.name FROM group_members m JOIN users u ON u.id = m.user_id WHERE m.group_id = ? ORDER BY m.joined_at'),
+    mine: db.prepare(`SELECT g.id, g.name, g.invite_code, (SELECT COUNT(*) FROM group_members x WHERE x.group_id = g.id) AS members
+      FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.user_id = ? ORDER BY g.created_at DESC`),
+    topics: db.prepare(`SELECT t.id, t.question, t.node_id, t.created_at, u.name AS by,
+        (SELECT COUNT(*) FROM posts p WHERE p.topic_id = t.id) AS posts,
+        (SELECT MAX(p.created_at) FROM posts p WHERE p.topic_id = t.id) AS last_at
+      FROM topics t JOIN users u ON u.id = t.created_by WHERE t.group_id = ? ORDER BY COALESCE(last_at, t.created_at) DESC LIMIT 30`),
+    topic: db.prepare('SELECT * FROM topics WHERE id = ?'),
+    addTopic: db.prepare('INSERT INTO topics (group_id, question, node_id, created_by) VALUES (?, ?, ?, ?)'),
+    posts: db.prepare(`SELECT p.id, p.user_id, p.body, p.refs, p.created_at, u.name FROM posts p LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.topic_id = ? ORDER BY p.id`),
+    post: db.prepare(`SELECT p.id, p.user_id, p.body, p.refs, p.created_at, u.name FROM posts p LEFT JOIN users u ON u.id = p.user_id WHERE p.id = ?`),
+    addPost: db.prepare('INSERT INTO posts (topic_id, user_id, body, refs) VALUES (?, ?, ?, ?)'),
+    addUser: db.prepare('INSERT INTO users (token, name) VALUES (?, ?)'),
+  };
+  const code = () => randomBytes(9).toString('base64url');
+  const cleanName = (x, max) => (typeof x === 'string' ? x.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const postOut = (p) => ({ id: p.id, mine: false, by: p.user_id == null ? null : p.name, user_id: p.user_id, moderator: p.user_id == null, body: p.body, refs: p.refs ? JSON.parse(p.refs) : null, at: p.created_at });
+  // Live: everyone with a topic open holds a stream; a new post or someone writing is sent to all of them at once.
+  const live = new Map(); // topic id -> Set of { res, uid }
+  const broadcast = (topicId, msg) => { for (const c of live.get(topicId) ?? []) c.res.write(`${JSON.stringify(msg)}\n`); };
+  const topicFor = (req, res) => {
+    const t = gq.topic.get(Number(req.params.id));
+    if (!t || !gq.member.get(t.group_id, req.user.id)) { res.status(404).json({ error: 'not_found' }); return null; }
+    return t;
+  };
+
+  // Joining from an invite link: who invited you (no sign-in needed to see the group's name).
+  app.get('/api/join/:code', (req, res) => {
+    const g = gq.byCode.get(String(req.params.code));
+    if (!g) return res.status(404).json({ error: 'not_found' });
+    res.json({ group: g.name, members: gq.count.get(g.id).n, full: gq.count.get(g.id).n >= MAX_MEMBERS });
+  });
+  // Someone new joins with a first name, and gets their own Continuum (a personal link, kept on their phone).
+  app.post('/api/join', (req, res) => {
+    const g = gq.byCode.get(String(req.body?.code ?? ''));
+    const name = cleanName(req.body?.name, 40);
+    if (!g) return res.status(404).json({ error: 'not_found' });
+    if (!name) return res.status(400).json({ error: 'name_required' });
+    if (gq.count.get(g.id).n >= MAX_MEMBERS) return res.status(409).json({ error: 'group_full' });
+    const token = randomBytes(12).toString('base64url');
+    const uid = Number(gq.addUser.run(token, name).lastInsertRowid);
+    gq.join.run(g.id, uid);
+    res.json({ token, group_id: g.id });
+  });
+  // Someone already on Continuum joins a group from its link.
+  app.post('/api/groups/join', auth, (req, res) => {
+    const g = gq.byCode.get(String(req.body?.code ?? ''));
+    if (!g) return res.status(404).json({ error: 'not_found' });
+    if (!gq.member.get(g.id, req.user.id) && gq.count.get(g.id).n >= MAX_MEMBERS) return res.status(409).json({ error: 'group_full' });
+    gq.join.run(g.id, req.user.id);
+    res.json({ group_id: g.id });
+  });
+  app.get('/api/groups', auth, (req, res) => {
+    res.json({ name: req.user.name, groups: gq.mine.all(req.user.id).map((g) => ({ ...g, topics: gq.topics.all(g.id) })) });
+  });
+  app.post('/api/groups', auth, (req, res) => {
+    const name = cleanName(req.body?.name, 60);
+    if (!name) return res.status(400).json({ error: 'name_required' });
+    const id = Number(gq.addGroup.run(name, code(), req.user.id).lastInsertRowid);
+    gq.join.run(id, req.user.id);
+    res.json({ id });
+  });
+  app.post('/api/groups/:id/leave', auth, (req, res) => { gq.leave.run(Number(req.params.id), req.user.id); res.json({ ok: true }); });
+  app.post('/api/groups/:id/topics', auth, (req, res) => {
+    const g = gq.group.get(Number(req.params.id));
+    if (!g || !gq.member.get(g.id, req.user.id)) return res.status(404).json({ error: 'not_found' });
+    const question = cleanName(req.body?.question, 300);
+    if (!question) return res.status(400).json({ error: 'question_required' });
+    const n = req.body?.node_id ? q.node.get(String(req.body.node_id)) : null;
+    const id = Number(gq.addTopic.run(g.id, question, n?.id ?? null, req.user.id).lastInsertRowid);
+    res.json({ id });
+  });
+  app.get('/api/topics/:id', auth, (req, res) => {
+    const t = topicFor(req, res); if (!t) return;
+    const g = gq.group.get(t.group_id); const n = t.node_id ? q.node.get(t.node_id) : null;
+    res.json({
+      id: t.id, question: t.question, group: { id: g.id, name: g.name, invite_code: g.invite_code },
+      idea: n ? { id: n.id, title: n.title, thinker: n.thinker, field: n.field } : null,
+      members: gq.members.all(g.id).map((m) => m.name), me: req.user.id,
+      posts: gq.posts.all(t.id).map(postOut), moderator: Boolean(talk),
+    });
+  });
+  app.post('/api/topics/:id/posts', auth, (req, res) => {
+    const t = topicFor(req, res); if (!t) return;
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim().slice(0, 4000) : '';
+    if (!body) return res.status(400).json({ error: 'empty' });
+    const p = gq.post.get(Number(gq.addPost.run(t.id, req.user.id, body, null).lastInsertRowid));
+    broadcast(t.id, { t: 'post', post: postOut(p) });
+    noteFrom(req.user.id, localDate(req.body?.date), body, `In a group discussion of: ${t.question}`, 'parthenon');
+    res.json({ post: postOut(p) });
+  });
+  app.post('/api/topics/:id/typing', auth, (req, res) => {
+    const t = topicFor(req, res); if (!t) return;
+    broadcast(t.id, { t: 'typing', name: req.user.name, user_id: req.user.id });
+    res.json({ ok: true });
+  });
+  const moderating = new Set();
+  app.post('/api/topics/:id/moderator', auth, async (req, res) => {
+    const t = topicFor(req, res); if (!t) return;
+    if (!talk) return res.status(404).json({ error: 'talk_off' });
+    const date = localDate(req.body?.date);
+    if (tq.today.get(req.user.id, date).n >= talkDailyLimit) return res.status(429).json({ error: 'daily_limit' });
+    if (moderating.has(t.id)) return res.status(409).json({ error: 'busy' });
+    moderating.add(t.id);
+    broadcast(t.id, { t: 'typing', name: 'The moderator', user_id: null });
+    try {
+      q.insertEvent.run(req.user.id, 'talk', null, date);
+      const g = gq.group.get(t.group_id); const n = t.node_id ? q.node.get(t.node_id) : null;
+      // The map as a list of ids and titles (the moderator names ideas by id; nothing about members' own walks).
+      const catalogue = db.prepare("SELECT id, title FROM nodes ORDER BY id").all().map((x) => `${x.id} | ${x.title}`).join('\n');
+      const posts = gq.posts.all(t.id).slice(-60).map((p) => `${p.user_id == null ? 'Moderator' : p.name}: ${clip(p.body, 900)}`).join('\n');
+      const text = await moderate(talk, { group: g.name, question: t.question, idea: n ? `"${n.title}" (${n.thinker ?? n.field}): ${clip(n.plain_face, 600)}` : null, posts, catalogue });
+      if (!text) return res.status(502).json({ error: 'no_reply' });
+      const refs = Object.fromEntries(referencedIds(text).map((id) => q.node.get(id)).filter(Boolean).map((x) => [x.id, { title: x.title, type: x.type, field: x.field, thinker: x.thinker }]));
+      const p = gq.post.get(Number(gq.addPost.run(t.id, null, text, JSON.stringify(refs)).lastInsertRowid));
+      broadcast(t.id, { t: 'post', post: postOut(p) });
+      res.json({ post: postOut(p) });
+    } catch (e) {
+      console.warn(`Moderator: ${e.status ?? ''} ${e.message}`);
+      res.status(502).json({ error: 'moderator_failed' });
+    } finally { moderating.delete(t.id); }
+  });
+  app.get('/api/topics/:id/live', auth, (req, res) => {
+    const t = topicFor(req, res); if (!t) return;
+    res.set({ 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+    res.flushHeaders?.();
+    const c = { res, uid: req.user.id };
+    if (!live.has(t.id)) live.set(t.id, new Set());
+    live.get(t.id).add(c);
+    res.write(`${JSON.stringify({ t: 'hello' })}\n`);
+    const ping = setInterval(() => res.write(`${JSON.stringify({ t: 'ping' })}\n`), 20000);
+    req.on('close', () => { clearInterval(ping); live.get(t.id)?.delete(c); });
   });
 
   app.get('/api/stance', auth, (req, res) => {
