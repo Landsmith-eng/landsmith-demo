@@ -2,14 +2,18 @@
 // meaning), coloured by era, field or room. Ideas you have met shine; the ones you have not are faint; today's card
 // is marked but stays unnamed until its day. Ideas that came back fuzzy in the daily review glow amber, so you can
 // relearn them among their neighbours. Drag to move, pinch or scroll to zoom, tap a point to see it and its links.
+// Zooming in takes the map to the full screen (the header and menu fade away), with names growing as you go closer;
+// tapping an idea offers a short journey from it, which the daily walk then follows.
 
 const ERA_COLORS = { ancient: '#e9c46a', medieval: '#c98bdb', early_modern: '#7fb7e8', c19: '#f08a6c', c20: '#8fe8b4', now: '#7fe0e6' };
 const FIELD_VARS = ['philosophy', 'science', 'religion', 'practice', 'art', 'culture', 'law', 'now'];
 const FIELD_NAMES = { philosophy: 'Philosophy', science: 'Science', religion: 'Religion', practice: 'Practice', art: 'Art', culture: 'Culture', law: 'Law', now: 'The news' };
-const REL_WORDS = { taught: 'taught', extended: 'extended', argued_against: 'argued against', tested: 'tested', echoes: 'echoes', parallels: 'parallels', lands_on: 'lands on' };
+// How each link reads, as "<B> <verb> <A>" (B did this to the earlier A).
+const REL_WORDS = { taught: 'learned from', extended: 'built on', refuted: 'argued against', converged: 'reached the same idea as',
+  measured: 'tested', secularized: 'kept the practice of', echoes: 'echoes', lands_on: 'is practised in' };
 
 // Builds the map into `mount` (an element already on the page). `data` is /api/map; `onOpen(node)` opens an idea.
-export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence', color: startColor = 'era' }) {
+export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMode = 'influence', color: startColor = 'era' }) {
   const css = getComputedStyle(document.documentElement);
   const fieldColor = Object.fromEntries(FIELD_VARS.map((f) => [f, css.getPropertyValue(`--f-${f}`).trim() || '#ccc']));
   const roomIds = data.rooms.map((r) => r.id);
@@ -36,7 +40,21 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
     else if (!query) { selected = null; showInfo(null); }
     draw();
   });
-  mount.replaceChildren(controls, search, canvas, legend, info);
+  const exit = h('button', { type: 'button', class: 'pill map-exit', 'aria-label': 'Leave the full-screen map', onclick: () => setFull(false, true) }, '✕');
+  const stage = h('div', { class: 'map-stage' }, canvas, exit);
+  mount.replaceChildren(controls, search, stage, legend, info);
+  let full = false;
+  // Full screen: the map fills the phone, the header and menu fade, the tapped idea shows in a sheet at the bottom.
+  function setFull(on, refit = false) {
+    if (on === full) return;
+    const cx = (W / 2 - tx) / s, cy = (H / 2 - ty) / s; // keep the same place in the middle of the view
+    full = on;
+    mount.classList.toggle('map-full', on);
+    document.documentElement.classList.toggle('map-full', on);
+    size();
+    if (refit) fit(); else { tx = W / 2 - cx * s; ty = H / 2 - cy * s; }
+    draw();
+  }
 
   function renderControls() {
     controls.replaceChildren(
@@ -114,6 +132,14 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
       data.road.forEach((id, i) => { const p = pos.get(id); if (p) (i ? g.lineTo : g.moveTo).call(g, sx(p[0]), sy(p[1])); });
       g.stroke(); g.setLineDash([]);
     }
+    // A journey: the one started (solid), or the one offered for the tapped idea (dashed).
+    const path = (ids, dash, alpha) => {
+      const ps = ids.map((id) => pos.get(id)).filter(Boolean); if (ps.length < 2) return;
+      g.strokeStyle = `rgba(143,232,180,${alpha})`; g.lineWidth = 2.5; g.setLineDash(dash);
+      g.beginPath(); ps.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, sx(p[0]), sy(p[1]))); g.stroke(); g.setLineDash([]);
+    };
+    if (data.trail) path([data.trail.from, ...data.trail.ids], [], .75);
+    if (offered) path([selected, ...offered.map((x) => x.id)], [7, 6], .9);
     const zoom = s / Math.min(W, H);
     const r0 = Math.max(3.6, Math.min(7.5, 3.6 * zoom ** .5));
     // Points.
@@ -121,7 +147,7 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
       const p = pos.get(n.id), x = sx(p[0]), y = sy(p[1]);
       if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
       const met = n.state === 'written' || n.state === 'visited';
-      const dim = (selected && n.id !== selected && !near.has(n.id)) || (found.size && !found.has(n.id));
+      const dim = (selected && n.id !== selected && !near.has(n.id) && !offered?.some((x) => x.id === n.id)) || (found.size && !found.has(n.id));
       g.globalAlpha = dim ? .2 : met || n.state === 'today' ? 1 : .72;
       if (n.fuzzy && !dim) { g.shadowColor = '#f4c063'; g.shadowBlur = 16; }
       g.fillStyle = colorOf(n);
@@ -137,13 +163,14 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
     // Labels, without overlapping: the chosen idea and its links first, then search hits, then ideas met, then the
     // rest as the zoom gives room.
     const taken = [];
-    const free = (x, y, w) => !taken.some((b) => x < b[2] && x + w > b[0] && y - 12 < b[3] && y + 3 > b[1]);
+    const free = (x, y, w) => !taken.some((b) => x < b[2] && x + w > b[0] && y - fs < b[3] && y + 4 > b[1]);
     const order = [...data.nodes].sort((a, b) => rankLabel(b) - rankLabel(a));
     function rankLabel(n) {
-      if (n.id === selected) return 5; if (near?.has(n.id)) return 4; if (found.has(n.id)) return 3;
+      if (n.id === selected) return 5; if (near?.has(n.id) || offered?.some((x) => x.id === n.id)) return 4; if (found.has(n.id)) return 3;
       if (n.state === 'written' || n.state === 'visited') return 2; return n.fuzzy ? 2.5 : 1;
     }
-    g.font = '12px Manrope, system-ui, sans-serif'; g.textBaseline = 'alphabetic';
+    const fs = Math.round(Math.min(20, Math.max(12, 12 * zoom ** .42)) + (full ? 1 : 0)); // names grow as you go closer
+    g.font = `${fs}px Manrope, system-ui, sans-serif`; g.textBaseline = 'alphabetic';
     for (const n of order) {
       const text = label(n); if (!text) continue;
       const rank = rankLabel(n);
@@ -151,39 +178,84 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
       if (rank < 2 && zoom < 1.8) continue;
       const p = pos.get(n.id), x = sx(p[0]) + r0 + 5, y = sy(p[1]) + 4;
       if (x > W || y > H + 10 || y < 0) continue;
-      const t = text.length > 26 ? `${text.slice(0, 25)}…` : text;
+      const cap = full ? 34 : 26; const t = text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
       const w = g.measureText(t).width;
       if (!free(x, y, w) && rank < 5) continue;
-      taken.push([x, y - 12, x + w, y + 3]);
-      g.lineWidth = 3; g.strokeStyle = 'rgba(6,10,8,.8)'; g.strokeText(t, x, y);
+      taken.push([x, y - fs, x + w, y + 4]);
+      g.lineWidth = Math.max(3, fs / 4); g.strokeStyle = 'rgba(6,10,8,.8)'; g.strokeText(t, x, y);
       g.fillStyle = rank >= 4 ? '#fff' : 'rgba(240,246,240,.88)'; g.fillText(t, x, y);
     }
   }
 
   // ── The idea you tapped ──
-  function showInfo(n) {
-    if (!n) { info.replaceChildren(h('p', { class: 'muted small' }, 'Tap a point to see the idea and what it links to.')); return; }
-    if (n.state === 'upcoming') { info.replaceChildren(h('p', {}, 'A daily card still to come. It is named on its day.')); return; }
-    const ls = links.get(n.id).filter((l) => byId.get(l.other)?.state !== 'upcoming');
-    const relLine = (l) => {
-      const o = byId.get(l.other); const out = l.e.from === n.id; // out: the other one did <relation> to this idea
-      const rel = REL_WORDS[l.e.relation] ?? l.e.relation.replace(/_/g, ' ');
-      return h('button', { type: 'button', class: 'link map-link', onclick: () => focusOn(o.id, true) },
-        out ? `${label(o)} ${rel} this` : `This ${rel} ${label(o)}`);
+  // A short journey from an idea: where it came from, who pushed back, who took it further, where it meets something
+  // else, and the practice it lands on. Ideas not yet met first; at most five stops.
+  let offered = null;
+  const setInfo = (...kids) => info.replaceChildren(...kids.filter((k) => k != null && k !== false && k !== ''));
+  function journeyFrom(id) {
+    const ls = links.get(id).filter((l) => byId.get(l.other)?.state !== 'today');
+    const fresh = (l) => !['written', 'visited'].includes(byId.get(l.other).state);
+    const pick = (test, why) => {
+      const c = ls.filter(test).sort((a, b) => fresh(b) - fresh(a))[0];
+      return c && { id: c.other, why };
     };
-    info.replaceChildren(
+    const went = (rel) => (l) => l.e.from === id && l.e.relation === rel; // the other (later) one did rel to this
+    const stops = [
+      pick((l) => l.e.to === id && ['taught', 'extended', 'secularized'].includes(l.e.relation), 'where it came from'),
+      pick((l) => l.e.relation === 'refuted', 'who pushed back'),
+      pick((l) => went('extended')(l) || went('measured')(l), 'who took it further, or tested it'),
+      pick((l) => l.e.relation === 'converged' || l.e.relation === 'echoes', 'where it meets something else'),
+      pick((l) => l.e.relation === 'lands_on', 'the practice it leads to'),
+    ].filter(Boolean).filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i);
+    return stops.slice(0, 5);
+  }
+  function showInfo(n) {
+    offered = null;
+    if (!n) { setInfo(h('p', { class: 'muted small' }, 'Tap a point to see the idea, what it links to, and a journey from it.')); return; }
+    if (n.state === 'today') {
+      setInfo(h('h3', {}, n.title), h('p', { class: 'small' }, 'Today\'s card. Write your answer first; then its links open.'),
+        h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn', onclick: () => onOpen(n) }, 'Open today\'s card')));
+      return;
+    }
+    const ls = links.get(n.id).filter((l) => byId.get(l.other)?.state !== 'today');
+    const relLine = (l) => {
+      const o = byId.get(l.other); const later = l.e.from === n.id; // later: the other did <relation> to this idea
+      const verb = REL_WORDS[l.e.relation] ?? l.e.relation.replace(/_/g, ' ');
+      return h('button', { type: 'button', class: 'link map-link', onclick: () => focusOn(o.id, true) },
+        later ? `${label(o)} ${verb} this` : `This ${verb} ${label(o)}`);
+    };
+    offered = journeyFrom(n.id);
+    const started = data.trail && data.trail.from === n.id;
+    setInfo(
       h('div', { class: `eyebrow field-${n.field}` }, [n.thinker, n.year == null ? null : n.year < 0 ? `${-n.year} BCE` : n.year].filter(Boolean).join(' · ')),
       h('h3', {}, n.title),
       n.line && h('p', { class: 'small' }, n.line),
       n.fuzzy && h('p', { class: 'small map-fuzzy' }, 'This one came back fuzzy in your daily review. Its neighbours here can help it stick.'),
       h('div', { class: 'row', style: 'justify-content:flex-start' },
-        h('button', { type: 'button', class: 'btn', onclick: () => onOpen(n) }, n.state === 'today' ? 'Open today\'s card' : 'Open this idea')),
-      ls.length ? h('div', { class: 'map-links' }, ls.slice(0, 8).map(relLine)) : null,
+        h('button', { type: 'button', class: 'btn', onclick: () => onOpen(n) }, 'Open this idea')),
+      offered.length ? h('div', { class: 'map-journey' },
+        h('div', { class: 'eyebrow' }, 'A journey from here'),
+        h('ol', {}, offered.map((x) => h('li', {},
+          h('button', { type: 'button', class: 'link map-link', onclick: () => focusOn(x.id, true) }, byId.get(x.id).title),
+          h('span', { class: 'muted small' }, ` · ${x.why}`)))),
+        h('div', { class: 'row', style: 'justify-content:flex-start' },
+          onTrail && h('button', { type: 'button', class: 'btn', onclick: async (e) => {
+            e.target.disabled = true;
+            const ok = await onTrail(n, offered.map((x) => x.id));
+            if (ok) { data.trail = { from: n.id, ids: offered.map((x) => x.id) }; e.target.textContent = 'Journey started'; draw(); } else e.target.disabled = false;
+          } }, started ? 'Start it again' : 'Start this journey'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => onOpen(byId.get(offered[0].id)) }, 'Walk it now')),
+        h('p', { class: 'muted small' }, 'A started journey sets your next daily ideas, one stop a day.')) : null,
+      ls.length ? h('div', { class: 'map-links' }, h('div', { class: 'eyebrow' }, 'Its links'), ls.slice(0, 8).map(relLine)) : null,
     );
   }
   function focusOn(id, center) {
     selected = id; showInfo(byId.get(id));
-    if (center) { const p = pos.get(id); const want = Math.max(s, Math.min(W, H) * 2.2); tx = W / 2 - p[0] * want; ty = H / 2 - p[1] * want; s = want; }
+    if (center) {
+      const p = pos.get(id); const want = Math.max(s, Math.min(W, H) * 2.2);
+      s = want; if (!full) setFull(true);
+      tx = W / 2 - p[0] * s; ty = (full ? H * .38 : H / 2) - p[1] * s; // leave room for the sheet below
+    }
     draw();
   }
 
@@ -207,7 +279,10 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   function zoomAt(f, mx, my) {
     const base = Math.min(W, H); const ns = Math.min(base * 12, Math.max(base * .7, s * f)); const k = ns / s;
-    tx = mx - (mx - tx) * k; ty = my - (my - ty) * k; s = ns; draw();
+    tx = mx - (mx - tx) * k; ty = my - (my - ty) * k; s = ns;
+    if (!full && s > base * 1.35) return setFull(true);
+    if (full && s < base * .85) return setFull(false, true);
+    draw();
   }
   function tap(cx, cy) {
     const r = canvas.getBoundingClientRect(); const x = cx - r.left, y = cy - r.top;
@@ -219,5 +294,5 @@ export function mountMap(mount, data, { h, onOpen, mode: startMode = 'influence'
   const ro = new ResizeObserver(() => { const was = W; size(); if (!was) fit(); draw(); });
   ro.observe(canvas);
   renderControls(); showInfo(null);
-  return { destroy: () => ro.disconnect() };
+  return { destroy: () => { ro.disconnect(); document.documentElement.classList.remove('map-full'); } };
 }

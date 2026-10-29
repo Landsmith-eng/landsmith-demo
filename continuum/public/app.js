@@ -64,6 +64,7 @@ function h(tag, attrs = {}, ...children) {
 
 function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
+  document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
   if (!staged) { unstage(); setWallpaper(pageBg ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
   view.classList.toggle('glassy', !staged);
@@ -1157,7 +1158,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     );
     const intro = h('p', { class: 'muted small' },
       `${nodes.length} ideas in ${new Set(nodes.map((n) => n.room)).size} rooms. Open any of them, any time. You have met ${met}. `
-      + 'Daily cards stay hidden until their day.');
+      + 'Today\'s card opens once you have written on it.');
     const body = arrangement === 'rooms' ? galleryRooms(nodes, rooms, focus)
       : arrangement === 'themes' ? galleryThemes(index.themes, theme, kind)
         : galleryTimeline(nodes, focus, featuredOnly);
@@ -1201,7 +1202,13 @@ function showMap() {
       h('p', {}, 'Every idea in the gallery as a point of light. The ones you have met shine; the faint ones are still to explore.'),
       mount,
       h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms') }, '← Gallery')));
-    mountMap(mount, data, { h, onOpen: openEntry });
+    mountMap(mount, data, {
+      h, onOpen: openEntry,
+      onTrail: async (from, ids) => {
+        try { await api('/api/trail', { method: 'POST', body: { from_id: from.id, ids, date: today() } }); notice(`Journey started from "${from.title}". Your next daily ideas follow it, one stop a day.`); return true; }
+        catch { notice('Could not start the journey. Try again.'); return false; }
+      },
+    });
   });
 }
 

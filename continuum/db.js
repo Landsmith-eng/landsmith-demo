@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS recall (
 );
 
 -- A problem to consider for an idea: written once (by Claude, when Talk is on) and kept for everyone.
+-- A journey the user started from the Map: a few ideas in order, followed by the daily pick until walked.
+CREATE TABLE IF NOT EXISTS trails (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  from_id TEXT NOT NULL REFERENCES nodes(id),
+  ids TEXT NOT NULL,                    -- JSON: node ids, in order
+  local_date TEXT NOT NULL
+);
 -- The Parthenon: small invite-only groups that talk over one topic at a time, live, with Claude as moderator.
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY,

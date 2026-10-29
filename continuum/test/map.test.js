@@ -46,3 +46,19 @@ test('the Map draws the road walked and marks fuzzy reviews', async () => {
   assert.equal(node.fuzzy, true);
   assert.equal(node.state, 'written');
 });
+
+test('a journey started on the Map sets the next daily ideas, one stop a day, and shows on the Map', async () => {
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('trailer', 'Trailer');
+  const call = (path, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'x-continuum-token': 'trailer', 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).then((r) => r.json().then((j) => ({ status: r.status, json: j })));
+  const today = (await call('/api/today?date=2026-03-01')).json.node.id;
+  const stops = ['plato_ring_of_gyges', 'kant_ends_not_means', 'camus_myth_of_sisyphus'].filter((id) => id !== today);
+  // Today's unwritten card is never taken into a journey.
+  assert.equal((await call('/api/trail', { from_id: 'epictetus_up_to_us', ids: [today], date: '2026-03-01' })).status, 400);
+  assert.equal((await call('/api/trail', { from_id: 'epictetus_up_to_us', ids: stops, date: '2026-03-01' })).status, 200);
+  let t = (await call('/api/today?date=2026-03-01')).json.node;
+  assert.equal(t.id, stops[0]); assert.match(t.why, /journey you started/);
+  await call('/api/respond', { node_id: t.id, body: 'my take', date: '2026-03-01' });
+  t = (await call('/api/today?date=2026-03-02')).json.node;
+  assert.equal(t.id, stops[1]); assert.match(t.why, /stop 2 of/);
+  assert.deepEqual((await call('/api/map?date=2026-03-02')).json.trail.ids, stops);
+});

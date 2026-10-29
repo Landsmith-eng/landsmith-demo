@@ -728,3 +728,24 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .pt-writing { min-height: 1.4em; font-style: italic; }
 .pt-compose textarea { min-height: 0; }
 [hidden]{display:none !important}
+
+/* The Map, full screen: it fills the phone, and the header, corner buttons and menu fade away. */
+.map-stage { position: relative; }
+.map-exit { display: none; position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 2; font-size: 18px; padding: 8px 14px; }
+html .bar, html .corner, html .dock { transition: opacity .5s ease; }
+html.map-full .bar, html.map-full .corner, html.map-full .dock { opacity: 0; pointer-events: none; }
+html.map-full { overflow: hidden; }
+.map.map-full { position: fixed; inset: 0; z-index: 7; margin: 0; background: radial-gradient(ellipse at center, rgba(4, 8, 10, .55), rgba(4, 8, 10, .88)); }
+.map.map-full .map-controls, .map.map-full .search, .map.map-full .map-legend { display: none; }
+.map.map-full .map-stage { height: 100svh; }
+.map.map-full .map-canvas { height: 100svh; margin: 0; background: none; }
+.map.map-full .map-exit { display: inline-flex; }
+.map.map-full .map-info { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; margin: 0; max-height: 44svh; overflow-y: auto;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to bottom, rgba(8, 13, 10, .55), rgba(8, 13, 10, .92) 24px);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-radius: 18px 18px 0 0; font-size: 1.02rem; }
+.map.map-full .map-info:empty, .map.map-full .map-info:has(> p.muted:only-child) { max-height: 3.2em; }
+.map-journey { margin: 14px 0 6px; }
+.map-journey ol { margin: 6px 0 8px; padding-left: 1.3em; }
+.map-journey li { margin: 4px 0; }
+.map-links .eyebrow { margin-top: 12px; }
+html.map-full main > :not(.map) { visibility: hidden; }

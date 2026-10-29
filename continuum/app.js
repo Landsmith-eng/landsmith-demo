@@ -195,6 +195,12 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const id = ids.find((x) => fresh.some((n) => n.id === x)) ?? ids[0];
       if (id) return { id, why: `You talked about ${v.topic} (${v.local_date}). This idea speaks to it.` };
     }
+    // Then a journey they started on the Map: its next stop not yet written on.
+    const trail = trq.get.get(uid);
+    if (trail) {
+      const ids = JSON.parse(trail.ids); const k = ids.findIndex((id) => inPool.has(id));
+      if (k >= 0) return { id: ids[k], why: `On the journey you started from "${q.node.get(trail.from_id)?.title ?? 'the Map'}": stop ${k + 1} of ${ids.length}.` };
+    }
     // Then their journey from the debates: the next stop they have not written on.
     for (const stop of journeyFor(uid).stops) {
       for (const [card, why] of [[stop.shares, 'makes the case that spoke to you, at its best'], [stop.differs, 'makes the other camp\'s case, at its best']]) {
@@ -531,6 +537,26 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     fuzzy: db.prepare(`SELECT node_id FROM recall WHERE user_id = ? AND step = 0 AND last_date IS NOT NULL`),
   };
   const mapEdges = mapQ.edges.all();
+  const trq = {
+    get: db.prepare('SELECT from_id, ids, local_date FROM trails WHERE user_id = ?'),
+    set: db.prepare(`INSERT INTO trails (user_id, from_id, ids, local_date) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id) DO UPDATE SET from_id = excluded.from_id, ids = excluded.ids, local_date = excluded.local_date`),
+    drop: db.prepare('DELETE FROM trails WHERE user_id = ?'),
+  };
+  // Start a journey from the Map: up to six ideas in order (never today's unwritten card). It replaces any earlier one.
+  app.post('/api/trail', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const states = new Map(mapEntries(uid, date).map((e) => [e.id, e.state]));
+    const from = String(req.body?.from_id ?? '');
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(String)
+      .filter((id, i, a) => a.indexOf(id) === i && q.node.get(id) && states.get(id) !== 'today').slice(0, 6);
+    if (!q.node.get(from) || !ids.length) return res.status(400).json({ error: 'bad_trail' });
+    trq.set.run(uid, from, JSON.stringify(ids), date);
+    // Let the journey lead from today, if today's card is not written yet.
+    if (!q.writtenOn.get(uid, date)) q.dropPick.run(uid, date);
+    res.json({ ok: true });
+  });
+  app.delete('/api/trail', auth, (req, res) => { trq.drop.run(req.user.id); res.json({ ok: true }); });
   const layouts = computeLayouts(mapQ.nodes.all(), mapEdges, themes);
   let lineOf = null; // each idea's first sentence, made on first use (firstLine is defined further down)
   app.get('/api/map', auth, (req, res) => {
@@ -550,6 +576,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       })),
       edges: mapEdges.map((e) => ({ from: e.from_id, to: e.to_id, relation: e.relation })),
       road: mapQ.road.all({ uid }).map((r) => r.node_id).filter((id) => !hidden.has(id)),
+      trail: (() => { const t = trq.get.get(uid); return t ? { from: t.from_id, ids: JSON.parse(t.ids), since: t.local_date } : null; })(),
     });
   });
 
