@@ -24,9 +24,21 @@ for (const n of content.nodes) {
   if (n.type !== 'practice' && !content.edges.some((e) => e.from === n.id || e.to === n.id)) bad(`${n.id}: has no edges`);
   // Court cases: field law, a decision year, and each opinion with a role, an author, our plain gist and a verbatim
   // passage. US federal court opinions are public domain, so the passages are quoted, never summarised.
+  // A pending case (argued or set for argument, not yet decided) carries `as_of` (the date it was last checked as
+  // undecided) and no opinions. Its source face is the Question Presented, quoted verbatim; the citation names the
+  // docket number and the argument date; source_url is the Court's docket page. The plain face sets out both sides
+  // in our words and says the case is undecided; the prompt is a question.
+  if (n.type === 'case' && n.as_of != null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(n.as_of)) bad(`${n.id}: a pending case's as_of must be YYYY-MM-DD`);
+    if (n.opinions) bad(`${n.id}: a pending case (one with as_of) has no opinions yet; drop as_of once it is decided`);
+    if (!/^https:\/\/www\.supremecourt\.gov\/docket\//.test(n.source_url ?? '')) bad(`${n.id}: a pending case's source_url is its supremecourt.gov docket page`);
+    if (!/\bNo\. \d{2}-\d+/.test(n.source_citation ?? '') || !/argu/i.test(n.source_citation ?? '')) bad(`${n.id}: a pending case's citation needs the docket number ("No. 25-581") and the argument date`);
+    if (!/\bundecided\b/i.test(n.plain_face ?? '')) bad(`${n.id}: a pending case's plain face must say it is undecided`);
+    if (!/\?\s*$/.test(n.prompt ?? '')) bad(`${n.id}: a pending case's prompt must end with a question mark`);
+  }
   if (n.type === 'case') {
     if (n.field !== 'law') bad(`${n.id}: a case belongs in field "law"`);
-    if (!Array.isArray(n.opinions) || !n.opinions.length) bad(`${n.id}: a case needs its opinions (majority first, then concurrences and dissents)`);
+    if (!Array.isArray(n.opinions) || !n.opinions.length) { if (n.as_of == null) bad(`${n.id}: a case needs its opinions (majority first, then concurrences and dissents), or as_of if it is still pending`); }
     else {
       if (!['majority', 'plurality'].includes(n.opinions[0].role)) bad(`${n.id}: the first opinion must be the majority or plurality`);
       for (const [i, o] of n.opinions.entries()) {

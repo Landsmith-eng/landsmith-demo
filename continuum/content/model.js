@@ -28,3 +28,5 @@ export const REL_HELP = {
 // Court opinions: who wrote what. A case's plain face carries the holding; each opinion here is one voice:
 // { role, author, gist (our plain account), quote (verbatim), echoes (older node id), echo_note (why; cited or ours) }.
 export const OPINION_ROLES = ['majority', 'plurality', 'concurrence', 'dissent'];
+// A pending case (argued or set for argument, not yet decided) has no opinions; instead `as_of` (YYYY-MM-DD) says
+// when it was last checked as undecided, and its source face is the Question Presented, quoted verbatim.

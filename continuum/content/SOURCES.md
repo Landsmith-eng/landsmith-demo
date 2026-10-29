@@ -303,3 +303,59 @@ persecuted minority in history".
 
 Echo links: Frankfurter → Socrates is **cited**. The other three (Jackson → Zera Yacob, Black and Douglas → Antigone,
 Murphy → Gandhi) are **ours**: each note says so.
+
+## Batch 10: law_current.js (Mahmoud v. Taylor and four pending cases), 2026-10-29
+
+Everything was downloaded from www.supremecourt.gov on 2026-10-29 and checked there; nothing about the cases comes
+from memory. Quotations were matched by `scripts/verify-quotes.js` against `pdftotext` output of the Court's PDFs
+(all 8 passages matched; a word changed on purpose was caught). The verifier now drops each PDF page's running head
+and footnotes, so the holding sentence that crosses pages 1 and 2 of the Mahmoud slip opinion matches as one sentence.
+
+**`mahmoud_storybook_opt_outs`**: Mahmoud v. Taylor, No. 24-297, slip opinion `opinions/24pdf/24-297_4f14.pdf` (linked
+from the docket page; the slip-opinion list now links the preliminary print, `606us2r63_n648.pdf`, whose extracted text
+drops "fi" and "ff" ligatures, so the slip opinion was used instead). Argued April 22, 2025; decided June 27, 2025;
+606 U.S. 522 (from the 2024 slip-opinion list). Vote and authorship from the syllabus and the docket entry of June 27,
+2025: Alito for the Court with Roberts, Thomas, Gorsuch, Kavanaugh and Barrett; Thomas concurring; Sotomayor dissenting
+with Kagan and Jackson. Justices are named by surname only, as in the opinion.
+
+| Passage | Where in the slip opinion | Result |
+|---|---|---|
+| Source face: "Today, we hold …" … "And a government cannot condition …" (citation to Yoder cut) | opinion of the Court, pp. 1–2 | matched (2 fragments) |
+| Majority: "We reject this chilling vision …" | opinion of the Court, p. 31 | matched |
+| Concurrence (Thomas): "The curriculum itself also betrays …" … "constitute an impermissible attempt to 'standardize' the views of students" (two citations cut) | Thomas, J., concurring, pp. 9–10 | matched (3 fragments) |
+| Dissent (Sotomayor): "Today's ruling threatens the very essence of public education …" | Sotomayor, J., dissenting, p. 38 | matched |
+
+Facts in the plain face and gists come from the syllabus and the opinions: the 2022–2023 school year (the dissent dates
+the announcement to October 2022); opt outs allowed at first and rescinded "less than a year" later; no notice; parents
+"from diverse religious backgrounds"; the preliminary injunction and its terms; Barnette as "an early example"; Pierce's
+"standardize its children" (quoted by Thomas); a board member likening parents to "white supremacists" and "xenophobes"
+(Thomas, quoting the majority); the dissent's reading of Barnette (compelled declaration versus exposure), "no limiting
+principle", schools that "may instead censor their curricula", and the "subset of parents" with a veto.
+
+**Pending cases.** Chosen from the October Term 2026 argument calendars (`oral_arguments/argument_calendars/
+MonthlyArgumentCal{October,November,December}2026.pdf`). Each source face is the Question Presented, verbatim, from
+`qp/<docket>qp.pdf`; only the questions are quoted, because the preambles are written by the petitioners. Parties, lower
+court, grant date and "SET FOR ARGUMENT" date come from each docket page. Each side's argument is our summary of the
+parties' merits briefs on the docket (statement, introduction, summary of argument). All four are undecided as of
+2026-10-29 (no judgment on any docket).
+
+| Node | Docket | Argument | Sides taken from |
+|---|---|---|---|
+| `st_mary_catholic_preschool` | No. 25-581, cert. granted 4/20/2026 limited to Questions 1–2; 10th Cir., 154 F.4th 752 | Nov 3, 2026 | Petitioners' brief (June 25, 2026); respondents' brief (Aug 17, 2026) |
+| `jouppi_airplane_forfeiture` | No. 25-246, granted 7/20/2026; Alaska Sup. Ct., 566 P.3d 943 | Dec 1, 2026 | Petitioner's brief (Sept 3, 2026); Alaska's brief (Oct 5, 2026) |
+| `viramontes_grant_semiautomatic_rifles` | Nos. 25-238 and 25-566, granted 6/30/2026 on the QP in 25-238, consolidated; 7th Cir. and 2d Cir., 153 F.4th 213 | Dec 2, 2026 | Petitioners' brief (Aug 28, 2026); Cook County's brief in opposition (Oct 29, 2025): no respondents' merits brief is on the docket yet |
+| `rnc_proof_of_citizenship` | No. 25-1017, granted 6/29/2026; 9th Cir., 129 F.4th 691 | Dec 8, 2026 | RNC's brief (Aug 28, 2026); Mi Familia Vota's brief (Oct 13, 2026); the docket lists the United States as supporting the RNC |
+
+Contested facts are given as each side's claim: in Jouppi, the petitioner calls it one visible six-pack belonging to a
+passenger; Alaska says two cases and four six-packs. The $95,000 value is in the QP preamble only and is left out.
+
+Left out because not verified: Connecticut's own argument in Grant (its brief in opposition was not read; only Cook
+County's side is given); No. 25-1019 (Petersen v. Mi Familia Vota, same Ninth Circuit judgment), whose status was not
+clear from its docket; the Second Circuit's and Seventh Circuit's reasoning beyond what the petitioners' brief reports.
+
+Echo links. **Cited:** Barnette → Mahmoud (both majority and dissent); Mahmoud → St. Mary (both briefs: the parishes
+list it among cases not decided under Smith; Colorado quotes it, 606 U.S. at 564); Antigone → St. Mary (the parishes'
+brief cites Antigone 751–752, Fagles). **Ours, not cited:** Socrates, Zera Yacob and Burke → Mahmoud (and the opinion
+echoes to Burke and Socrates); Mozi → St. Mary; Han Fei and Kant → Jouppi; Hobbes and the Grand Inquisitor → Viramontes;
+Rousseau and Tocqueville → RNC. From memory, not from a fetched text: that Socrates was charged with corrupting the
+young (Apology 24b; the Apology node quotes 38a).

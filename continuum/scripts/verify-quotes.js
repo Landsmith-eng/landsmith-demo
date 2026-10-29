@@ -1,7 +1,7 @@
 // Independent quote check: every source_face fragment that is not labelled a summary must appear
 // verbatim (whitespace/quote-mark normalised) in one of the downloaded source texts.
 //   node scripts/verify-quotes.js <dir-of-downloaded-texts> [branch-file-name]
-// Download the texts yourself (Gutenberg .txt, Wikisource raw pages) into that directory first; they are
+// Download the texts yourself (Gutenberg .txt, Wikisource raw pages, `pdftotext` output of court PDFs) into that directory first; they are
 // not kept in the repo. Fragments are split on ellipses and paragraph breaks, so each cut is checked separately.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,7 +13,17 @@ const files = [];
 const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else files.push(p); } };
 walk(root);
 const norm = (t) => t.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\{\d+\}/g, ' ').replace(/\[(FN#|Pg )?\d+\]/g, ' ').replace(/\s\*[a-z]\b/g, ' ').replace(/\b\d+:\d+\b/g, ' ').replace(/'''?|\[\[|\]\]|\{\{[^}]*\}\}|_/g, '').replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/[—–]|--/g, '-').replace(/-\s*-/g,'-').replace(/\s+/g, ' ').toLowerCase();
-const corpus = files.map((f) => norm(readFileSync(f, 'utf8'))).join(' \u0000 ');
+// Text extracted from a PDF with `pdftotext` (Supreme Court slip opinions, Questions Presented) has a form feed
+// between pages. Each page opens with a running head ("Cite as: 606 U. S. ____ (2025)", the page number, the
+// caption "MAHMOUD v. TAYLOR", the opinion label) and may end with footnotes after a "——————" rule. Both are
+// dropped and the pages rejoined, so a passage that runs across a page break is matched as one sentence.
+const HEAD = /^(\s*|\d+|Cite as: .*|[A-Z][A-Z.,'’& ]* v\. [A-Z][A-Z.,'’& ]*|Syllabus|Opinion of the Court|Appendix to .*|(Opinion of )?[A-Z]+, (C\. )?J\., (concurring|dissenting).*)$/;
+const unpage = (t) => !t.includes('\f') ? t : t.split('\f').map((page) => {
+  const lines = page.replace(/—{4,}[\s\S]*$/, '').split('\n');
+  while (lines.length && HEAD.test(lines[0].trim())) lines.shift();
+  return lines.join('\n');
+}).join('\n');
+const corpus = files.map((f) => norm(unpage(readFileSync(f, 'utf8')))).join(' \u0000 ');
 const { nodes } = await import(contentIndex);
 let bad = 0;
 // A court case's opinions are quoted too: each opinion's passage is checked like a source face of its own.
