@@ -112,6 +112,6 @@ Save each as `public/img/spares/<file>.webp`; Talk and the debates borrow daily 
 | `homework_reading_room` | Homework sheets | A long reading-room table under green lamps, open books and pencils, readers blurred far down the room, a cat asleep on a stack of books. After Hammershøi's interiors (c. 1900). |
 | `teach_lecture_hall` | Teach it back | An empty lecture hall in morning light, a chalkboard wiped clean with faint smudges (no writing), a pigeon on the high window ledge. After Hammershøi's grey light. |
 | `act_kitchen` | Act near you | A community kitchen hall, volunteers blurred serving at long tables, steam rising, a dog waiting patiently by the door. After Pissarro's market and harvest scenes (1880s). |
-| `circles_lanterns` | Circles | A ring of chairs around a small fire in a garden at dusk, figures blurred, lanterns in the trees, fireflies. After Whistler's nocturnes (1870s). |
+| `circles_lanterns` | The Parthenon (groups) | A ring of chairs around a small fire in a garden at dusk, figures blurred, lanterns in the trees, fireflies. After Whistler's nocturnes (1870s). |
 | `recall_fog_path` | Daily review | A garden path in morning fog, the near stones sharp and the far ones fading into white, a hare stopped on the path. After George Inness's late landscapes (1890s). |
 | `problem_crossroads` | A problem to consider | A country crossroads at evening with a wooden signpost (blank arms, no lettering), a fox pausing at the fork. After Constable's lanes (1820s). |

@@ -77,10 +77,15 @@ function render(...nodes) {
 // Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
 const TAB_BG = {
   practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp',
-  talk: '/img/spares/daily_cafe_terrace.webp', // conversation at a café table, the oldest seminar there is
+  talk: '/img/spares/talk_two_chairs.webp', // two chairs under a plane tree, two cups: a conversation waiting
 };
-// Plates for pages outside the tabs: the debates stand on a bridge in the rain (two banks, one crossing).
-const PAGE_BG = { debates: '/img/spares/daily_bridge_rain.webp' };
+// Plates for pages outside the tabs: the debates in a colonnade where two groups argue at either end, an owl
+// between them. Pages whose plate has not arrived yet borrow one with a kindred meaning.
+const PAGE_BG = {
+  debates: '/img/spares/debates_stoa.webp',
+  map: '/img/spares/stillness_owl.webp', // until map_observatory arrives
+  homework: '/img/spares/daily_library_steps.webp', // until homework_reading_room arrives
+};
 // Any other page gets one of the daily-life plates, the same one all day.
 const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
 const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
