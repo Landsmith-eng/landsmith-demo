@@ -1,0 +1,36 @@
+# Render blueprint for Continuum (render.com → New → Blueprint → this repository).
+# One web service with a lasting disk for the database, the voice cache and nightly backups. The API keys are entered
+# in Render's dashboard when the blueprint is first applied (sync: false), never kept in git.
+services:
+  - type: web
+    name: continuum
+    runtime: node
+    region: oregon
+    plan: starter
+    rootDir: continuum
+    buildCommand: npm ci
+    # Refresh the content on every deploy (people's journals, views and posts are kept), then start.
+    startCommand: npm run seed && npm start
+    healthCheckPath: /api/plates
+    autoDeploy: true
+    disk:
+      name: continuum-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22.13.0"
+      - key: CONTINUUM_DB
+        value: /var/data/continuum.db
+      - key: CONTINUUM_TTS_CACHE
+        value: /var/data/tts
+      - key: CONTINUUM_BACKUPS
+        value: /var/data/backups
+      - key: CONTINUUM_ADMIN_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false

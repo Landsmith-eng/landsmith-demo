@@ -3,7 +3,8 @@ import { openDb } from './db.js';
 import { createApp } from './app.js';
 import { createTts } from './tts.js';
 import { createTalk, connectTalk } from './talk.js';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Private settings (the API keys) live in .env next to this file, never in git. KEY=value, one per line. A value in
 // .env wins over the same name set elsewhere on the computer, so the file is the one place to change a key.
@@ -27,6 +28,23 @@ const PORT = Number(process.env.PORT ?? 8878);
 const DB_PATH = process.env.CONTINUUM_DB ?? fileURLToPath(new URL('./data/continuum.db', import.meta.url));
 
 const db = openDb(DB_PATH);
+
+// Nightly backup (on a server, CONTINUUM_BACKUPS names a folder on its lasting disk): a consistent copy of the database
+// once a day, keeping the last 14. Cheap insurance against a bad update or a mistaken delete.
+const BACKUP_DIR = process.env.CONTINUUM_BACKUPS;
+if (BACKUP_DIR && DB_PATH !== ':memory:') {
+  const backup = () => {
+    try {
+      mkdirSync(BACKUP_DIR, { recursive: true });
+      const file = join(BACKUP_DIR, `continuum-${new Date().toISOString().slice(0, 10)}.db`);
+      if (!existsSync(file)) { db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`); console.log(`Backup written: ${file}`); }
+      const old = readdirSync(BACKUP_DIR).filter((f) => /^continuum-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().slice(0, -14);
+      for (const f of old) unlinkSync(join(BACKUP_DIR, f));
+    } catch (e) { console.warn(`Backup failed: ${e.message}`); }
+  };
+  setTimeout(backup, 60_000); // a minute after start, then daily
+  setInterval(backup, 24 * 3600_000).unref();
+}
 const { nodes, pictures } = db.prepare(
   'SELECT COUNT(*) AS nodes, COUNT(CASE WHEN seq IS NOT NULL AND image IS NOT NULL THEN 1 END) AS pictures FROM nodes').get();
 if (nodes === 0) console.warn('No content loaded. Run `npm run seed` first.');
@@ -37,7 +55,7 @@ const tts = createTts({
   voiceId: process.env.ELEVENLABS_VOICE_ID || undefined,
   model: process.env.ELEVENLABS_MODEL || undefined,
   sttModel: process.env.ELEVENLABS_STT_MODEL || undefined,
-  cacheDir: fileURLToPath(new URL('./data/tts/', import.meta.url)),
+  cacheDir: process.env.CONTINUUM_TTS_CACHE || fileURLToPath(new URL('./data/tts/', import.meta.url)),
 });
 
 const talk = createTalk({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.CONTINUUM_TALK_MODEL || undefined });
