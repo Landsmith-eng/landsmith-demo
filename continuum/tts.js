@@ -41,7 +41,8 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
       return voiceList;
     },
 
-    // Speech to text with ElevenLabs Scribe: a recording from the phone (webm, ogg, mp4 or wav) becomes text. Much
+    // Speech to text with ElevenLabs Scribe (POST /v1/speech-to-text, checked against ElevenLabs' API reference on
+    // 2026-10-29): a recording from the phone (webm, ogg, mp4 or wav) becomes text. Much
     // more exact than the phone's own recognition. Nothing is kept: the audio goes to ElevenLabs and the text comes
     // back. Tries the current model, then the earlier one if the account does not offer it.
     async transcribe(audio, mime = 'audio/webm', { language = null } = {}) {
@@ -51,6 +52,7 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
         form.append('file', new Blob([audio], { type: mime }), `speech.${mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'webm'}`);
         form.append('model_id', model);
         form.append('tag_audio_events', 'false');
+        if (model === 'scribe_v2') form.append('no_verbatim', 'true'); // drop "um", false starts and the like
         if (language) form.append('language_code', language);
         const res = await fetchImpl(`${API}/speech-to-text`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: form });
         if (res.ok) { const b = await res.json(); return { text: (b.text ?? '').trim(), model }; }
