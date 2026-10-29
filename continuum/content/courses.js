@@ -55,7 +55,7 @@ export const COURSES = [
   { id: 'openstax_psy_16_2', source: 'OpenStax', course: 'Psychology 2e', title: '16.2 Types of Treatment', url: OS_PSY + '16-2-types-of-treatment', thinkers: ['Aaron Beck', 'Carl Rogers'], keywords: ['cognitive therapy', 'cognitive-behavioral therapy', 'humanistic therapy'] },
 
   // ---- Open Yale Courses ----
-  { id: 'yale_phil176_13', source: 'Open Yale Courses', course: 'PHIL 176: Death', title: 'Lecture 13: Personal Identity, Part IV: What Matters?', url: OYC + 'philosophy/phil-176/lecture-13', thinkers: ['Derek Parfit'], keywords: ['personal identity', 'what matters in survival'] },
+  { id: 'yale_phil176_13', source: 'Open Yale Courses', course: 'PHIL 176: Death', title: 'Lecture 13: Personal Identity, Part IV: What Matters?', url: OYC + 'philosophy/phil-176/lecture-13', thinkers: [], keywords: ['personal identity', 'what matters in survival'] },
   { id: 'yale_phil176_17', source: 'Open Yale Courses', course: 'PHIL 176: Death', title: 'Lecture 17: The Badness of Death, Part II: The Deprivation Account', url: OYC + 'philosophy/phil-176/lecture-17', thinkers: ['Epicurus'], keywords: ['badness of death', 'deprivation account'] },
   { id: 'yale_phil176_18', source: 'Open Yale Courses', course: 'PHIL 176: Death', title: 'Lecture 18: The Badness of Death, Part III; Immortality, Part I', url: OYC + 'philosophy/phil-176/lecture-18', thinkers: ['Lucretius'], keywords: ['symmetry argument', 'immortality'] },
   { id: 'yale_phil176_19', source: 'Open Yale Courses', course: 'PHIL 176: Death', title: 'Lecture 19: Immortality Part II; The Value of Life, Part I', url: OYC + 'philosophy/phil-176/lecture-19', thinkers: ['Robert Nozick'], keywords: ['experience machine', 'value of life'] },
@@ -163,7 +163,6 @@ export const COURSE_LINKS = {
   herodotus_call_no_man_happy: ['yale_clcv205_5'],
   milton_mind_is_its_own_place: ['yale_engl220_9'],
   tocqueville_individualism: ['yale_plsc114_23', 'yale_plsc114_22'],
-  thucydides_melian_dialogue: ['yale_clcv205_17'],
   burke_little_platoon: ['openstax_ip_11_4'],
   copernicus_de_revolutionibus: ['openstax_ip_4_3', 'mit_sts002_readings'],
   kepler_harmony: ['mit_sts002_readings', 'mit_ccs10_readings'],
@@ -190,7 +189,6 @@ export const COURSE_LINKS = {
   deloria_god_is_red: ['openstax_ip_3_1'],
   freire_pedagogy_of_the_oppressed: ['openstax_ip_12_4'],
   cordova_native_american_philosophy: ['openstax_ip_3_1'],
-  jouppi_airplane_forfeiture: ['yale_phil181_17'],
   aquinas_unjust_law_is_no_law: ['openstax_ip_4_3', 'openstax_ip_8_3'],
   averroes_decisive_treatise: ['openstax_ip_4_3'],
   maimonides_middle_path: ['openstax_ip_4_3'],
@@ -225,7 +223,6 @@ export const COURSE_LINKS = {
   freud_pleasure_principle: ['openstax_psy_11_2', 'yale_psyc110_3', 'yale_socy151_15'],
   brickman_lottery_winners: ['openstax_psy_14_5', 'yale_psyc110_20'],
   kabat_zinn_mbsr: ['openstax_psy_4_6'],
-  einstein_spinozas_god: ['openstax_ip_6_4'],
   galileo_two_books: ['mit_sts002_readings', 'mit_ccs10_readings'],
   newton_general_scholium: ['mit_ccs10_readings', 'mit_sts002_readings'],
   skinner_beyond_freedom: ['openstax_psy_6_3', 'yale_psyc110_4'],
