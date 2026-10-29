@@ -135,6 +135,13 @@ const brightFor = (key) => {
   const n = [...`${today()}|${key}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
   return brightPlates[n % brightPlates.length];
 };
+// The mood plates have bright daytime twins with the same meaning: done for today (kites over the park), coming back
+// (a sail heading out at sunrise), a slow stretch (the meadow at first light), a mind changed (the barge on the river).
+const MOOD_BRIGHT = { stillness: 'kites_park', return: 'sunrise_sea_sail', patience: 'meadow_morning', change: 'sail_river_morning' };
+const moodPlate = (mood) => {
+  const twin = MOOD_BRIGHT[mood] && `/img/bright/${MOOD_BRIGHT[mood]}.webp`;
+  return (daytime() && twin && brightPlates.includes(twin) ? twin : null) ?? MOOD_BG[mood] ?? null;
+};
 const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
 // Plates with a meaning, shown when the situation fits: done for today (the owl), coming back after a gap (the
 // boat), a reluctant stretch (the dewy web), ready to grow or a changed mind (the braided river).
@@ -398,7 +405,7 @@ function showPractice({ practice = null, size = null } = {}) {
       finish.disabled = true;
       try {
         const after = await api('/api/practice', { method: 'POST', body: { practice_id: plan.practice.id, size: sz, seconds: spent, intention: intention.value, date: today() } });
-        setWallpaper(MOOD_BG[after.mood] ?? TAB_BG.practice, wallMax); // done: the owl settles in behind
+        setWallpaper(moodPlate(after.mood) ?? TAB_BG.practice, wallMax); // done: the owl (by day, the kites) settles in behind
         endBox.replaceChildren(
           h('h2', {}, after.streak > 1 ? `Done. ${after.streak} days in a row.` : 'Done. That is how a habit starts.'),
           h('p', { class: 'plain' }, sz === 'tiny' ? 'Ten seconds counts. Tomorrow, the same again, or a little more.' : 'Small, repeated, and yours.'),
@@ -442,7 +449,7 @@ function showPractice({ practice = null, size = null } = {}) {
           h('button', { type: 'button', class: 'chip', onclick: () => showPractice({ practice: c.id, size: sz }) }, c.title))),
       ]),
     ].filter(Boolean);
-    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: MOOD_BG[plan.mood] ?? TAB_BG.practice });
+    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: moodPlate(plan.mood) ?? TAB_BG.practice });
   });
 }
 
@@ -1007,6 +1014,16 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null, b
   rail.hidden = panels.length < 2;
   stageObserver?.disconnect();
   let sawSource = false;
+  // By day, the end of an idea ("Keep exploring") opens into a bright plate, like stepping out into daylight; scrolling
+  // back up returns to the idea's own picture. Never before writing (a closed card's picture stays a hint).
+  const daylight = backgroundMax >= 1 && brightFor(`end:${node.id}`);
+  let outside = false;
+  const step = (out) => {
+    if (!daylight || out === outside) return;
+    outside = out;
+    wallpaper.classList.remove('on');
+    setTimeout(() => { if (document.body.contains(wrap)) setWallpaper(out ? daylight : background, backgroundMax); }, 350);
+  };
   stageObserver = new IntersectionObserver((entries) => {
     for (const e of entries) {
       const p = e.target; const i = panels.indexOf(p);
@@ -1015,6 +1032,7 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null, b
         rail.querySelectorAll('.dot').forEach((d, k) => d.classList.toggle('on', k === i));
         motifLevel(LEVEL[p.dataset.kind] ?? .7);
         if (p.dataset.kind === 'source' && !sawSource) { sawSource = true; onSource?.(); }
+        step(p.dataset.kind === 'end');
       } else if (!e.isIntersecting && e.boundingClientRect.top < 0) p.classList.add('past');
       else if (!e.isIntersecting) p.classList.remove('past');
     }
@@ -1137,7 +1155,7 @@ function showReview(days = 7) {
       h('button', { type: 'button', class: `btn ${days === 0 ? '' : 'ghost'}`, onclick: () => showReview(0) }, 'Everything'));
     const changed = r.reactions.changed + r.reactions.somewhat;
     const answered = changed + r.reactions.unchanged;
-    pageBg = changed ? MOOD_BG.change : null; // a mind changed this week: the river finding new channels
+    pageBg = changed ? moodPlate('change') : null; // a mind changed this week: the river finding new channels
     const practices = r.practices.length
       ? h('div', {}, h('h2', {}, 'Where it kept landing'),
           h('p', { class: 'muted small' }, 'The practices your walks arrived at, most often first.'),
