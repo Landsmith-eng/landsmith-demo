@@ -4,7 +4,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const TALK_MODEL = 'claude-opus-5-5';
-export const MAX_USER_TEXT = 2000;
+export const MAX_USER_TEXT = 4000;
 const ID_RE = /^[a-z0-9_]{3,80}$/;
 
 export function createTalk({ apiKey, client = null, model = TALK_MODEL } = {}) {
@@ -73,6 +73,7 @@ Give, in short paragraphs that each begin with a plain label and a colon, and wi
 "Where it is weaker:" unexamined assumptions, missing evidence, and the strongest objection, with who on the map makes it. If you find no real weakness, say so plainly instead of inventing one.
 "What would change the picture:" the facts or arguments that, if they turned out true, would strengthen or weaken it.
 Then end with one question for the user. Use web_search only to check current facts (the state of a law, a case, the news, a statistic) and say what you found. Hold every side of a political question to the same standard. Challenge the idea, never the person. About 200 to 300 words.`,
+  teach: `For this message, the user is teaching an idea back: explaining it in their own words, as a student would to a friend, to see whether they have it. First open the idea with read_idea (the one they name, or the one they were reading). Then, in two to four short paragraphs with no formatting: say plainly what they have right, in one or two sentences; then what is missing, blurred or mistaken, measured against the idea's own source and plain words (quote the source briefly, word for word, if it helps); then give one memorable way to hold the idea (an image, an example or a short phrase). End with one question that makes them use the idea on something in their own life. Be warm and exact, like a good tutor: never grade or score, never lecture. About 120 to 200 words.`,
   act: `For this message, the user wants to put a practice into action where they live. Use web_search to find three to five current, real volunteer or community opportunities near the place they name that fit the practice: for example soup kitchens, food banks, shelters, holiday gift drives, mentoring, visiting the elderly, and for civic life, poll worker sign-up through the official state or county election office. For each, one plain sentence: the organisation, what you would do there, and the link where the search found it (write the full URL). List only what the search actually found; never invent an organisation, a date or a phone number. If the search finds little, say so and suggest where to look (the county website, the public library, VolunteerMatch, Idealist). End with one small first step for this week. Do not ask for, or repeat, any personal detail beyond the place.`,
 };
 
@@ -149,4 +150,43 @@ export async function writeProblem(talk, n) {
   });
   if (msg.stop_reason === 'refusal') return null;
   return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || null;
+}
+
+// A homework sheet for one idea, in the shapes college philosophy courses use: key terms, close reading of the source,
+// the argument laid out in steps, the strongest objection and a reply, an application, and an essay question. Model
+// answers are included; the app shows them only after the user has written their own. `context` is the idea as
+// read_idea gives it (plain words, source, citation, opinions, links). Returns the sheet as an object, or null.
+export const HOMEWORK_SCHEMA = {
+  type: 'object',
+  properties: {
+    key_terms: { type: 'array', items: { type: 'object', properties: { term: { type: 'string' }, meaning: { type: 'string' } }, required: ['term', 'meaning'], additionalProperties: false } },
+    close_reading: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, model_answer: { type: 'string' } }, required: ['question', 'model_answer'], additionalProperties: false } },
+    argument: { type: 'object', properties: { premises: { type: 'array', items: { type: 'string' } }, conclusion: { type: 'string' } }, required: ['premises', 'conclusion'], additionalProperties: false },
+    objection: { type: 'object', properties: { objection: { type: 'string' }, from: { type: 'string' }, model_reply: { type: 'string' } }, required: ['objection', 'from', 'model_reply'], additionalProperties: false },
+    apply: { type: 'object', properties: { situation: { type: 'string' }, question: { type: 'string' }, model_answer: { type: 'string' } }, required: ['situation', 'question', 'model_answer'], additionalProperties: false },
+    essay: { type: 'string' },
+  },
+  required: ['key_terms', 'close_reading', 'argument', 'objection', 'apply', 'essay'],
+  additionalProperties: false,
+};
+export async function writeHomework(talk, n, context) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 32000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: HOMEWORK_SCHEMA } },
+    system: `You write homework sheets for Continuum, a daily philosophy app, at the level of a good first-year college course, for curious adults reading on a phone. Plain, exact English; no jargon left unexplained; no formatting inside the strings.
+- key_terms: two to four terms the idea depends on (in the thinker's own vocabulary where there is one), each with a one-sentence meaning.
+- close_reading: two or three questions about the source passage itself (what a phrase means, why a word was chosen, what the passage assumes), each with a model answer of two to four sentences that points back to the text. Quote the source only word for word.
+- argument: the idea's reasoning as three to five numbered premises (without numbers in the strings) and a conclusion, in plain words, so each step can be questioned.
+- objection: the strongest objection, preferably from a thinker the idea is linked to as arguing against it (from: their name, or "A common objection"), and a model reply the thinker could give, two to four sentences each.
+- apply: a concrete everyday or civic situation (two or three sentences, no names of real private people), a question asking how the idea would guide it, and a model answer of three to five sentences that also says where the idea strains.
+- essay: one essay question for about 300 words that asks the reader to take and defend a position.
+Model answers are examples of a good answer, not the only one. Never invent quotations, dates or sources.`,
+    messages: [{ role: 'user', content: `Write the homework sheet for this idea.\n\n${context}` }],
+  });
+  if (msg.stop_reason === 'refusal' || msg.stop_reason === 'max_tokens') return null;
+  const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  try { return JSON.parse(text); } catch { return null; }
 }

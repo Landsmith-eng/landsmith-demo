@@ -9,7 +9,9 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework } from './talk.js';
+// Free college courses to go further (links only); absent until content/courses.js exists.
+const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), 'public');
@@ -955,6 +957,52 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       if (body) pq2.put.run(n.id, body);
       res.json({ problem: body });
     } catch (e) { console.warn(`Problem for ${n.id}: ${e.status ?? ''} ${e.message}`); res.json({ problem: null }); }
+  });
+
+  // ── Homework sheets: one per idea, written once by Claude and kept for everyone. The sheet is written from the idea
+  // as Talk sees it, with every daily card except this one held back, so it can never give a later card away. ──
+  const hwq = {
+    get: db.prepare('SELECT body FROM homework WHERE node_id = ?'),
+    put: db.prepare('INSERT OR IGNORE INTO homework (node_id, body) VALUES (?, ?)'),
+    answers: db.prepare('SELECT part, body, local_date FROM homework_answers WHERE user_id = ? AND node_id = ?'),
+    answer: db.prepare(`INSERT INTO homework_answers (user_id, node_id, part, body, local_date) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (user_id, node_id, part) DO UPDATE SET body = excluded.body, local_date = excluded.local_date`),
+    clear: db.prepare('DELETE FROM homework_answers WHERE user_id = ? AND node_id = ? AND part = ?'),
+    daily: db.prepare('SELECT id FROM nodes WHERE seq IS NOT NULL'),
+  };
+  const PART_RE = /^(terms|reading_[0-9]|argument|objection|apply|essay)$/;
+  const homeworkWriting = new Map();
+  const coursesFor = (id) => (COURSE_LINKS[id] ?? []).map((cid) => COURSES.find((c) => c.id === cid)).filter(Boolean)
+    .map(({ source, course, title, url }) => ({ source, course, title, url }));
+  app.get('/api/homework/:id', auth, async (req, res) => {
+    const uid = req.user.id; const date = localDate(req.query.date);
+    const n = q.node.get(req.params.id);
+    if (!n || n.type === 'practice') return res.status(404).json({ error: 'not_found' });
+    if (hiddenIn(talkStates(uid, date), n)) return res.status(404).json({ error: 'not_found' });
+    const answers = Object.fromEntries(hwq.answers.all(uid, n.id).map((a) => [a.part, a.body]));
+    const base = { id: n.id, title: n.title, thinker: n.thinker, field: n.field ?? 'philosophy', answers, courses: coursesFor(n.id) };
+    const have = hwq.get.get(n.id);
+    if (have) return res.json({ ...base, sheet: JSON.parse(have.body) });
+    if (!talk) return res.json({ ...base, sheet: null, talk: false });
+    try {
+      if (!homeworkWriting.has(n.id)) {
+        const held = new Map(hwq.daily.all().filter((d) => d.id !== n.id).map((d) => [d.id, 'upcoming']));
+        homeworkWriting.set(n.id, writeHomework(talk, n, talkIdea(uid, date, held, n.id)).finally(() => homeworkWriting.delete(n.id)));
+      }
+      const sheet = await homeworkWriting.get(n.id);
+      if (sheet) hwq.put.run(n.id, JSON.stringify(sheet));
+      res.json({ ...base, sheet });
+    } catch (e) { console.warn(`Homework for ${n.id}: ${e.status ?? ''} ${e.message}`); res.json({ ...base, sheet: null }); }
+  });
+  app.post('/api/homework/:id', auth, (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const n = q.node.get(req.params.id);
+    const { part } = req.body ?? {};
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim().slice(0, 6000) : '';
+    if (!n || n.type === 'practice' || hiddenIn(talkStates(uid, date), n)) return res.status(404).json({ error: 'not_found' });
+    if (!PART_RE.test(part ?? '')) return res.status(400).json({ error: 'bad_part' });
+    if (body) hwq.answer.run(uid, n.id, part, body, date); else hwq.clear.run(uid, n.id, part);
+    res.json({ ok: true });
   });
 
   app.get('/api/stance', auth, (req, res) => {

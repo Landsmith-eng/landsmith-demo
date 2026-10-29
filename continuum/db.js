@@ -121,6 +121,21 @@ CREATE TABLE IF NOT EXISTS recall (
 );
 
 -- A problem to consider for an idea: written once (by Claude, when Talk is on) and kept for everyone.
+-- Homework sheets: one per idea, written once by Claude and kept (JSON, see HOMEWORK_SCHEMA in talk.js).
+CREATE TABLE IF NOT EXISTS homework (
+  node_id TEXT PRIMARY KEY REFERENCES nodes(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- What the user wrote on a sheet: one answer per part (e.g. "reading_0", "argument", "essay").
+CREATE TABLE IF NOT EXISTS homework_answers (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  part TEXT NOT NULL,
+  body TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  PRIMARY KEY (user_id, node_id, part)
+);
 CREATE TABLE IF NOT EXISTS problems (
   node_id TEXT PRIMARY KEY REFERENCES nodes(id),
   body TEXT NOT NULL,

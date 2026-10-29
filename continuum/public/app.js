@@ -269,6 +269,8 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       node.room && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('themes') }, 'Browse the themes'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node }) }, 'Talk it through'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showHomework(node) }, 'Homework sheet'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
       h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today')),
   ]));
   return P;
@@ -1295,6 +1297,7 @@ function togglePlay(view) {
 const TALK_MODES = {
   talk: { label: 'Talk', placeholder: 'Say what you think…' },
   weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
+  teach: { label: 'Teach it back', placeholder: 'Explain an idea in your own words, as if to a friend…' },
 };
 function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false } = {}) {
   setNav('talk');
@@ -1349,7 +1352,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
 
-    const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '2000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
+    const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '4000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
     // Talk or Weigh an opinion (a voice of reason): what the next message asks for. Act (from a practice) is its own page.
     const modeChips = current !== 'act' && h('div', { class: 'size-chips talk-modes', role: 'group', 'aria-label': 'Mode' },
       Object.entries(TALK_MODES).map(([k, m]) => {
@@ -1364,7 +1367,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       }));
     ta.placeholder = current === 'act' ? 'Your town, or zip code' : TALK_MODES[current].placeholder;
     pageBg = talkPlate(current);
-    if (about) ta.value = `I have just been reading "${about.title}". `;
+    if (about) ta.value = current === 'teach' ? `Let me explain "${about.title}" in my own words: ` : `I have just been reading "${about.title}". `;
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
     const status = h('div', { class: 'muted small', role: 'status' });
     const compose = h('div', { class: 'talk-compose' }, ta);
@@ -1376,7 +1379,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     async function submit() {
       const typed = ta.value.trim();
       if (!typed || send.disabled) return;
-      const sendAs = current === 'act' ? 'act' : current === 'weigh' ? 'weigh' : null;
+      const sendAs = ['act', 'weigh', 'teach'].includes(current) ? current : null;
       const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
       stopTalkVoice(); stopMic();
       send.disabled = true; ta.value = ''; status.textContent = '';
@@ -1486,6 +1489,77 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
 
 // A problem to consider: one concrete situation that puts the idea to the test, and a question. Think it through in
 // Talk, or just carry it through the day.
+// ── Homework: a sheet for one idea, in the shapes a college course uses. Each part asks you to write first; the model
+// answer opens only after you have. Answers are kept as you type. ──
+function showHomework(node) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.homework;
+    render(h('h1', {}, 'Homework'), h('p', {}, node.title),
+      h('p', { class: 'muted' }, 'Opening the sheet… The first time an idea is asked for, Claude writes it, which takes about half a minute.'));
+    const hw = await api(`/api/homework/${encodeURIComponent(node.id)}?date=${today()}`);
+    pageBg = PAGE_BG.homework;
+    const answers = hw.answers ?? {};
+    const sheet = hw.sheet;
+    const save = (part, body) => api(`/api/homework/${encodeURIComponent(node.id)}`, { method: 'POST', body: { part, body, date: today() } }).catch(() => {});
+    const timers = {};
+    // One written part: your answer, then (once you have written) the model answer.
+    const writePart = (part, { rows = 4, placeholder = 'Your answer…', model = null, min = 20 } = {}) => {
+      const ta = h('textarea', { rows: String(rows), maxlength: '6000', placeholder, 'aria-label': placeholder });
+      ta.value = answers[part] ?? '';
+      const reveal = model && h('button', { type: 'button', class: 'btn ghost hw-reveal' }, 'Compare with a model answer');
+      const shown = model && h('div', { class: 'hw-model', hidden: true }, h('div', { class: 'eyebrow' }, 'A model answer (one good answer, not the only one)'), model);
+      const ready = () => { if (reveal) reveal.disabled = ta.value.trim().length < min; };
+      ta.addEventListener('input', () => { ready(); clearTimeout(timers[part]); timers[part] = setTimeout(() => save(part, ta.value), 700); });
+      ta.addEventListener('blur', () => { clearTimeout(timers[part]); save(part, ta.value); });
+      reveal?.addEventListener('click', () => { shown.hidden = false; reveal.hidden = true; });
+      ready();
+      return [ta, reveal && h('div', { class: 'row', style: 'justify-content:flex-start' }, reveal), shown];
+    };
+    const section = (title, ...kids) => h('section', { class: 'hw-part' }, h('h2', {}, title), ...kids);
+    const parts = [];
+    if (!sheet) {
+      parts.push(section('Not ready yet', h('p', {}, hw.talk === false
+        ? 'Homework sheets are written by Claude, which is not switched on. Add ANTHROPIC_API_KEY to the .env file and restart the server.'
+        : 'The sheet could not be written just now. Try again in a moment.')));
+    } else {
+      parts.push(section('Key terms', h('p', { class: 'muted small' }, 'Say what each word means before you tap it.'),
+        h('div', { class: 'hw-terms' }, sheet.key_terms.map((t) => {
+          const b = h('button', { type: 'button', class: 'hw-term', 'aria-expanded': 'false' }, h('span', { class: 'hw-term-word' }, t.term), h('span', { class: 'hw-term-meaning', hidden: true }, t.meaning));
+          b.addEventListener('click', () => { const m = b.querySelector('.hw-term-meaning'); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); });
+          return b;
+        }))));
+      parts.push(section('Close reading', h('p', { class: 'muted small' }, 'Read the source again (it is on the idea\'s page), then answer.'),
+        ...sheet.close_reading.flatMap((r, i) => [h('p', { class: 'hw-q' }, r.question), ...writePart(`reading_${i}`, { model: h('p', {}, r.model_answer) })])));
+      parts.push(section('Lay out the argument', h('p', { class: 'hw-q' }, 'Write the reasoning as steps, one per line, ending with the conclusion. Which step would you question?'),
+        ...writePart('argument', { rows: 6, placeholder: '1. …\n2. …\nSo, …', model: h('ol', { class: 'hw-steps' }, ...sheet.argument.premises.map((p) => h('li', {}, p)), h('li', { class: 'hw-conclusion' }, `So: ${sheet.argument.conclusion}`)) })));
+      parts.push(section('Objection and reply', h('div', { class: 'eyebrow' }, sheet.objection.from), h('p', { class: 'hw-q' }, sheet.objection.objection),
+        h('p', { class: 'muted small' }, 'How would the thinker answer? Write their best reply.'),
+        ...writePart('objection', { model: h('p', {}, sheet.objection.model_reply) })));
+      parts.push(section('Apply it', h('p', { class: 'hw-q' }, sheet.apply.situation), h('p', { class: 'hw-q' }, sheet.apply.question),
+        ...writePart('apply', { model: h('p', {}, sheet.apply.model_answer) })));
+      const essay = writePart('essay', { rows: 10, placeholder: 'About 300 words: take a position and defend it.', min: 9999 });
+      parts.push(section('Essay', h('p', { class: 'hw-q' }, sheet.essay), ...essay,
+        h('div', { class: 'row', style: 'justify-content:flex-start' },
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `Here is my short essay for the question "${sheet.essay}"\n\n${essay[0].value.trim()}\n\nWhat is strongest in it, and where is it weakest?`, draft: true }) }, 'Ask Talk for feedback'))));
+    }
+    parts.push(section('Teach it back', h('p', {}, 'Explain the idea in your own words, as you would to a friend. Talk tells you what you have right and what is blurred.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start' },
+        h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+          const r = await api('/api/recall', { method: 'POST', body: { node_id: node.id, result: 'fuzzy', date: today() } }).catch(() => null);
+          notice(r ? 'It will come back in tomorrow\'s review.' : 'Write today\'s answer for this idea first, then it can join your reviews.');
+        } }, 'Still fuzzy: review it tomorrow'))));
+    if (hw.courses?.length) {
+      parts.push(section('Go further: free college courses', h('p', { class: 'muted small' }, 'Chapters and lectures from free university courses that take this idea further.'),
+        h('ul', { class: 'hw-courses' }, hw.courses.map((c) => h('li', {},
+          h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.title), h('span', { class: 'muted small' }, ` · ${c.source}, ${c.course}`))))));
+    }
+    render(h('h1', {}, 'Homework'), h('p', {}, `${node.title}${hw.thinker ? ` · ${hw.thinker}` : ''}`), ...parts,
+      h('div', { class: 'row bare', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => walkTo(node.id, []) }, '← Back to the idea')));
+  });
+}
+
 // A strip of the lesson's own plate above it: the fox at the crossroads, the hare on the fog path.
 const lessonPlate = (src) => h('div', { class: 'lesson-plate', 'aria-hidden': 'true' }, h('img', { src, alt: '', loading: 'lazy', decoding: 'async' }));
 async function problemCard(host, node) {
