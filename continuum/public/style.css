@@ -10,24 +10,26 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 :root {
-  /* Sage paper and forest green. Fields: philosophy green, science ochre, religion slate blue, practice berry. */
-  --bg: #eef2ec;
-  --surface: #fbfcfa;
-  --ink: #161b18;
-  --muted: #4d5751;
-  --line: #cfd8cb;
-  --accent: #22573d;
-  --accent-ink: #f4f8f2;
-  --source-bg: #173526;
-  --source-ink: #e9f1e6;
-  --f-philosophy: #23573f;
-  --f-science: #86651a;
-  --f-religion: #39608a;
-  --f-practice: #8a4560;
-  --f-art: #9b4a2c;
-  --f-culture: #5e4f96;
-  --f-law: #4a5866;
-  --f-now: #1f6b78;
+  /* Bright morning paper and clear emerald, with a warm amber for highlights. Fields: philosophy green, science
+     ochre, religion blue, practice berry, art terracotta, culture violet, law slate, now teal. */
+  --bg: #f7faf6;
+  --surface: #ffffff;
+  --ink: #12201a;
+  --muted: #4a5a52;
+  --line: #d9e5dc;
+  --accent: #127a52;
+  --accent-ink: #ffffff;
+  --warm: #c98a12;
+  --source-bg: #0f3a2a;
+  --source-ink: #eef6f0;
+  --f-philosophy: #127a52;
+  --f-science: #a1700a;
+  --f-religion: #2a64a8;
+  --f-practice: #a93d68;
+  --f-art: #b8502a;
+  --f-culture: #6a4fc4;
+  --f-law: #45596e;
+  --f-now: #0f7f8c;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --lora: "Lora", var(--serif);
@@ -41,8 +43,9 @@
     --ink: #f0f4ef;
     --muted: #b1bbb4;
     --line: #2e3832;
-    --accent: #93d3ac;
+    --accent: #7fe0a8;
     --accent-ink: #0e1410;
+    --warm: #f0b648;
     --source-bg: #dfe9dc;
     --source-ink: #1b241e;
     --f-philosophy: #93d3ac;
@@ -57,12 +60,14 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* Text size: pinching the page sets --text-scale; every size is in rem, so text grows and rewraps within the screen.
+   The browser's own zoom (which pushes text off the side) is turned off in favour of this. */
+html { -webkit-text-size-adjust: 100%; font-size: calc(100% * var(--text-scale, 1)); touch-action: pan-x pan-y; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 18px/1.6 var(--sans);
+  font: 1.125rem/1.6 var(--sans);
 }
 :root { --dock: calc(62px + env(safe-area-inset-bottom)); --bar: 52px; }
 main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 4px 16px calc(var(--dock) + 24px); }
@@ -271,8 +276,8 @@ button.tile:hover { border-color: var(--field); }
 html.staged { scroll-snap-type: y proximity; }
 html.staged main { padding-bottom: 0; }
 .panel {
-  position: relative; min-height: calc(100svh - var(--dock) - var(--links, 0px));
-  display: flex; align-items: center; scroll-snap-align: start; scroll-margin-top: 0; padding: 28px 0 40px;
+  position: relative; min-height: 0;
+  display: flex; align-items: center; scroll-snap-align: start; scroll-margin-top: 12px; padding: 7svh 0;
 }
 html.staged:has(.dock-links:not(:empty)) { --links: 44px; }
 .panel-inner { width: 100%; padding-right: 14px; transition: opacity .6s ease, transform .6s ease; }
@@ -457,3 +462,26 @@ html.gazing { overflow: hidden; }
 .talk-turn .say.now { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .talk-controls { display: flex; gap: 6px; margin-top: 10px; font-family: var(--sans, inherit); }
 .talk-controls .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* The opening: an empty hallway; the cat walks in as the name comes into focus. Tap to skip. */
+.intro { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: #f3f0e6; cursor: pointer; transition: opacity .9s ease; }
+.intro.out { opacity: 0; pointer-events: none; }
+.intro img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.intro .hall { opacity: 0; filter: blur(6px); transform: scale(1.04); transition: opacity 1.2s ease, filter 2.4s ease, transform 4.5s ease; }
+.intro .cat { opacity: 0; transition: opacity 2.4s ease; }
+.intro.on .hall { opacity: 1; filter: none; transform: none; }
+.intro.walk .cat { opacity: 1; }
+.intro .title { position: absolute; left: 0; right: 0; top: 30%; text-align: center; color: #18261e; padding: 0 16px;
+  text-shadow: 0 0 18px rgba(255,255,255,.85), 0 0 4px rgba(255,255,255,.7); }
+.intro .title h1 { font-family: var(--display); font-weight: 600; font-size: clamp(2.6rem, 13vw, 4.4rem); margin: 0; letter-spacing: .02em;
+  opacity: 0; filter: blur(14px); transform: scale(1.06); transition: opacity 2s ease, filter 2.4s ease, transform 2.4s ease; }
+.intro .title p { margin: .6em 0 0; font-size: 1.02rem; letter-spacing: .04em; opacity: 0; transition: opacity 1.4s ease .9s; }
+.intro.walk .title h1 { opacity: 1; filter: none; transform: none; }
+.intro.walk .title p { opacity: .85; }
+@media (prefers-reduced-motion: reduce) { .intro, .intro * { transition: none !important; } }
+
+/* The app's controls keep their size when the reading text is enlarged (pinch), so menus never overflow. */
+.dock .tab { font-size: 13px; }
+.dock .chip, .dock-links .chip { font-size: 13px; }
+.corner .pill { font-size: 13.5px; }
+.rail { font-size: 16px; }

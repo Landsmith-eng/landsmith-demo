@@ -1344,4 +1344,53 @@ document.addEventListener('click', (e) => {
   else showToday();
 });
 
+// Text size by pinching: two fingers on the page scale the text (0.85x to 1.8x), which rewraps to fit the screen. The
+// paragraph under the fingers stays put. Remembered on this device. (Look mode has its own pinch, for the picture.)
+const SCALE_KEY = 'continuum.textScale';
+const clampScale = (v) => Math.min(1.8, Math.max(.85, v));
+let textScale = clampScale(Number(store.get(SCALE_KEY)) || 1);
+document.documentElement.style.setProperty('--text-scale', String(textScale));
+let pinch = null;
+const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 2 || document.querySelector('.gaze, .intro')) return;
+  const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  const anchor = document.elementFromPoint(innerWidth / 2, cy);
+  pinch = { d0: spread(e.touches), s0: textScale, anchor, top: anchor?.getBoundingClientRect().top ?? 0 };
+}, { passive: true });
+addEventListener('touchmove', (e) => {
+  if (!pinch || e.touches.length !== 2) return;
+  const next = clampScale(pinch.s0 * (spread(e.touches) / pinch.d0) ** 0.6); // gentler than the fingers' spread
+  if (Math.abs(next - textScale) < .01) return;
+  textScale = next;
+  document.documentElement.style.setProperty('--text-scale', next.toFixed(3));
+  if (pinch.anchor?.isConnected) window.scrollBy(0, pinch.anchor.getBoundingClientRect().top - pinch.top);
+}, { passive: true });
+addEventListener('touchend', (e) => {
+  if (!pinch || e.touches.length) return;
+  pinch = null; store.set(SCALE_KEY, textScale.toFixed(3)); queueWall();
+}, { passive: true });
+
+// The opening, once per visit: an empty hallway comes into focus, then the cat walks in as the name sharpens. A tap
+// skips it. Skipped when testing with ?day=, and shown as a still for reduced-motion settings.
+function intro() {
+  try { if (sessionStorage.getItem('continuum.intro')) return; sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
+  if (params.get('day')) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hall = h('img', { class: 'hall', src: '/img/tabs/gallery_empty.webp', alt: '' });
+  const cat = h('img', { class: 'cat', src: '/img/tabs/gallery.webp', alt: '' });
+  const box = h('div', { class: 'intro', role: 'img', 'aria-label': 'Continuum' }, hall, cat,
+    h('div', { class: 'title' }, h('h1', {}, 'Continuum'), h('p', {}, 'A daily walk through human wisdom')));
+  document.body.append(box);
+  const timers = [];
+  const done = () => { timers.forEach(clearTimeout); box.classList.add('out'); setTimeout(() => box.remove(), 950); };
+  box.addEventListener('click', done);
+  Promise.all([hall, cat].map((im) => im.decode().catch(() => {}))).then(() => {
+    if (still) { box.classList.add('on', 'walk'); timers.push(setTimeout(done, 1600)); return; }
+    requestAnimationFrame(() => box.classList.add('on'));
+    timers.push(setTimeout(() => box.classList.add('walk'), 1400), setTimeout(done, 5600));
+  });
+  timers.push(setTimeout(done, 9000)); // never stuck on a slow connection
+}
+intro();
 showToday();
