@@ -1156,7 +1156,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (tq.today.get(req.user.id, date).n >= talkDailyLimit) return res.status(429).json({ error: 'daily_limit' });
     if (moderating.has(t.id)) return res.status(409).json({ error: 'busy' });
     moderating.add(t.id);
-    broadcast(t.id, { t: 'typing', name: 'The moderator', user_id: null });
+    broadcast(t.id, { t: 'typing', name: 'Continuum', user_id: null });
     try {
       q.insertEvent.run(req.user.id, 'talk', null, date);
       const g = gq.group.get(t.group_id); const n = t.node_id ? q.node.get(t.node_id) : null;

@@ -1053,7 +1053,7 @@ function cardLinks(node, trail) {
   const back = trail.length ? trail[trail.length - 1] : null;
   return [
     h('button', { type: 'button', class: 'chip', onclick: () => (back ? walkTo(back.id, trail.slice(0, -1)) : showToday()) },
-      back ? `← ${back.thinker ?? back.title}` : '← Begin'),
+      back ? `← ${back.thinker ?? back.title}` : '← Wander'),
     node.year != null && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('timeline', { focus: node.id }) }, 'Timeline'),
     node.room && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('rooms', { focus: node.id }) }, 'Room'),
     node.source_face && favoriteButton(node),
@@ -1249,7 +1249,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
         results.hidden = false; browse.hidden = true;
       }, 220);
     });
-    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Wander ↝');
+    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Surprise me ↝');
     render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     if (search) box.focus();
@@ -2032,16 +2032,16 @@ function intro(then = () => {}) {
 // opening; again any time from the Diary. Ends by offering the seven questions.
 const TOUR_KEY = 'continuum.tour';
 const TOUR = [
-  { text: 'Welcome to Continuum, a journey of discovery. Explore the ideas that shaped how we think, what we value, and how we live: from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
-  { text: 'Why bother? Most of what we believe, we picked up without ever choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
-  { target: '.tabs [data-nav=today]', text: 'Begin is where each day starts. One question, answered in a sentence or two before you read anything, so it starts from you. Then the idea opens, one part at a time: what it means, the original words, and who agreed and who argued. About two minutes.' },
-  { target: '.tabs [data-nav=talk]', text: 'Talk is a conversation with all of it, by voice or in writing. Bring a debate you had with a friend, something in the news, or a goal. It remembers what you have said, and pushes back when you are very sure. What you talk about chooses what comes next.' },
-  { target: '.tabs [data-nav=talk]', text: 'Inside Talk is the Parthenon: small groups of friends talking over one question together, live. Start a group, send the link, and ask the moderator to say where everyone stands.' },
-  { target: '.tabs [data-nav=journal]', text: 'Your Diary keeps everything you write, and your views over time. When your thinking shifts, Continuum notices, and asks what changed.' },
-  { target: '.tabs [data-nav=practice]', text: 'Practice turns ideas into habits, starting at ten seconds a day, and growing as you keep going.' },
-  { target: '.tabs [data-nav=gallery]', text: 'The Gallery holds every idea, by room, by time and by theme, and a Map of how they connect. Tap any idea on the Map, and it will suggest a journey from there. Review, next to it, shows your week.' },
-  { target: '#listen', text: 'Two small things. Listen reads any idea aloud. And pinch with two fingers to make the words bigger, and to look closer at the picture.' },
-  { text: 'That is the tour. Next, if you like: seven great debates, each answered by two camps. Say which case speaks to you more. Nothing is graded; your choices just help Continuum plan your first journey.' },
+  { text: 'Welcome: a journey of discovery: the ideas that shaped how we think, what we value and how we live, from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
+  { text: 'Most of what we believe, we picked up without choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
+  { target: '.tabs [data-nav=today]', text: 'Wander: one question a day, answered before you read anything. Then the idea opens one part at a time. About two minutes.' },
+  { target: '.tabs [data-nav=talk]', text: 'Respond by voice or in writing. Bring a debate with a friend, the news or a goal. It remembers what you\'ve said, pushes back when you\'re very sure, and what you talk about chooses what comes next.' },
+  { target: '.tabs [data-nav=talk]', text: 'The Parthenon: small groups talking over one question together, live, with Continuum as moderator.' },
+  { target: '.tabs [data-nav=journal]', text: 'Diary: everything you write, and your views over time. When your thinking shifts, it notices and asks what changed.' },
+  { target: '.tabs [data-nav=practice]', text: 'Practice: ideas into habits, from ten seconds a day.' },
+  { target: '.tabs [data-nav=gallery]', text: 'Gallery: every idea by room, time and theme, plus the Map, where any idea suggests a journey. Review shows your week.' },
+  { target: '#listen', text: 'Two small touches: tap Listen to hear any idea read aloud. And pinch the screen to make the words bigger, and to look closer at the picture.' },
+  { text: 'The debates: an invitation, not a test. Nothing is graded.' },
 ];
 let tourState = null;
 function tour({ fromStart = true } = {}) {
@@ -2143,7 +2143,7 @@ function showParthenon({ idea = null } = {}) {
           : h('p', { class: 'muted small' }, 'No questions yet. Ask the first one.'));
     });
     render(h('h1', {}, 'The Parthenon'),
-      h('p', {}, idea ? `Choose a group to discuss "${idea.title}".` : 'Small groups talking over one question at a time, together and live. Everyone can speak or write; the moderator, when asked, says where the group stands and what no one has said yet.'),
+      h('p', {}, idea ? `Choose a group to discuss "${idea.title}".` : 'Small groups talking over one question at a time, together and live. Everyone can speak or write; Continuum, when asked to moderate, says where the group stands and what no one has said yet.'),
       ...groups, newGroup,
       h('p', { class: 'muted small bare' }, 'What you post is seen by the members of that group, and by the moderator when someone asks for it.'));
   });
@@ -2165,7 +2165,7 @@ function showTopic(id) {
       if (p.by && !t.members.includes(p.by)) { t.members.push(p.by); who.textContent = `${t.group.name} · ${t.members.join(', ')}`; }
       const mine = p.user_id === t.me;
       const el = h('div', { class: `pt-post ${p.moderator ? 'from-mod' : mine ? 'from-me' : 'from-them'}` },
-        h('div', { class: 'eyebrow' }, p.moderator ? 'The moderator' : mine ? 'You' : p.by),
+        h('div', { class: 'eyebrow' }, p.moderator ? 'Continuum · moderator' : mine ? 'You' : p.by),
         p.moderator ? h('div', { class: 'pt-body' }, ...replyNodes(p.body, p.refs ?? {}, true)) : h('div', { class: 'pt-body' }, p.body));
       log.append(el);
       return el;
@@ -2185,11 +2185,11 @@ function showTopic(id) {
     send.addEventListener('click', post);
     const dict = dictation(ta, { onDone: () => {} });
     const ask = t.moderator && h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
-      ask.disabled = true; status.textContent = 'The moderator is reading the discussion…';
+      ask.disabled = true; status.textContent = 'Continuum is reading the discussion…';
       try { const r = await api(`/api/topics/${id}/moderator`, { method: 'POST', body: { date: today() } }); seeTo(add(r.post) ?? log.lastElementChild); status.textContent = ''; }
-      catch (e) { status.textContent = e.message === 'daily_limit' ? 'That is enough for today. The moderator will be here tomorrow.' : e.message === 'busy' ? 'The moderator is already answering.' : 'The moderator could not answer just now.'; }
+      catch (e) { status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Continuum will moderate again tomorrow.' : e.message === 'busy' ? 'Continuum is already answering.' : 'Continuum could not answer just now.'; }
       finally { ask.disabled = false; }
-    } }, 'Ask the moderator');
+    } }, 'Ask Continuum to moderate');
     render(h('h1', {}, t.question),
       who,
       t.idea && h('p', { class: 'bare' }, h('a', { href: '#', class: 'thread-link', onclick: (e) => { e.preventDefault(); walkTo(t.idea.id, []); } }, `It starts from: ${t.idea.title}`)),
@@ -2216,7 +2216,7 @@ function showTopic(id) {
               const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (!line) continue;
               const m = JSON.parse(line);
               if (m.t === 'post') {
-                const who = m.post.moderator ? 'The moderator' : m.post.by; clearTimeout(timers.get(who)); timers.delete(who); showWriting();
+                const who = m.post.moderator ? 'Continuum' : m.post.by; clearTimeout(timers.get(who)); timers.delete(who); showWriting();
                 const el = add(m.post); if (el && m.post.user_id !== t.me) seeTo(el);
               } else if (m.t === 'typing' && m.user_id !== t.me) {
                 clearTimeout(timers.get(m.name)); timers.set(m.name, setTimeout(() => { timers.delete(m.name); showWriting(); }, 7000)); showWriting();
