@@ -85,3 +85,28 @@ test('tts: an ElevenLabs failure (no credits, bad key) comes back as an error th
     assert.equal((await r.json()).error, 'elevenlabs_401');
   } finally { server.close(); }
 });
+
+test('speech to text: the recording goes to ElevenLabs Scribe and the text comes back; an older model is tried if needed', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push({ url, model: opts.body?.get?.('model_id'), file: opts.body?.get?.('file') });
+    if (opts.body?.get?.('model_id') === 'scribe_v2') return new Response(JSON.stringify({ detail: { message: 'model not available' } }), { status: 422 });
+    return new Response(JSON.stringify({ text: ' I think a promise is a promise. ' }));
+  };
+  const tts = createTts({ apiKey: 'k', fetchImpl });
+  const { server, call } = await boot(tts);
+  try {
+    assert.deepEqual(await (await call('/api/stt')).json(), { enabled: true });
+    const audio = new Uint8Array(4000).fill(7);
+    const r = await fetch(`${new URL((await call('/api/stt')).url).origin}/api/stt?lang=en`, { method: 'POST', headers: { 'x-continuum-token': 't', 'content-type': 'audio/webm' }, body: audio });
+    assert.deepEqual(await r.json(), { text: 'I think a promise is a promise.' });
+    assert.deepEqual(calls.map((c) => c.model), ['scribe_v2', 'scribe_v1']);
+    assert.ok(calls.every((c) => c.url.endsWith('/speech-to-text') && c.file.size === 4000));
+    // Too short to be speech: refused without calling ElevenLabs.
+    const short = await fetch(`${new URL(r.url).origin}/api/stt`, { method: 'POST', headers: { 'x-continuum-token': 't', 'content-type': 'audio/webm' }, body: new Uint8Array(10) });
+    assert.equal(short.status, 400);
+    assert.equal(calls.length, 2);
+  } finally { server.close(); }
+  const off = await boot(null);
+  try { assert.deepEqual(await (await off.call('/api/stt')).json(), { enabled: false }); } finally { off.server.close(); }
+});

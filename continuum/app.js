@@ -1192,6 +1192,18 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   const ttsWarn = (what, e) => console.warn(`ElevenLabs refused ${what}: ${e.message}${e.why ? ` (${e.why})` : ''}`);
   // ── Reading aloud with ElevenLabs (when ELEVENLABS_API_KEY is set). The key never leaves the server. ──
   app.get('/api/tts', auth, (req, res) => res.json({ enabled: Boolean(tts), voice_id: tts?.voiceId ?? null }));
+  // Speech to text: the phone records, the server has ElevenLabs write it down (when ELEVENLABS_API_KEY is set).
+  app.get('/api/stt', auth, (req, res) => res.json({ enabled: Boolean(tts?.transcribe) }));
+  app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
+    if (!tts?.transcribe) return res.status(404).json({ error: 'stt_off' });
+    if (!Buffer.isBuffer(req.body) || req.body.length < 1000) return res.status(400).json({ error: 'no_audio' });
+    const mime = String(req.get('content-type') ?? 'audio/webm').split(';')[0];
+    const lang = /^[a-z]{2}$/.test(String(req.query.lang ?? '')) ? String(req.query.lang) : null;
+    try { res.json({ text: (await tts.transcribe(req.body, mime, { language: lang })).text }); } catch (e) {
+      console.warn(`ElevenLabs refused speech to text: ${e.message}${e.why ? ` (${e.why})` : ''}`);
+      res.status(502).json({ error: e.message, why: e.why ?? null });
+    }
+  });
   app.get('/api/tts/voices', auth, async (req, res) => {
     if (!tts) return res.status(404).json({ error: 'tts_off' });
     try { res.json({ voices: await tts.voices(), default: tts.voiceId }); } catch (e) { ttsWarn('listing voices', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }

@@ -663,52 +663,118 @@ function notice(text) {
   const n = h('div', { class: 'toast', role: 'status' }, text);
   document.body.append(n); setTimeout(() => n.remove(), 6000);
 }
-// Speaking instead of typing, for any text box: the browser's speech recognition (on Android Chrome the audio goes
-// to Google to be transcribed). It keeps listening through pauses for thought, restarting when the browser ends a
-// session on silence, until the user taps again (or nothing is heard for a while). What is said is added to the box.
-// Returns { button, start, stop, active } or null where the browser cannot listen.
+// Speaking instead of typing, for any text box. Two ways, chosen once:
+//  - When the server has an ElevenLabs key, the phone records (MediaRecorder) and ElevenLabs Scribe writes it down:
+//    far more exact, and the same on every phone. It records through pauses for thought until the user taps again,
+//    or until nothing has been heard for a while.
+//  - Otherwise the browser's own speech recognition. On Android Chrome its "continuous" mode repeats words (each
+//    result carries everything heard so far), so there it listens one phrase at a time, keeps only the latest
+//    version of each phrase, and starts again after each pause.
+// Returns { button, start, stop, active } or null where the phone can do neither.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const ANDROID = /Android/i.test(navigator.userAgent);
+const canRecord = Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+let sttOn = null;
+const sttEnabled = async () => { if (sttOn === null) sttOn = await api('/api/stt').then((r) => r.enabled).catch(() => null); return Boolean(sttOn); };
+if (canRecord) sttEnabled();
+const canSpeakIn = () => Boolean(Recognition || (canRecord && sttOn !== false));
 function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {}, onBlocked = (m) => notice(m), quietMs = 30000 } = {}) {
-  if (!Recognition) return null;
+  if (!canSpeakIn()) return null;
   const button = h('button', { type: 'button', class: 'btn ghost mic', 'aria-pressed': 'false' }, label);
-  let rec = null; let listening = false; let heard = ''; let before = ''; let quiet = 0;
-  const show = (on) => { button.setAttribute('aria-pressed', String(on)); button.textContent = on ? 'Listening… tap when done' : label; button.classList.toggle('on', on); };
-  const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
-  function finish() { show(false); clearTimeout(quiet); ta.dispatchEvent(new Event('input', { bubbles: true })); onDone(heard.trim()); }
-  function listen() {
-    const r = rec = new Recognition();
-    r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
-    let session = '';
-    r.onresult = (e) => {
-      let fin = ''; let interim = '';
-      for (const x of e.results) { if (x.isFinal) fin += x[0].transcript; else interim += x[0].transcript; }
-      session = fin; hush();
-      ta.value = `${before}${heard} ${fin}${interim}`.replace(/\s+/g, ' ').trimStart();
+  let listening = false; let before = ''; let engine = null;
+  const show = (state) => {
+    button.setAttribute('aria-pressed', String(state === 'on'));
+    button.classList.toggle('on', state === 'on'); button.disabled = state === 'busy';
+    button.textContent = state === 'on' ? 'Listening… tap when done' : state === 'busy' ? 'Writing it down…' : label;
+  };
+  const put = (text) => { ta.value = `${before}${text}`.replace(/\s+/g, ' ').trimStart(); };
+  const done = (text) => { listening = false; show('off'); ta.dispatchEvent(new Event('input', { bubbles: true })); onDone((text ?? '').trim()); };
+  const blocked = () => { listening = false; show('off'); onBlocked('The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.'); };
+
+  // ── Recording, written down by ElevenLabs ──
+  function recorder() {
+    let rec = null; let stream = null; let chunks = []; let ctx = null; let timer = 0; let heard = false; let lastVoice = 0; let cancelled = false;
+    const release = () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ctx?.close().catch(() => {}); stream = null; ctx = null; };
+    return {
+      async start() {
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch { return blocked(); }
+        if (!listening) return release(); // stopped while asking for the microphone
+        const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
+        rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+        chunks = []; cancelled = false; heard = false; lastVoice = Date.now();
+        rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        rec.onstop = async () => {
+          release();
+          if (cancelled) return;
+          if (!heard || !chunks.length) return done('');
+          show('busy');
+          const blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/webm' });
+          try {
+            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] }, body: blob });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw Object.assign(new Error(j.error), { why: j.why });
+            put(j.text ?? ''); done(j.text ?? '');
+          } catch (e) { notice(`Could not write that down${e.why ? `: ${e.why}` : ''}. Try again, or type it.`); done(''); }
+        };
+        // A simple ear: has anything been said, and how long has it been quiet? (Stops after quietMs of silence.)
+        try {
+          ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(stream).connect(an);
+          const buf = new Uint8Array(an.fftSize);
+          timer = setInterval(() => {
+            an.getByteTimeDomainData(buf);
+            let sum = 0; for (const v of buf) sum += (v - 128) ** 2;
+            if (Math.sqrt(sum / buf.length) > 6) { heard = true; lastVoice = Date.now(); }
+            if (Date.now() - lastVoice > quietMs) this.finish();
+          }, 150);
+        } catch { heard = true; }
+        rec.start(1000);
+      },
+      finish() { if (rec?.state === 'recording') rec.stop(); else { release(); done(''); } },
+      cancel() { cancelled = true; if (rec?.state === 'recording') rec.stop(); else release(); },
     };
-    r.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        listening = false; onBlocked('The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.');
-      }
-    };
-    r.onend = () => {
-      heard = `${heard} ${session}`.trim(); rec = null;
-      if (listening) { try { listen(); return; } catch { listening = false; } }
-      finish();
-    };
-    r.start();
   }
-  function start() {
+
+  // ── The browser's own recognition ──
+  function recognizer() {
+    let rec = null; let heard = ''; let quiet = 0;
+    const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
+    function listen() {
+      const r = rec = new Recognition();
+      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = !ANDROID;
+      let session = '';
+      r.onresult = (e) => {
+        const list = [...e.results];
+        if (ANDROID) session = list.at(-1)?.[0]?.transcript ?? session; // the latest version of this phrase only
+        else session = list.map((x) => x[0].transcript).join(' ');
+        hush(); put(`${heard} ${session}`);
+      };
+      r.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') blocked(); };
+      r.onend = () => {
+        heard = `${heard} ${session}`.replace(/\s+/g, ' ').trim(); rec = null;
+        if (listening) { try { listen(); return; } catch { listening = false; } }
+        clearTimeout(quiet); put(heard); done(heard);
+      };
+      r.start();
+    }
+    return {
+      start() { heard = ''; hush(); try { listen(); } catch { listening = false; show('off'); } },
+      finish() { listening = false; if (rec) rec.stop(); else { clearTimeout(quiet); done(heard); } },
+      cancel() { listening = false; clearTimeout(quiet); if (rec) { rec.onend = null; rec.abort(); rec = null; } },
+    };
+  }
+
+  async function start() {
     if (listening) return;
     onStart();
-    listening = true; heard = ''; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
-    show(true); hush();
-    try { listen(); } catch { listening = false; show(false); }
+    listening = true; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
+    show('on');
+    engine = canRecord && await sttEnabled() ? recorder() : Recognition ? recognizer() : null;
+    if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
+    engine.start();
   }
-  function stop() { listening = false; clearTimeout(quiet); if (rec) { rec.onend = null; rec.abort(); rec = null; } show(false); }
-  button.addEventListener('click', () => {
-    if (listening) { listening = false; if (rec) rec.stop(); else finish(); return; }
-    start();
-  });
+  function stop() { const was = listening; listening = false; engine?.cancel(); if (was || button.classList.contains('on')) show('off'); }
+  button.addEventListener('click', () => { if (button.disabled) return; if (listening) { listening = false; engine?.finish(); return; } start(); });
   return { button, start, stop, active: () => listening };
 }
 listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
@@ -944,7 +1010,7 @@ function writeView(data) {
     h('label', { for: 'resp', class: 'prompt' }, node.prompt ?? 'What do you think?'),
     ta,
     h('div', { class: 'row' }, dictation(ta, { label: 'Say it instead' })?.button ?? status, submit),
-    Recognition && h('div', { class: 'row' }, status));
+    canSpeakIn() && h('div', { class: 'row' }, status));
   setNav('today');
   renderStage(node, [
     panel('arrival', 'Today\'s idea', [
@@ -1644,8 +1710,8 @@ async function problemCard(host, node) {
     h('p', { class: 'lesson-text' }, r.problem),
     h('p', { class: 'muted small' }, 'Think it through with Talk: say what you would do, and why. It will push back, or show you who agrees.'),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
-      Recognition && h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true, voice: true }) }, 'Answer aloud'),
-      h('button', { type: 'button', class: `btn ${Recognition ? 'ghost' : ''}`, onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true }) }, 'Write an answer'))));
+      canSpeakIn() && h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true, voice: true }) }, 'Answer aloud'),
+      h('button', { type: 'button', class: `btn ${canSpeakIn() ? 'ghost' : ''}`, onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true }) }, 'Write an answer'))));
 }
 const problemSeed = (node, problem) => `A problem to consider, from "${node.title}": ${problem} Here is what I think: `;
 // The daily review: an earlier idea, on a spaced schedule. First, what do you remember? Then its plain words and what

@@ -36,6 +36,7 @@ const tts = createTts({
   apiKey: process.env.ELEVENLABS_API_KEY,
   voiceId: process.env.ELEVENLABS_VOICE_ID || undefined,
   model: process.env.ELEVENLABS_MODEL || undefined,
+  sttModel: process.env.ELEVENLABS_STT_MODEL || undefined,
   cacheDir: fileURLToPath(new URL('./data/tts/', import.meta.url)),
 });
 

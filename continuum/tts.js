@@ -17,7 +17,8 @@ async function failure(res) {
   return Object.assign(new Error(`elevenlabs_${res.status}`), { status: res.status, why });
 }
 
-export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MODEL, cacheDir, fetchImpl = fetch } = {}) {
+export const DEFAULT_STT_MODEL = 'scribe_v2';
+export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MODEL, sttModel = DEFAULT_STT_MODEL, cacheDir, fetchImpl = fetch } = {}) {
   if (!apiKey) return null;
   if (cacheDir) mkdirSync(cacheDir, { recursive: true });
   let voiceList = null; let voiceListAt = 0;
@@ -38,6 +39,25 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
       }));
       voiceListAt = Date.now();
       return voiceList;
+    },
+
+    // Speech to text with ElevenLabs Scribe: a recording from the phone (webm, ogg, mp4 or wav) becomes text. Much
+    // more exact than the phone's own recognition. Nothing is kept: the audio goes to ElevenLabs and the text comes
+    // back. Tries the current model, then the earlier one if the account does not offer it.
+    async transcribe(audio, mime = 'audio/webm', { language = null } = {}) {
+      let last = null;
+      for (const model of [sttModel, 'scribe_v1'].filter((m, i, a) => a.indexOf(m) === i)) {
+        const form = new FormData();
+        form.append('file', new Blob([audio], { type: mime }), `speech.${mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'webm'}`);
+        form.append('model_id', model);
+        form.append('tag_audio_events', 'false');
+        if (language) form.append('language_code', language);
+        const res = await fetchImpl(`${API}/speech-to-text`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: form });
+        if (res.ok) { const b = await res.json(); return { text: (b.text ?? '').trim(), model }; }
+        last = await failure(res);
+        if (![400, 404, 422].includes(res.status)) break; // only a model the account lacks is worth a second try
+      }
+      throw last;
     },
 
     // One clip of speech (MP3). Returns { audio: Buffer, cached: boolean }.
