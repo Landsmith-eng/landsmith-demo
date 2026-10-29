@@ -95,3 +95,23 @@ Now rooms (`ROOM_ROTATION` in `app.js`; files in `public/img/spares/`).
 | Tram stop | A tram stop in a snowy street at evening, passengers blurred, a sparrow on the shelter rail. After Hiroshige's snow scenes and Hammershøi's grey light (c. 1900). |
 | Library steps | Wide library steps in late afternoon, readers blurred going up and down, a pigeon pecking crumbs in a patch of sun. After Canaletto's city squares (18th century). |
 | Bakery window | A bakery window at dawn, the street blurred with early walkers reflected in the glass, loaves and one warm lamp inside, a cat on the sill. After Vermeer's light. |
+
+## Batch 4: a plate for every screen (seen clearly now)
+
+Since the boxes went away, plates are seen almost sharp with light lettering laid straight on them. Add this to
+the style block for this batch: *"Clear and detailed, not blurred. Mid-tone to dark in the upper two-thirds, with
+no large white or very bright areas where text sits; the brightest light toward the lower edge or one side."*
+Save each as `public/img/spares/<file>.webp`; Talk and the debates borrow daily plates until theirs arrive.
+
+| File | Screen | Background prompt (after the style block) |
+|---|---|---|
+| `talk_two_chairs` | Talk | Two empty garden chairs facing each other under a plane tree, two cups on a small table between them, a cat asleep in the dappled shade. After Corot's garden scenes (1860s). |
+| `debates_stoa` | The great debates | A long stone colonnade at dusk, two groups of figures blurred in conversation at either end, an owl on a capital in the middle. After Raphael's "School of Athens" (1511). |
+| `weigh_scales` | Weigh an opinion | Brass balance scales on a stone sill by an open window at evening, a sparrow perched on one pan, the pans almost level. After Chardin's still lifes (1700s). |
+| `map_observatory` | The Map | An old observatory open to the night sky, a brass telescope, constellation figures drawn faint across the stars, a cat on the iron stair. After Cellarius's "Harmonia Macrocosmica" (1660). |
+| `homework_reading_room` | Homework sheets | A long reading-room table under green lamps, open books and pencils, readers blurred far down the room, a cat asleep on a stack of books. After Hammershøi's interiors (c. 1900). |
+| `teach_lecture_hall` | Teach it back | An empty lecture hall in morning light, a chalkboard wiped clean with faint smudges (no writing), a pigeon on the high window ledge. After Hammershøi's grey light. |
+| `act_kitchen` | Act near you | A community kitchen hall, volunteers blurred serving at long tables, steam rising, a dog waiting patiently by the door. After Pissarro's market and harvest scenes (1880s). |
+| `circles_lanterns` | Circles | A ring of chairs around a small fire in a garden at dusk, figures blurred, lanterns in the trees, fireflies. After Whistler's nocturnes (1870s). |
+| `recall_fog_path` | Daily review | A garden path in morning fog, the near stones sharp and the far ones fading into white, a hare stopped on the path. After George Inness's late landscapes (1890s). |
+| `problem_crossroads` | A problem to consider | A country crossroads at evening with a wooden signpost (blank arms, no lettering), a fox pausing at the fork. After Constable's lanes (1820s). |
