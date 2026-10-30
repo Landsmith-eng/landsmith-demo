@@ -9,7 +9,7 @@
 //   garden  plants close by: grass, flowers, trees, a forest (caterpillars, inchworms, dragonflies, spiders)
 //   out     ground outdoors (a cat, a bird landing)
 //   in      a room (a cat, a spider)
-//   city    a town's river or quay (no frogs there)
+//   city    a town's river or quay (no fish there)
 //   dark    a dark painting (mean brightness under .35): the visitors show light on it, not dark
 // water: [top, bottom] of the water, as fractions of the picture's height (top is the horizon or the far shore);
 // shore: where water meets land, for waders and sandpipers; waterX: [x0, x1] when the water fills only part of the

@@ -1,6 +1,6 @@
 // Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): birds passing over or
 // landing, a dragonfly crossing, bees, butterflies and a hummingbird at the flowers, leaves on the wind, a caterpillar,
-// an inchworm on a dark trunk, a spider in the branches, a small frog at a pond; on the water, a school of fish
+// an inchworm on a dark trunk, a spider in the branches; on the water, a school of fish
 // glimpsed beneath the surface, a sailboat among the painted ones, ducks, an egret, sandpipers at the edge, ripples; light through a window, writing on a page,
 // equations on a board. They are faint, see-through shapes blended into the painting (shadows on a light picture, a
 // soft light on a dark one), behind the words, never in the way of a tap: one at a time, now and then, a little more
@@ -477,49 +477,6 @@ async function butterfly(run, sc) {
   flies.forEach((f) => f.el.remove());
 }
 
-// ── A frog at the edge of a pond: sits with its throat pulsing, blinks, hops along, and plops into the water. ──
-async function frog(run, sc) {
-  const band = waterBand(sc, 0, 1); if (!band || !sc.shore) return;
-  // In the foreground: on the near bank if it is in view, otherwise on a lily pad in the near water. Smaller farther up.
-  const W = innerWidth, H = innerHeight; const bank = imgY(sc.shore, sc); const near = bank > H * .72 && bank < dockTop() - 10;
-  const edge = near ? bank : Math.min(band[1], dockTop()) - rnd(14, 40); const size = Math.max(17, 30 * (edge / (H * .9)) ** 1.5);
-  // Beside the water: where it fills only part of the width (a river to one side), keep to that stretch of bank.
-  const span = sc.waterX ? rectOf([sc.waterX[0], 0, sc.waterX[1], 0], sc) : { x: W * .12, w: W * .68 };
-  const xMin = Math.max(8, span.x + 6), xMax = Math.min(W - size - 8, span.x + span.w - size - 6);
-  const el = svg('0 0 36 26', size, `<g class="frog">
-    <path class="legs-in" d="M6 18 C1 18 1 23 8 23 L15 23 C12 21 10 18 6 18Z" fill="rgba(44,66,36,.92)"/>
-    <path class="legs-out" d="M9 18 L1 21 L-5 20 M10 20 L2 25 L-4 26" stroke="rgba(44,66,36,.92)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
-    <path d="M5 17 C6 10 14 7 22 9 C27 10 31 13 31 17 C31 20 26 21.5 20 21.5 L9 21.5 C6 21.5 5 19.5 5 17Z" fill="rgba(44,66,36,.92)"/>
-    <ellipse class="throat" cx="27" cy="18.6" rx="3" ry="2" fill="rgba(70,90,50,.9)"/>
-    <circle cx="24" cy="9" r="3.1" fill="rgba(44,66,36,.95)"/><circle class="eye" cx="24.7" cy="8.5" r="1.15" fill="rgba(220,200,120,.9)"/>
-    <path d="M24 19 L27 23.5 L30.5 23.5" stroke="rgba(44,66,36,.92)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>`);
-  el.classList.add('creature', 'froggy', 'gone'); const right = Math.random() < .5; if (!right) el.style.setProperty('--flip', '-1');
-  let x = rnd(xMin, Math.max(xMin, xMax)); let y = edge - size * 23 / 36;
-  const pad = !near && svg('0 0 40 12', size * 1.5, '<path d="M20 6 L33 2.5 A19 5.5 0 1 1 26 1.2 Z" fill="rgba(52,86,40,.85)"/>');
-  if (pad) { pad.classList.add('creature', 'lilypad'); pad.style.transform = `translate(${x - size * .2}px, ${edge - size * .2}px)`; layer.append(pad); }
-  layer.append(el);
-  const place = (lift = 0) => { el.style.transform = `translate(${x}px, ${y - lift}px)`; };
-  place(); await wait(50, run); el.style.transition = 'opacity 1.6s ease'; el.classList.remove('gone'); await wait(1600, run);
-  const hop = async (dx, high, ms) => {
-    el.classList.add('jumping'); const x0 = x;
-    await frames(run, (t) => { const k = Math.min(1, t / ms); x = x0 + dx * k; place(Math.sin(k * Math.PI) * high); return k < 1; });
-    el.classList.remove('jumping');
-  };
-  for (let i = 0; i < Math.round(rnd(1, 3)); i++) {
-    await wait(rnd(1800, 4200), run);
-    if (Math.random() < .5) { el.classList.add('blink'); await wait(220, run); el.classList.remove('blink'); await wait(rnd(500, 1500), run); }
-    if (near) { const step = (right ? 1 : -1) * rnd(16, 34); if (x + step > xMin && x + step < xMax) await hop(step, rnd(10, 18), 420); }
-  }
-  await wait(rnd(1500, 3500), run);
-  // Into the water: a last leap, a ripple where it went in.
-  const dive = Math.min(28, (band[1] - edge) * .5 + 10);
-  el.classList.add('jumping'); const x0 = x, y0 = y;
-  await frames(run, (t) => { const k = Math.min(1, t / 520); x = x0 + (right ? 1 : -1) * 34 * k; y = y0 + dive * k; place(Math.sin(k * Math.PI) * 16); el.style.opacity = String(1 - Math.max(0, k - .6) / .4); return k < 1; });
-  const R = 16; const ring = svg(`0 0 ${R * 2 + 4} ${R * .7 + 4}`, R * 2 + 4, [0, 1].map((k) => `<ellipse class="ring" style="animation-delay:${k * .5}s" cx="${R + 2}" cy="${R * .35 + 2}" rx="${R}" ry="${R * .35}" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1"/>`).join(''));
-  ring.classList.add('creature', 'ripple'); ring.style.transform = `translate(${x + size / 2 - R}px, ${y + size * .5}px)`; lightLayer.append(ring);
-  el.remove(); if (pad) { pad.style.transition = 'opacity 3s ease'; pad.style.opacity = '0'; } await wait(4200, run); ring.remove(); pad?.remove();
-}
-
 // ── Bees: two or three, busy among the flowers, darting from one to the next and hovering. ──
 async function bees(run, sc) {
   const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .1, y: H * .5, w: W * .8, h: H * .3 };
@@ -656,7 +613,6 @@ const VISITORS = [
   { name: 'butterfly', fn: butterfly, w: 2, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
   { name: 'hummingbird', fn: hummingbird, w: 2, ok: (s) => s.flowers },
-  { name: 'frog', fn: frog, w: 2.5, ok: (s) => s.has('lake') && s.shore && !s.has('city') },
   { name: 'rays', fn: rays, w: 2.5, ok: (s) => s.rays },
   { name: 'ripples', fn: ripples, w: 2, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'writing', fn: writing, w: 3, ok: (s) => s.paper },
@@ -722,7 +678,7 @@ export function creaturesInto(dark, light) {
 export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
-  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'ripples', 'sandpipers', 'frog', 'fish'].includes(name);
+  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'ripples', 'sandpipers', 'fish'].includes(name);
   if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88]; if (!sc.canopy) sc.canopy = [.15, .05, .85, .3];
   if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);
