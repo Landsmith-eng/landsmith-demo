@@ -2622,7 +2622,7 @@ function offerTour() {
 
 intro();
 startCreatures();
-window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('cat' | 'bird' | 'dragonfly')
+window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('sailboat'), or ?visit=sailboat (names in creatures.js)
 if (params.get('visit')) setTimeout(() => summon(params.get('visit')), 1500);
 
 // Calm: while an idea is being read, the buttons (corner, menu, the card's links, the rail) fade away after a few

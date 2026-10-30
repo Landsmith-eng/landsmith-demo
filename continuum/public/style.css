@@ -789,12 +789,38 @@ details.wt-part summary, details.diary-block summary { cursor: pointer; color: v
 /* Visitors on the pictures (creatures.js): faint, see-through shapes blended into the painting, behind the words. */
 #creatures { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 #creatures { mix-blend-mode: multiply; }
+#creatures-light { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+#creatures-light .creature { opacity: .55; }
 .creature { position: absolute; left: 0; top: 0; overflow: visible; will-change: transform; opacity: .3; }
-/* By night the plates are dark: the visitors lighten the painting instead, like a reflection. */
-#creatures.night { mix-blend-mode: screen; }
-#creatures.night .creature { opacity: .26; filter: invert(1); }
-#creatures.night .creature.school { filter: none; }
+.creature.gone { opacity: 0 !important; }
+/* On a dark painting the visitors lighten it instead, like a reflection. */
+#creatures.dark { mix-blend-mode: screen; }
+#creatures.dark .creature { opacity: .26; filter: invert(1); }
 .creature.school { opacity: .34; }
+.creature.webber { opacity: .6; }
+/* The small ones (a caterpillar, an inchworm, a fish) need a little more to be seen at all. */
+.creature.crawler { opacity: .5; }
+.creature.swimmer { opacity: .42; }
+#creatures.dark .creature.crawler, #creatures.dark .creature.webber { opacity: .42; }
+.creature.flock { inset: 0; }
+.creature.flock svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.creature.flock .w { transform-box: fill-box; transform-origin: center; animation: flock-flap .32s ease-in-out infinite alternate; animation-delay: var(--d, 0s); }
+@keyframes flock-flap { from { transform: scaleY(1); } to { transform: scaleY(-.5); } }
+.flier.look .head { transform: rotate(-14deg); }
+.flier.ruffle .bird { animation: ruffle .5s ease; }
+@keyframes ruffle { 30% { transform: scaleX(var(--flip, 1)) scale(1.06, .94); } 60% { transform: scaleX(var(--flip, 1)) scale(.96, 1.04); } }
+.swimmer .tailfin { transform-box: fill-box; transform-origin: 100% 50%; animation: fin .5s ease-in-out infinite alternate; }
+@keyframes fin { from { transform: scaleY(.7) rotate(-8deg); } to { transform: scaleY(1) rotate(8deg); } }
+.paddler .duck { transform-box: fill-box; transform-origin: 50% 90%; animation: bob 2.2s ease-in-out infinite alternate; animation-delay: var(--d, 0s); }
+@keyframes bob { from { translate: 0 0; rotate: -1.5deg; } to { translate: 0 1.2px; rotate: 1.5deg; } }
+.paddler.dip .duck { animation: dip 1.6s ease-in-out; }
+@keyframes dip { 0%, 100% { rotate: 0deg; translate: 0 0; } 30%, 70% { rotate: 62deg; translate: 2px 4px; } }
+.wader .neck { transform-box: fill-box; transform-origin: 0% 100%; transition: transform .22s ease-in; }
+.wader.strike .neck { transform: rotate(48deg) translate(2px, 3px); }
+.piper-el.running .legs { animation: legs .09s linear infinite alternate; }
+@keyframes legs { from { transform: skewX(-25deg); } to { transform: skewX(25deg); } }
+.piper-el .piper { transition: rotate .15s ease; }
+.piper-el.peck .piper { rotate: 22deg; }
 .creature > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
 /* The cat: legs in pairs, a slight bob, the tail always moving; standing still to look about. */
 .walker .leg { transform-box: fill-box; transform-origin: top center; animation: cat-step .62s ease-in-out infinite alternate; }
