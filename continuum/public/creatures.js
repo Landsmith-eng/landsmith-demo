@@ -1,7 +1,7 @@
 // Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): a sailboat crossing the sea
 // on the horizon, sandpipers running at the water's edge, a school of fish; ducks paddling and an egret wading on a
 // lake or river, a fish turning under the surface; a cat wandering, a bird landing to peck, birds passing over;
-// caterpillars, inchworms, a dragonfly, bees and a hummingbird at the flowers, and a spider building a small web and letting itself down on a thread.
+// caterpillars, inchworms, a dragonfly, bees, butterflies and a hummingbird at the flowers, a frog at the edge of a pond, and a spider building a small web and letting itself down on a thread.
 // They are faint, see-through shapes blended into the painting (shadows on a light picture, a soft light on a dark
 // one), behind the words, never in the way of a tap. One at a time, and more often while the reader sits still with a
 // page: a small thing to watch while thinking. None while the phone asks to reduce motion, while the tab is hidden,
@@ -486,28 +486,83 @@ async function leaves(run, sc) {
 
 // ── A butterfly: wanders over the flowers or the garden, never in a straight line, settles a moment, flutters off. ──
 async function butterfly(run, sc) {
+  // One to three, each its own colour; with two or more, one sometimes follows another in a rising spiral.
   const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .1, y: H * .35, w: W * .8, h: H * .4 };
-  const el = svg('0 0 24 20', rnd(16, 22), `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="rgba(70,50,20,.85)"/>
-    <path class="bw r" d="M12 10 C18 1 23 2 22 8 C22 12 17 13 12 10 C17 14 20 19 16 18 C14 17 13 14 12 10Z" fill="rgba(70,50,20,.85)"/>
-    <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>`);
-  el.classList.add('creature', 'flutter'); layer.append(el);
-  let x = Math.random() < .5 ? -20 : W + 20, y = rnd(area.y, area.y + area.h); const nx = noise(), ny = noise();
-  let target = { x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) }; let rest = 0; let legs = Math.round(rnd(4, 8));
-  await frames(run, (t) => {
-    if (rest > 0) { rest--; if (!rest) el.classList.remove('resting'); return true; }
-    const dx = target.x - x, dy = target.y - y, d = Math.hypot(dx, dy);
-    if (d < 8) {
-      if (--legs <= 0) return false;
-      if (Math.random() < .35) { rest = Math.round(rnd(60, 160)); el.classList.add('resting'); }
-      target = { x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) };
-    }
-    x += (dx / (d || 1)) * 1.1 + nx(t) * 1.4; y += (dy / (d || 1)) * 1.1 + ny(t * 1.3) * 1.6 + Math.sin(t / 140) * .6;
-    el.style.transform = `translate(${x}px, ${y}px)`;
-    return true;
+  const COLOURS = ['rgba(196,112,28,.88)', 'rgba(170,140,40,.88)', 'rgba(60,90,150,.85)', 'rgba(140,60,40,.85)', 'rgba(90,70,30,.85)'];
+  const n = Math.random() < .45 ? 1 : Math.random() < .7 ? 2 : 3;
+  const flies = Array.from({ length: n }, (_, i) => {
+    const c = COLOURS[Math.floor(Math.random() * COLOURS.length)];
+    const el = svg('0 0 24 20', rnd(14, 21), `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="${c}"/>
+      <path class="bw r" d="M12 10 C18 1 23 2 22 8 C22 12 17 13 12 10 C17 14 20 19 16 18 C14 17 13 14 12 10Z" fill="${c}"/>
+      <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>`);
+    el.classList.add('creature', 'flutter'); el.style.setProperty('--beat', `${rnd(.13, .19)}s`); layer.append(el);
+    const fromLeft = Math.random() < .5;
+    return { el, x: fromLeft ? -20 - i * 30 : W + 20 + i * 30, y: rnd(area.y, area.y + area.h), nx: noise(), ny: noise(), target: null, rest: 0, legs: Math.round(rnd(4, 8)), done: false, lead: i > 0 && Math.random() < .6 ? 0 : -1 };
   });
-  const out = { x: Math.random() < .5 ? -40 : W + 40, y: rnd(0, H * .4) };
-  await frames(run, (t) => { const dx = out.x - x, dy = out.y - y, d = Math.hypot(dx, dy); x += dx / d * 1.6 + nx(t) * 1.2; y += dy / d * 1.6 + Math.sin(t / 140); el.style.transform = `translate(${x}px, ${y}px)`; return d > 10; });
-  el.remove();
+  const pick = () => ({ x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) });
+  flies.forEach((f) => { f.target = pick(); });
+  await frames(run, (t) => {
+    let flying = false;
+    for (const f of flies) {
+      if (f.done) continue; flying = true;
+      if (f.rest > 0) { if (--f.rest === 0) f.el.classList.remove('resting'); continue; }
+      // A follower chases the first, circling it.
+      const chase = f.lead >= 0 && !flies[f.lead].done && !flies[f.lead].rest;
+      const tx = chase ? flies[f.lead].x + Math.cos(t / 260) * 16 : f.target.x, ty = chase ? flies[f.lead].y + Math.sin(t / 260) * 12 : f.target.y;
+      const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
+      if (!chase && d < 8) {
+        if (--f.legs <= 0) { f.target = { x: Math.random() < .5 ? -50 : W + 50, y: rnd(0, H * .4) }; f.leaving = true; }
+        else { if (Math.random() < .35) { f.rest = Math.round(rnd(60, 160)); f.el.classList.add('resting'); } f.target = pick(); }
+      }
+      const sp = chase ? 1.5 : f.leaving ? 1.6 : 1.1;
+      f.x += (dx / (d || 1)) * sp + f.nx(t) * 1.4; f.y += (dy / (d || 1)) * sp + f.ny(t * 1.3) * 1.6 + Math.sin(t / 140) * .6;
+      f.el.style.transform = `translate(${f.x}px, ${f.y}px)`;
+      if (f.leaving && (f.x < -40 || f.x > W + 40)) { f.done = true; f.el.remove(); flies.forEach((g) => { if (g.lead >= 0 && flies[g.lead] === f) g.lead = -1; }); }
+      if (t > 60000) { f.done = true; f.el.remove(); }
+    }
+    return flying;
+  });
+  flies.forEach((f) => f.el.remove());
+}
+
+// ── A frog at the edge of a pond: sits with its throat pulsing, blinks, hops along, and plops into the water. ──
+async function frog(run, sc) {
+  const band = waterBand(sc, 0, 1); if (!band || !sc.shore) return;
+  // In the foreground: on the near bank if it is in view, otherwise on a lily pad in the near water. Smaller farther up.
+  const W = innerWidth, H = innerHeight; const bank = imgY(sc.shore, sc); const near = bank > H * .72 && bank < dockTop() - 10;
+  const edge = near ? bank : Math.min(band[1], dockTop()) - rnd(14, 40); const size = Math.max(14, 26 * (edge / (H * .9)) ** 1.5);
+  const el = svg('0 0 36 26', size, `<g class="frog">
+    <path class="legs-in" d="M6 18 C1 18 1 23 8 23 L15 23 C12 21 10 18 6 18Z" fill="rgba(44,66,36,.92)"/>
+    <path class="legs-out" d="M9 18 L1 21 L-5 20 M10 20 L2 25 L-4 26" stroke="rgba(44,66,36,.92)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+    <path d="M5 17 C6 10 14 7 22 9 C27 10 31 13 31 17 C31 20 26 21.5 20 21.5 L9 21.5 C6 21.5 5 19.5 5 17Z" fill="rgba(44,66,36,.92)"/>
+    <ellipse class="throat" cx="27" cy="18.6" rx="3" ry="2" fill="rgba(70,90,50,.9)"/>
+    <circle cx="24" cy="9" r="3.1" fill="rgba(44,66,36,.95)"/><circle class="eye" cx="24.7" cy="8.5" r="1.15" fill="rgba(220,200,120,.9)"/>
+    <path d="M24 19 L27 23.5 L30.5 23.5" stroke="rgba(44,66,36,.92)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>`);
+  el.classList.add('creature', 'froggy', 'gone'); const right = Math.random() < .5; if (!right) el.style.setProperty('--flip', '-1');
+  let x = rnd(W * .12, W * .8); let y = edge - size * 23 / 36;
+  const pad = !near && svg('0 0 40 12', size * 1.5, '<path d="M20 6 L33 2.5 A19 5.5 0 1 1 26 1.2 Z" fill="rgba(52,86,40,.85)"/>');
+  if (pad) { pad.classList.add('creature', 'lilypad'); pad.style.transform = `translate(${x - size * .2}px, ${edge - size * .2}px)`; layer.append(pad); }
+  layer.append(el);
+  const place = (lift = 0) => { el.style.transform = `translate(${x}px, ${y - lift}px)`; };
+  place(); await wait(50, run); el.style.transition = 'opacity 1.6s ease'; el.classList.remove('gone'); await wait(1600, run);
+  const hop = async (dx, high, ms) => {
+    el.classList.add('jumping'); const x0 = x;
+    await frames(run, (t) => { const k = Math.min(1, t / ms); x = x0 + dx * k; place(Math.sin(k * Math.PI) * high); return k < 1; });
+    el.classList.remove('jumping');
+  };
+  for (let i = 0; i < Math.round(rnd(1, 3)); i++) {
+    await wait(rnd(1800, 4200), run);
+    if (Math.random() < .5) { el.classList.add('blink'); await wait(220, run); el.classList.remove('blink'); await wait(rnd(500, 1500), run); }
+    if (near) await hop((right ? 1 : -1) * rnd(16, 34), rnd(10, 18), 420);
+  }
+  await wait(rnd(1500, 3500), run);
+  // Into the water: a last leap, a ripple where it went in.
+  const dive = Math.min(28, (band[1] - edge) * .5 + 10);
+  el.classList.add('jumping'); const x0 = x, y0 = y;
+  await frames(run, (t) => { const k = Math.min(1, t / 520); x = x0 + (right ? 1 : -1) * 34 * k; y = y0 + dive * k; place(Math.sin(k * Math.PI) * 16); el.style.opacity = String(1 - Math.max(0, k - .6) / .4); return k < 1; });
+  const R = 16; const ring = svg(`0 0 ${R * 2 + 4} ${R * .7 + 4}`, R * 2 + 4, [0, 1].map((k) => `<ellipse class="ring" style="animation-delay:${k * .5}s" cx="${R + 2}" cy="${R * .35 + 2}" rx="${R}" ry="${R * .35}" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1"/>`).join(''));
+  ring.classList.add('creature', 'ripple'); ring.style.transform = `translate(${x + size / 2 - R}px, ${y + size * .5}px)`; lightLayer.append(ring);
+  el.remove(); if (pad) { pad.style.transition = 'opacity 3s ease'; pad.style.opacity = '0'; } await wait(4200, run); ring.remove(); pad?.remove();
 }
 
 // ── Bees: two or three, busy among the flowers, darting from one to the next and hovering. ──
@@ -645,9 +700,10 @@ const VISITORS = [
   { name: 'inchworm', fn: inchworm, w: 1.5, ok: (s) => s.trunks },
   { name: 'spider', fn: spider, w: 1, ok: (s) => s.has('in') || s.has('garden') },
   { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
-  { name: 'butterfly', fn: butterfly, w: 1.3, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
+  { name: 'butterfly', fn: butterfly, w: 2, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
   { name: 'hummingbird', fn: hummingbird, w: 2, ok: (s) => s.flowers },
+  { name: 'frog', fn: frog, w: 2.5, ok: (s) => s.has('lake') && s.shore && !s.has('city') },
   { name: 'rays', fn: rays, w: 2.5, ok: (s) => s.rays },
   { name: 'ripples', fn: ripples, w: 2, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'writing', fn: writing, w: 3, ok: (s) => s.paper },
@@ -713,7 +769,7 @@ export function creaturesInto(dark, light) {
 export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
-  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'onefish', 'fish', 'ripples', 'sandpipers'].includes(name);
+  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'onefish', 'fish', 'ripples', 'sandpipers', 'frog'].includes(name);
   if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88];
   if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);

@@ -9,6 +9,7 @@
 //   garden  plants close by: grass, flowers, trees, a forest (caterpillars, inchworms, dragonflies, spiders)
 //   out     ground outdoors (a cat, a bird landing)
 //   in      a room (a cat, a spider)
+//   city    a town's river or quay (no frogs there)
 //   dark    a dark painting (mean brightness under .35): the visitors show light on it, not dark
 // water: [top, bottom] of the water, as fractions of the picture's height (top is the horizon or the far shore);
 // shore: where water meets land, for waders and sandpipers.
@@ -42,7 +43,7 @@ export const SCENES = {
   'bright/sunrise_sea_sail': { k: 'sky sea boats', water: [.7, 1], live: [{ r: [.39, .72, .55, .86], m: 'bob' }] },
   // An idea's own picture
   'nodes/beck_cognitive_therapy_stoicism_tested': { k: 'garden out' },
-  'nodes/buddha_craving_root_of_suffering': { k: 'lake garden', water: [.72, 1], live: [{ r: [.64, .78, .88, 1], m: 'bob', soft: true }] },
+  'nodes/buddha_craving_root_of_suffering': { k: 'lake garden', water: [.72, 1], shore: .8, live: [{ r: [.64, .78, .88, 1], m: 'bob', soft: true }] },
   'nodes/democritus_atoms_and_void': { k: 'garden', rays: { x: .55, y: 0, a: 8 } },
   'nodes/epictetus_up_to_us': { k: 'sky garden out', live: [{ r: [.12, .52, .32, 1], m: 'sway', p: [.5, 1] }, { r: [.71, .52, .88, 1], m: 'sway', p: [.5, 1] }] },
   'nodes/epicurus_absence_of_pain': { k: 'in' },
@@ -76,7 +77,7 @@ export const SCENES = {
   'spares/act_kitchen': { k: 'in dark' },
   'spares/change_river': { k: 'sky lake garden', water: [.52, .86], shore: .84 },
   'spares/daily_bakery_window': { k: 'in', rays: { x: .45, y: 0, a: 6 }, live: [{ r: [.12, .69, .29, .86], m: 'breathe' }] },
-  'spares/daily_bridge_rain': { k: 'lake out', water: [.55, 1], shore: .62, live: [{ r: [.69, .64, .84, .81], m: 'breathe' }] },
+  'spares/daily_bridge_rain': { k: 'lake out city', water: [.55, 1], shore: .62, live: [{ r: [.69, .64, .84, .81], m: 'breathe' }] },
   'spares/daily_cafe_terrace': { k: 'out dark' },
   'spares/daily_fish_market': { k: 'out' },
   'spares/daily_laundry_yard': { k: 'garden out', rays: { x: .3, y: 0, a: 14 }, live: [{ r: [.12, -.02, .4, .17], m: 'sway', p: [.5, 0] }], canopy: [.5, 0, .87, .2], flowers: [.2, .7, .8, .88] },

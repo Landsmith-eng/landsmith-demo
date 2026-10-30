@@ -934,3 +934,11 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .hummer .hw.b { animation-delay: -.017s; }
 .hummer .htail { transform-box: fill-box; transform-origin: 100% 0; animation: htail 1.1s ease-in-out infinite alternate; }
 @keyframes htail { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
+.flutter .bw { animation-duration: var(--beat, .16s); }
+.creature.froggy { opacity: .55; }
+.froggy .legs-out { display: none; }
+.froggy.jumping .legs-out { display: inline; } .froggy.jumping .legs-in { display: none; }
+.froggy .throat { transform-box: fill-box; transform-origin: 30% 30%; animation: throat 1.3s ease-in-out infinite; }
+@keyframes throat { 0%, 60%, 100% { transform: scale(1); } 75% { transform: scale(1.45, 1.6); } }
+.froggy.blink .eye { opacity: 0; }
+.creature.lilypad { opacity: .5; }
