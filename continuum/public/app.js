@@ -120,7 +120,7 @@ function doors() {
       door('A debate with a friend', () => showTalk({ mode: 'settle' })),
       door('Something in the news', () => showTalk({ mode: 'news' })),
       door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
-      door('Work something out', () => showTalk({ mode: 'workout' })),
+      door('Work through a problem', () => showWorkThrough()),
       door('A goal I have', () => showTalk({ mode: 'goal' })),
       door('My group, in the Parthenon', () => showParthenon()),
       door('Look something up', () => showGallery('rooms', { search: true })),
@@ -1221,7 +1221,7 @@ function writeView(data) {
       node.why && h('p', { class: 'muted small why' }, node.why),
       hint('Scroll to the question'),
     ]),
-    panel('question', 'The question', [form, doors()]),
+    panel('question', 'The question', [form, checkinCard(data), doors()]),
   ], { background: node.backdrop ?? null, backgroundMax: .45 });
 }
 
@@ -1241,6 +1241,7 @@ function doneView(data, { reveal = false } = {}) {
   problemCard(intro, data.node);
   recallCard(intro);
   bearings(intro);
+  const k = checkinCard(data); if (k) intro.append(k);
   intro.append(doors());
   showConcept(data.node, [], {
     intro,
@@ -1414,6 +1415,7 @@ function galleryRooms(nodes, rooms, focus) {
   return [index, ...rooms.filter((r) => byRoom.get(r.id).length).map((r) => h('section', { class: 'room', id: `room-${r.id}` },
     h('h2', {}, r.name),
     h('p', { class: 'muted small room-blurb' }, r.blurb),
+    r.id === 'mind' && h('button', { type: 'button', class: 'btn ghost', style: 'margin:4px 0 12px', onclick: () => showWorkThrough() }, 'Work through a problem →'),
     h('div', { class: 'tiles' }, byRoom.get(r.id).map(tile))))];
 }
 
@@ -1574,7 +1576,13 @@ function showJournal() {
         doors());
     const again = h('p', { class: 'muted small', style: 'margin-top:28px' },
       h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => tour() }, 'Take the spoken tour again'));
-    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), views, journey, roads, threads, entries, again);
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const working = cs?.cases.some((c) => c.status === 'open') && h('section', { class: 'diary-block' },
+      h('h2', {}, 'What you are working through'),
+      h('ul', { class: 'path' }, cs.cases.filter((c) => c.status === 'open').map((c) => h('li', {},
+        h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)),
+        h('div', { class: 'muted small' }, `Since ${c.date} · ${c.checkins.length} ${c.checkins.length === 1 ? 'check-in' : 'check-ins'}${c.started ? ' · your course' : ''}`)))));
+    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again);
   });
 }
 
@@ -2248,6 +2256,138 @@ async function shareInvite(g) {
   try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
   catch { notice(url); }
 }
+// ── Working through a problem ──────────────────────────────────────────────────────────────────────────────
+// The user brings a problem; Continuum asks a few questions, one at a time (as a good counsellor opens a first
+// session), then draws on the whole map for what may be going on, the pitfalls that may keep them stuck, and a route of
+// ideas. Set as their course, the route leads the daily ideas; every few days it checks in and adjusts.
+const PITFALL_KIND = { assumption: 'An assumption', logic: 'A slip of logic', habit: 'A habit', feeling: 'A feeling steering', values: 'A clash of values' };
+const PROGRESS = { better: 'Better', same: 'About the same', worse: 'Harder', unclear: '' };
+const HELP_LINE = 'If you are in danger or thinking of harming yourself, please reach someone now: in the US, call or text 988; elsewhere, your local emergency number.';
+function showWorkThrough(id = null) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    if (id) return renderCase((await api(`/api/cases/${id}?date=${today()}`)).case);
+    const d = await api(`/api/cases?date=${today()}`);
+    pageBg = PAGE_BG.problem;
+    if (!d.enabled) return render(h('h1', {}, 'Work through a problem'), h('p', { class: 'muted' }, 'This needs Claude, which is not switched on yet (ANTHROPIC_API_KEY on the server).'));
+    const ta = h('textarea', { rows: '4', maxlength: '4000', placeholder: 'What is weighing on you? Say it plainly, the way you would to a friend.', 'aria-label': 'The problem' });
+    const go = h('button', { type: 'button', class: 'btn', disabled: true }, 'Begin');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    ta.addEventListener('input', () => { go.disabled = ta.value.trim().length < 3; });
+    go.addEventListener('click', async () => {
+      go.disabled = true; status.textContent = 'Listening…';
+      try {
+        const r = await api('/api/cases', { method: 'POST', body: { problem: ta.value, date: today() } });
+        renderCase(r.case);
+      } catch (e) { go.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again in a moment.'; }
+    });
+    const row = (c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) },
+      h('span', { class: 't' }, c.title ?? clipText(c.problem, 60))),
+    h('div', { class: 'muted small' }, c.status === 'interview' ? `Started ${c.date}, still talking it through` : c.status === 'closed' ? `Set aside · ${c.touched}` : `Since ${c.date}${c.started ? ' · your course' : ''} · last ${c.touched}`));
+    const open = d.cases.filter((c) => c.status !== 'closed'); const closed = d.cases.filter((c) => c.status === 'closed');
+    render(
+      h('h1', {}, 'Work through a problem'),
+      h('p', {}, 'Bring something you are stuck on: a habit, a decision, a feeling, a relationship, a worry. Continuum will ask a few questions to understand it, then draw on philosophy, psychology, the great traditions and the sciences to point to a route, and help you watch for the traps that keep people stuck.'),
+      h('p', { class: 'muted small' }, 'A voice of reason, not a therapist. ', HELP_LINE),
+      ta, h('div', { class: 'row' }, dictation(ta)?.button, go), status,
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'), h('ul', { class: 'path' }, open.map(row))),
+      closed.length > 0 && h('details', { class: 'diary-block' }, h('summary', {}, `Set aside (${closed.length})`), h('ul', { class: 'path' }, closed.map(row))));
+  });
+}
+const clipText = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+function ideaLink(id, refs) {
+  const r = refs[id]; if (!r) return null;
+  return h('a', { href: '#', class: `talk-ref field-${r.field}`, onclick: (e) => { e.preventDefault(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title);
+}
+function renderCase(c) {
+  pageBg = PAGE_BG.problem;
+  const refresh = (x) => renderCase(x);
+  const concern = [...c.turns].reverse().find((t) => t.concern) || c.plan?.concern || c.checkins.at(-1)?.concern;
+  const help = concern && h('p', { class: 'help-line' }, HELP_LINE);
+  const back = h('button', { type: 'button', class: 'chip', onclick: () => showWorkThrough() }, '← Your problems');
+  // The interview: what was asked and said; the waiting question with an answer box.
+  const said = c.turns.filter((t) => t.a || t.q).map((t) => h('div', {},
+    t.reflect && h('div', { class: 'talk-turn from-map' }, t.reflect),
+    t.q && h('div', { class: 'talk-turn from-map wt-q' }, t.q),
+    t.a && h('div', { class: 'talk-turn from-you' }, t.a)));
+  const log = h('div', { class: 'talk-log' }, h('div', { class: 'talk-turn from-you' }, c.problem), said);
+  if (c.status === 'interview') {
+    const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'Your answer', 'aria-label': 'Your answer' });
+    const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Answer');
+    const enough = h('button', { type: 'button', class: 'btn ghost' }, 'Show me a route now');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+    const post = async (body, wait) => {
+      send.disabled = enough.disabled = true; status.textContent = wait;
+      try { refresh((await api(`/api/cases/${c.id}/answer`, { method: 'POST', body: { ...body, date: today() } })).case); }
+      catch (e) { send.disabled = !ta.value.trim(); enough.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow; this will wait.' : 'Something went wrong. Your answer is still here; try again.'; }
+    };
+    send.addEventListener('click', () => post({ answer: ta.value }, 'Thinking about what you said… (the route, when it comes, takes about half a minute)'));
+    enough.addEventListener('click', () => post({ answer: ta.value, enough: true }, 'Drawing a route from the map… about half a minute.'));
+    render(back, h('h1', {}, 'Let\'s understand it'), help, log, ta, h('div', { class: 'row' }, dictation(ta)?.button, enough, send), status);
+    requestAnimationFrame(() => ta.scrollIntoView({ block: 'center' }));
+    return;
+  }
+  const p = c.plan; const refs = c.refs;
+  const pit = (x) => h('li', {}, h('div', { class: 'eyebrow' }, PITFALL_KIND[x.kind] ?? x.kind), h('p', {}, h('strong', {}, x.name), `: ${x.how}`),
+    x.idea && refs[x.idea] && h('p', { class: 'muted small' }, 'What answers it: ', ideaLink(x.idea, refs)));
+  const start = h('button', { type: 'button', class: 'btn' }, c.started ? 'This is your course' : 'Make this my course');
+  start.disabled = c.started;
+  start.addEventListener('click', async () => {
+    start.disabled = true;
+    await api(`/api/cases/${c.id}/start`, { method: 'POST', body: { date: today() } }).then(() => { start.textContent = 'This is your course'; notice('Set. Your next daily ideas follow this route, one a day.'); }).catch(() => { start.disabled = false; });
+  });
+  // Checking in: how it is going, answered by a reply that may change the course.
+  const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'How is it going? What happened, what you tried, what you told yourself…', 'aria-label': 'How it is going' });
+  const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Check in');
+  const status = h('p', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = 'Looking at how it has gone, and at what you have written lately… about half a minute.';
+    try { refresh((await api(`/api/cases/${c.id}/checkin`, { method: 'POST', body: { answer: ta.value, date: today() } })).case); }
+    catch (e) { send.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again.'; }
+  });
+  const checkins = c.checkins.map((x) => h('li', {},
+    h('div', { class: 'eyebrow diary-date' }, [x.date, PROGRESS[x.progress]].filter(Boolean).join(' · ')),
+    x.question && h('p', { class: 'muted small' }, x.question),
+    h('p', {}, x.answer), h('div', { class: 'talk-turn from-map' }, x.reply),
+    x.noticed?.length > 0 && h('ul', { class: 'pitfalls' }, x.noticed.map(pit)),
+    x.next_step && h('p', {}, h('strong', {}, 'Next: '), x.next_step),
+    x.rerouted && h('p', { class: 'muted small' }, 'The course was changed: see the route above.')));
+  const status2 = h('div', { class: 'row', style: 'justify-content:flex-start' },
+    c.status === 'open'
+      ? h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'closed' } }); notice('Set aside. It is kept, and you can open it again.'); showWorkThrough(); } }, 'It is resolved, or set it aside')
+      : h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'open' } }); showWorkThrough(c.id); } }, 'Open it again'));
+  render(back,
+    h('div', { class: 'eyebrow' }, `Since ${c.date}`), h('h1', {}, c.title), help,
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
+    p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
+    c.route.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'A route through it'),
+      h('ol', { class: 'wt-route' }, c.route.map((r) => h('li', {}, ideaLink(r.id, refs), h('p', { class: 'muted small' }, r.why)))),
+      c.status === 'open' && h('div', { class: 'row', style: 'justify-content:flex-start' }, start),
+      h('p', { class: 'muted small' }, 'As your course, these become your daily ideas, one a day, before anything else.')),
+    p.practice && refs[p.practice] && h('section', { class: 'wt-part' }, h('h2', {}, 'A practice for it'), h('p', {}, ideaLink(p.practice, refs))),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'A first step this week'), h('p', {}, p.first_step)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Checking in'),
+      checkins.length > 0 && h('ul', { class: 'path' }, checkins),
+      c.status === 'open' && h('div', {}, h('p', { class: 'ask-q' }, c.question), ta, h('div', { class: 'row' }, dictation(ta)?.button, send), status),
+      h('p', { class: 'muted small' }, 'Every few days Continuum will ask on Wander. It looks at what you write and say in between, and names a trap if it shows up again.')),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `About "${c.title}": `, draft: true }) }, 'Talk it over')),
+    h('details', { class: 'wt-part' }, h('summary', {}, 'How we got here'), log),
+    status2);
+}
+// On Wander: a check-in, every few days, on a problem being worked through.
+function checkinCard(data) {
+  const k = data.checkin; if (!k) return null;
+  return h('div', { class: 'bearings' },
+    h('div', { class: 'eyebrow' }, `Checking in · ${k.title}`),
+    h('p', {}, k.question),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => showWorkThrough(k.id) }, 'Answer'));
+}
+
 function showParthenon({ idea = null } = {}) {
   setNav('talk');
   return guarded(async () => {

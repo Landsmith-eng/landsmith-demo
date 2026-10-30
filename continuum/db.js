@@ -211,6 +211,24 @@ CREATE TABLE IF NOT EXISTS notes (
   PRIMARY KEY (user_id, node_id)
 );
 
+-- Working through a problem: the interview, the plan drawn from the map, the course, and the check-ins (JSON).
+CREATE TABLE IF NOT EXISTS cases (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  problem TEXT NOT NULL,
+  title TEXT,
+  turns TEXT NOT NULL DEFAULT '[]',      -- [{q, reflect, a}]; the last may wait for its answer (a null)
+  plan TEXT,                              -- PLAN_SCHEMA in talk.js, once written
+  route TEXT NOT NULL DEFAULT '[]',       -- the current course: [{id, why}]; check-ins may change it
+  checkins TEXT NOT NULL DEFAULT '[]',    -- [{date, answer, reply, progress, noticed, next_step}]
+  status TEXT NOT NULL DEFAULT 'interview' CHECK (status IN ('interview','open','closed')),
+  started INTEGER NOT NULL DEFAULT 0,     -- 1 once the user set the route as their course
+  local_date TEXT NOT NULL,
+  touched_date TEXT NOT NULL,             -- the last day it was worked on (for check-ins)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS cases_user ON cases(user_id, status);
+
 -- Highlights: any words the user chose on a page and kept, found again in the Diary.
 CREATE TABLE IF NOT EXISTS highlights (
   id INTEGER PRIMARY KEY,

@@ -10,7 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
@@ -189,6 +189,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const d = discovery(uid, () => false);
     const fresh = pool.filter((n) => !n.walked);
     const inPool = new Set(pool.map((n) => n.id));
+    // A problem they are working through comes first: the next idea on the course it set, not yet written on.
+    for (const c of kq.started.all(uid)) {
+      const route = JSON.parse(c.route); const k = route.findIndex((r) => inPool.has(r.id) && fresh.some((n) => n.id === r.id));
+      if (k >= 0) return { id: route[k].id, why: `For what you are working through ("${c.title}"), step ${k + 1} of ${route.length}: ${route[k].why}` };
+    }
     // What they have been talking about lately comes first: an idea that bears on a view, goal or question they
     // voiced in the last week, not yet written on (fresh ones first).
     for (const v of vq.since.all(uid, shiftDay(date, -7))) {
@@ -298,7 +303,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       node = n ? { ...card(n), backdrop: n.image ? JSON.parse(n.image).src : null, why: q.pickFor.get(uid, date)?.why ?? null } : null;
     }
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
-    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)) });
+    const due = kq.due.get(uid, shiftDay(date, -CHECKIN_DAYS));
+    const checkin = due ? { id: due.id, title: due.title, question: lastQuestion(due) } : null;
+    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin });
   });
 
   app.post('/api/respond', auth, (req, res) => {
@@ -1409,7 +1416,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     let reply = '';
     try {
       const states = talkStates(uid, date);
-      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text });
+      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid) });
       const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
       if (keep) {
         tq.save.run(JSON.stringify(messages), t.id);
@@ -1421,6 +1428,176 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       send({ t: 'error', error: e.status === 401 ? 'The Anthropic key did not work. The server window says more.' : 'Something went wrong reaching Claude. Try again in a moment.' });
     }
     res.end();
+  });
+
+  // ── Working through a problem: an interview, a plan from the whole map, a course, and check-ins ──
+  const CHECKIN_DAYS = 3; const MAX_QUESTIONS = 6;
+  const kq = {
+    add: db.prepare('INSERT INTO cases (user_id, problem, turns, local_date, touched_date) VALUES (?, ?, ?, ?, ?)'),
+    get: db.prepare('SELECT * FROM cases WHERE id = ? AND user_id = ?'),
+    all: db.prepare("SELECT * FROM cases WHERE user_id = ? ORDER BY status = 'closed', touched_date DESC, id DESC"),
+    open: db.prepare("SELECT * FROM cases WHERE user_id = ? AND status = 'open' ORDER BY touched_date DESC LIMIT 3"),
+    started: db.prepare("SELECT title, route FROM cases WHERE user_id = ? AND status = 'open' AND started = 1 ORDER BY touched_date DESC"),
+    due: db.prepare("SELECT * FROM cases WHERE user_id = ? AND status = 'open' AND touched_date <= ? ORDER BY touched_date LIMIT 1"),
+    turns: db.prepare('UPDATE cases SET turns = ?, touched_date = ? WHERE id = ?'),
+    plan: db.prepare("UPDATE cases SET plan = ?, title = ?, route = ?, status = 'open', touched_date = ? WHERE id = ?"),
+    checkin: db.prepare('UPDATE cases SET checkins = ?, route = ?, touched_date = ? WHERE id = ?'),
+    start: db.prepare('UPDATE cases SET started = 1, touched_date = ? WHERE id = ?'),
+    status: db.prepare('UPDATE cases SET status = ? WHERE id = ?'),
+  };
+  const lastQuestion = (c) => JSON.parse(c.checkins).at(-1)?.check_in ?? JSON.parse(c.plan ?? '{}').check_in ?? 'How is it going?';
+  function caseOut(c, states) {
+    const turns = JSON.parse(c.turns); const plan = c.plan ? JSON.parse(c.plan) : null; const route = JSON.parse(c.route);
+    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice,
+      ...JSON.parse(c.checkins).flatMap((x) => (x.noticed ?? []).map((p) => p.idea))].filter(Boolean);
+    return {
+      id: c.id, title: c.title, problem: c.problem, status: c.status, started: Boolean(c.started), date: c.local_date, touched: c.touched_date,
+      turns, plan, route, checkins: JSON.parse(c.checkins), question: c.status === 'open' ? lastQuestion(c) : null,
+      refs: talkRefs(states, [...new Set(ids)]),
+    };
+  }
+  // Only ideas the user may see, practices aside; a pitfall's idea is dropped (kept blank) when it is not one of them.
+  function cleanPlan(plan, states) {
+    const ok = (id) => { const n = id && q.node.get(id); return Boolean(n && !hiddenIn(states, n)); };
+    const route = (plan.route ?? []).filter((r) => ok(r.id) && q.node.get(r.id).type !== 'practice')
+      .filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i).slice(0, 6);
+    const pit = (p) => ({ ...p, idea: ok(p.idea) ? p.idea : '' });
+    return { ...plan, route, pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
+      practice: ok(plan.practice) && q.node.get(plan.practice).type === 'practice' ? plan.practice : '' };
+  }
+  // For Talk: the problems they are working through, with the pitfalls named so far.
+  function casesText(uid) {
+    return kq.open.all(uid).map((c) => {
+      const plan = JSON.parse(c.plan ?? '{}'); const seen = JSON.parse(c.checkins).flatMap((x) => x.noticed ?? []);
+      const pits = [...(plan.pitfalls ?? []), ...seen].map((p) => `${p.name} (${p.kind}${p.idea ? `, answered by [[${p.idea}]]` : ''})`);
+      return `- ${c.local_date}: "${c.title}". Pitfalls: ${[...new Set(pits)].join('; ') || 'none named'}. Course: ${JSON.parse(c.route).map((r) => `[[${r.id}]]`).join(', ')}.`;
+    }).join('\n');
+  }
+  // Their recent writing and talk, dated, for a check-in to look at how they have been thinking.
+  function recentLines(uid, since) {
+    const answers = db.prepare("SELECT n.title, j.body, j.local_date FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND j.local_date >= ? ORDER BY j.local_date DESC LIMIT 12").all(uid, since);
+    const notes = db.prepare('SELECT n.title, t.body, t.local_date FROM notes t JOIN nodes n ON n.id = t.node_id WHERE t.user_id = ? AND t.local_date >= ? ORDER BY t.local_date DESC LIMIT 12').all(uid, since);
+    const said = vq.since.all(uid, since).slice(0, 20);
+    return [
+      ...answers.map((a) => `${a.local_date} answer on "${a.title}": ${clip(a.body, 400)}`),
+      ...notes.map((n) => `${n.local_date} note on "${n.title}": ${clip(n.body, 400)}`),
+      ...said.map((v) => `${v.local_date} said (${v.kind}, ${v.topic}): ${v.body}`),
+    ].join('\n');
+  }
+  const caseStates = (uid, date) => talkStates(uid, date);
+  const catalogueFor = (states) => talkCatalogue(states);
+  function guardTalk(req, res) {
+    if (!talk) { res.status(404).json({ error: 'talk_off' }); return false; }
+    if (tq.today.get(req.user.id, localDate(req.body?.date)).n >= talkDailyLimit) { res.status(429).json({ error: 'daily_limit' }); return false; }
+    q.insertEvent.run(req.user.id, 'talk', null, localDate(req.body?.date));
+    return true;
+  }
+  const failed = (res, e, what) => { console.warn(`${what}: ${e.status ?? ''} ${e.message}`); res.status(502).json({ error: 'claude_failed' }); };
+  async function makePlan(uid, date, c, states) {
+    const plan = await writePlan(talk, { problem: c.problem, turns: JSON.parse(c.turns).filter((t) => t.a), catalogue: catalogueFor(states), views: viewsText(uid), diary: talkDiary(uid, states) });
+    if (!plan) return null;
+    const clean = cleanPlan(plan, states);
+    kq.plan.run(JSON.stringify(clean), clip(clean.title, 80) || 'A problem to work through', JSON.stringify(clean.route), date, c.id);
+    return clean;
+  }
+
+  app.get('/api/cases', auth, (req, res) => {
+    const states = caseStates(req.user.id, localDate(req.query.date));
+    res.json({ enabled: Boolean(talk), cases: kq.all.all(req.user.id).map((c) => caseOut(c, states)) });
+  });
+  app.get('/api/cases/:id', auth, (req, res) => {
+    const c = kq.get.get(Number(req.params.id), req.user.id);
+    if (!c) return res.status(404).json({ error: 'not_found' });
+    res.json({ case: caseOut(c, caseStates(req.user.id, localDate(req.query.date))) });
+  });
+  // A problem, in the user's words: the first question back.
+  app.post('/api/cases', auth, async (req, res) => {
+    const problem = typeof req.body?.problem === 'string' ? req.body.problem.trim() : '';
+    if (problem.length < 3 || problem.length > MAX_USER_TEXT) return res.status(400).json({ error: 'bad_problem' });
+    if (!guardTalk(req, res)) return;
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    try {
+      const step = await interviewStep(talk, { problem, turns: [], views: viewsText(uid), experience: experienceOf(uid).text });
+      if (!step) return res.status(502).json({ error: 'claude_failed' });
+      const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern }]), date, date).lastInsertRowid);
+      noteFrom(uid, date, problem, 'A problem they brought to Continuum to work through.', 'problem');
+      res.json({ case: caseOut(kq.get.get(id, uid), caseStates(uid, date)), concern: step.concern });
+    } catch (e) { failed(res, e, 'Interview'); }
+  });
+  // An answer to the waiting question: the next question, or (when understood, or asked for) the plan.
+  app.post('/api/cases/:id/answer', auth, async (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const c = kq.get.get(Number(req.params.id), uid);
+    if (!c || c.status !== 'interview') return res.status(404).json({ error: 'not_found' });
+    const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
+    const enough = req.body?.enough === true;
+    if (!answer && !enough) return res.status(400).json({ error: 'empty' });
+    if (answer.length > MAX_USER_TEXT) return res.status(400).json({ error: 'too_long' });
+    if (!guardTalk(req, res)) return;
+    const turns = JSON.parse(c.turns);
+    if (answer && turns.at(-1) && turns.at(-1).a == null) turns.at(-1).a = answer;
+    else if (turns.at(-1)?.a == null) turns.pop(); // "enough" with the question unanswered
+    kq.turns.run(JSON.stringify(turns), date, c.id);
+    if (answer) noteFrom(uid, date, answer, `Answering "${turns.at(-1).q}" about a problem: ${clip(c.problem, 200)}`, 'problem');
+    const states = caseStates(uid, date);
+    try {
+      let step = null;
+      if (!enough && turns.length < MAX_QUESTIONS) {
+        step = await interviewStep(talk, { problem: c.problem, turns, views: viewsText(uid), experience: experienceOf(uid).text });
+        if (!step) return res.status(502).json({ error: 'claude_failed' });
+        if (!step.done || step.concern) {
+          turns.push({ q: step.question, reflect: step.reflect, a: null, concern: step.concern });
+          kq.turns.run(JSON.stringify(turns), date, c.id);
+          return res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: step.concern });
+        }
+      }
+      if (step?.reflect) { turns.push({ q: null, reflect: step.reflect, a: null }); kq.turns.run(JSON.stringify(turns), date, c.id); }
+      const plan = await makePlan(uid, date, kq.get.get(c.id, uid), states);
+      if (!plan) return res.status(502).json({ error: 'claude_failed' });
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: plan.concern });
+    } catch (e) { failed(res, e, 'Interview'); }
+  });
+  // Set the route as their course: it leads the daily ideas, one stop a day.
+  app.post('/api/cases/:id/start', auth, (req, res) => {
+    const date = localDate(req.body?.date);
+    const c = kq.get.get(Number(req.params.id), req.user.id);
+    if (!c || c.status !== 'open') return res.status(404).json({ error: 'not_found' });
+    kq.start.run(date, c.id);
+    if (!q.writtenOn.get(req.user.id, date)) q.dropPick.run(req.user.id, date);
+    res.json({ ok: true });
+  });
+  // How is it going: a reply, pitfalls noticed (now and in their recent writing), and the course kept or changed.
+  app.post('/api/cases/:id/checkin', auth, async (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const c = kq.get.get(Number(req.params.id), uid);
+    if (!c || c.status !== 'open') return res.status(404).json({ error: 'not_found' });
+    const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
+    if (!answer || answer.length > MAX_USER_TEXT) return res.status(400).json({ error: 'bad_answer' });
+    if (!guardTalk(req, res)) return;
+    const states = caseStates(uid, date);
+    const history = JSON.parse(c.checkins);
+    try {
+      const r = await checkIn(talk, {
+        title: c.title, problem: c.problem, plan: { ...JSON.parse(c.plan), route: JSON.parse(c.route) },
+        history: history.map((x) => `${x.date} (${x.progress}): they said "${clip(x.answer, 300)}"`).join('\n'),
+        answer, recent: recentLines(uid, history.at(-1)?.date ?? c.local_date), catalogue: catalogueFor(states),
+      });
+      if (!r) return res.status(502).json({ error: 'claude_failed' });
+      const clean = cleanPlan({ ...r, pitfalls: [] }, states);
+      const route = clean.route.length >= 2 ? clean.route : JSON.parse(c.route);
+      history.push({ date, answer, question: lastQuestion(c), reply: r.reply, progress: r.progress, noticed: clean.noticed ?? [], next_step: r.next_step, check_in: r.check_in, rerouted: clean.route.length >= 2 });
+      kq.checkin.run(JSON.stringify(history), JSON.stringify(route), date, c.id);
+      noteFrom(uid, date, answer, `A check-in on a problem they are working through: ${c.title}`, 'problem');
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: r.concern });
+    } catch (e) { failed(res, e, 'Check-in'); }
+  });
+  // Resolved, or set aside (closed); or opened again.
+  app.post('/api/cases/:id/status', auth, (req, res) => {
+    const c = kq.get.get(Number(req.params.id), req.user.id);
+    const to = req.body?.status;
+    if (!c || !['open', 'closed'].includes(to) || c.status === 'interview') return res.status(404).json({ error: 'not_found' });
+    kq.status.run(to, c.id);
+    res.json({ ok: true });
   });
 
   // ElevenLabs problems show in the server window, so they can be fixed (the phone falls back to its own voice).

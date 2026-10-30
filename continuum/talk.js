@@ -90,11 +90,11 @@ End with one question the user could ask their friend next time, to understand t
 
 // The catalogue the model works from: one line per idea the user may see (never upcoming daily cards, never today's
 // unwritten card). The diary follows it, outside the cached part, since it changes as the user writes.
-export function systemBlocks({ catalogue, diary, today, views = '', experience = '' }) {
+export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '' }) {
   return [
     { type: 'text', text: RULES },
     { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}` },
+    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}` },
   ];
 }
 
@@ -246,6 +246,131 @@ export async function askBack(talk, { note, idea, views = '' }) {
   });
   if (msg.stop_reason === 'refusal') return null;
   return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || null;
+}
+
+// ── Working through a problem ──
+// An interview first (one question at a time, as a good counsellor opens a first session), then a plan drawn from the
+// whole map, then check-ins that watch how it is going and adjust the course. Continuum is a voice of reason here, not
+// a therapist: it never diagnoses, and it points to real help when someone may be in danger.
+const SAFETY = 'If anything they say suggests they may harm themselves or someone else, or are in danger or being harmed, set concern to true: respond with warmth first, say plainly that this is more than Continuum can help with, and urge them to reach someone they trust or a crisis line now (in the US, call or text 988; elsewhere, local emergency services).';
+export const INTERVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    concern: { type: 'boolean' },
+    done: { type: 'boolean' },
+    reflect: { type: 'string' },
+    question: { type: 'string' },
+  },
+  required: ['concern', 'done', 'reflect', 'question'],
+  additionalProperties: false,
+};
+export async function interviewStep(talk, { problem, turns, views = '', experience = '' }) {
+  const asked = turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join('\n\n');
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 4000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: INTERVIEW_SCHEMA } },
+    system: `You are Continuum, a daily philosophy app, opening a conversation about a problem in the user's life, the way a good counsellor opens a first session: curious, warm, unhurried, never judging. Your aim is to understand the problem well enough to point to a route through it. Ask ONE question at a time, short and plain, that the user can answer in a sentence or two (by voice or typing). Across the interview, find out what you need, in whatever order follows naturally from their answers: what is actually happening (a recent example), how long and how often, what they feel and what they tell themselves about it, what they have tried, what matters most to them here, who else is involved, and what "better" would look like. Do not ask what they have already told you. reflect: one sentence that shows you heard their last answer (or the problem itself, at the start), in their own terms, without praise or advice. Set done to true (and question to "") once you understand enough to help, usually after three to five questions, never more than six. Never diagnose, label them, or give advice yet. ${SAFETY}`,
+    messages: [{ role: 'user', content: `${experience ? `Their experience with Continuum: ${experience}\n` : ''}${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}The problem, in their words:\n${problem}${asked ? `\n\nThe interview so far:\n${asked}` : ''}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
+const PITFALL = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: ['assumption', 'logic', 'habit', 'feeling', 'values'] },
+    name: { type: 'string' },
+    how: { type: 'string' },
+    idea: { type: 'string' },
+  },
+  required: ['kind', 'name', 'how', 'idea'],
+  additionalProperties: false,
+};
+const STOP = { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false };
+export const PLAN_SCHEMA = {
+  type: 'object',
+  properties: {
+    concern: { type: 'boolean' },
+    title: { type: 'string' },
+    heard: { type: 'string' },
+    going_on: { type: 'string' },
+    pitfalls: { type: 'array', items: PITFALL },
+    route: { type: 'array', items: STOP },
+    practice: { type: 'string' },
+    first_step: { type: 'string' },
+    check_in: { type: 'string' },
+  },
+  required: ['concern', 'title', 'heard', 'going_on', 'pitfalls', 'route', 'practice', 'first_step', 'check_in'],
+  additionalProperties: false,
+};
+const PLAN_RULES = `You are Continuum, a daily practice app that holds the collective wisdom of philosophy, the world's religious traditions, psychology, the sciences and the law. Be a voice of reason for a hard problem: warm, clear, honest, and practical. Plain words, no jargon, no formatting inside the strings. Speak to the user as "you".
+- title: a short name for the problem, three to six words, in their terms (e.g. "Putting off the job search").
+- heard: two or three sentences that show you understood the situation and what matters to them.
+- going_on: two to four sentences on what may be going on, offered as possibilities, never a diagnosis. Draw on whatever helps most, from any field, not only psychology.
+- pitfalls: one to four things that may be keeping them stuck, each found in what they actually said: an untested assumption, a slip of logic (all-or-nothing, mind reading, a hasty generalisation, a false choice, a sunk cost…), a habit, a feeling steering the decision, or a clash of values. name: its plain name. how: how it shows up in their own words, briefly, and why it matters. idea: the id of the idea on the map that best tests or answers it, exactly as listed, or "" if none fits. Be kind and exact; if there is no real pitfall, list none rather than invent one.
+- route: three to five ideas from the map, in a sensible order, that would help them see the problem differently, challenge the pitfalls and make a new decision; each with why, one sentence on what it offers them. Mix fields where it helps. Use only ids exactly as listed.
+- practice: the id of one practice from the map that fits (ids starting practice_), or "".
+- first_step: one small, concrete thing to do this week, specific to their situation.
+- check_in: the one question to ask them in a few days, to see how it is going.
+${SAFETY} When concern is true, keep the rest brief and gentle.`;
+export async function writePlan(talk, { problem, turns, catalogue, views = '', diary = '' }) {
+  const asked = turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join('\n\n');
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 16000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
+    system: [
+      { type: 'text', text: PLAN_RULES },
+      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
+    ],
+    messages: [{ role: 'user', content: `${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}${diary ? `From their diary (recent):\n${diary}\n\n` : ''}The problem, in their words:\n${problem}\n\nThe interview:\n${asked || '(They asked to go straight to a route.)'}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
+export const CHECKIN_SCHEMA = {
+  type: 'object',
+  properties: {
+    concern: { type: 'boolean' },
+    reply: { type: 'string' },
+    progress: { type: 'string', enum: ['better', 'same', 'worse', 'unclear'] },
+    noticed: { type: 'array', items: PITFALL },
+    route: { type: 'array', items: STOP },
+    next_step: { type: 'string' },
+    check_in: { type: 'string' },
+  },
+  required: ['concern', 'reply', 'progress', 'noticed', 'route', 'next_step', 'check_in'],
+  additionalProperties: false,
+};
+export async function checkIn(talk, { title, problem, plan, history, answer, recent, catalogue }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 16000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: CHECKIN_SCHEMA } },
+    system: [
+      { type: 'text', text: `You are Continuum, checking in on a problem the user is working through with you, as a steady, honest friend with the world's wisdom to hand. Plain words, no formatting inside the strings.
+- reply: three to six sentences. Respond to what they say now: name real progress plainly, take setbacks without blame. Then look at the evidence of how they have been thinking lately (their recent writing and talk, below): if one of the pitfalls named before has come back, or a new one shows (an untested assumption, a slip of logic, a habit, a feeling steering things, a clash of values), say so kindly and exactly, with what they said. Never shame. End with encouragement that is earned, not empty.
+- progress: better, same, worse or unclear.
+- noticed: pitfalls seen in what they said now or in their recent writing (same shape as before: kind, name, how, idea id or ""); empty if none.
+- route: if the course should change (it worked, it missed, or a new pitfall needs a different idea), the new two to five ideas in order, ids exactly as listed; otherwise an empty list to keep the course.
+- next_step: one small, concrete step for the coming days.
+- check_in: the question to ask next time.
+${SAFETY}` },
+      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
+    ],
+    messages: [{ role: 'user', content: `The problem: ${title}\nIn their words: ${problem}\n\nThe plan so far:\n${JSON.stringify(plan)}\n\nEarlier check-ins:\n${history || '(none)'}\n\nTheir recent writing and talk (dated):\n${recent || '(nothing yet)'}\n\nWhat they say now:\n${answer}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
 }
 
 // The Parthenon's moderator: reads a group's discussion of one topic and helps it along, the way a good seminar leader
