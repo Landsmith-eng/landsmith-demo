@@ -928,3 +928,4 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .gaze .lyric.out { opacity: 0; transform: translateY(-12px); filter: blur(3px); }
 .gaze .lyrics.paused .lyric.in { opacity: .6; }
 .gaze .lyric-dust { position: absolute; inset: 0; pointer-events: none; }
+.think-door.pick-up { border-color: rgba(244, 192, 99, .55); background: rgba(40, 30, 10, .42); }

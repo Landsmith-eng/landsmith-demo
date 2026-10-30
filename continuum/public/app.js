@@ -403,6 +403,7 @@ async function loadCompass(node, box, trail) {
 // Arrive, the line you kept, the exercise (with a breathing timer), an intention. Sizes grow with the habit.
 const SIZE_LABEL = { tiny: '10 seconds', small: '1 minute', full: '5 minutes' };
 function showPractice({ practice = null, size = null } = {}) {
+  remember({ kind: 'practice', title: 'Today\'s practice' });
   setNav('practice');
   return guarded(async () => {
     const plan = await api(`/api/practice?date=${today()}${practice ? `&practice=${encodeURIComponent(practice)}` : ''}`);
@@ -719,7 +720,7 @@ function onStageTap(e) {
   showKey(reader.state === 'paused' ? 3500 : 2200);
 }
 // The user's own scrolling means they are looking somewhere: stop pulling the page along.
-const letGo = () => { if (reader.state !== 'idle') reader.follow = false; };
+const letGo = () => { if (reader.state !== 'idle') { reader.follow = false; reader.letGoAt = performance.now(); scrollGoal = null; } };
 addEventListener('touchmove', letGo, { passive: true });
 addEventListener('wheel', letGo, { passive: true });
 document.addEventListener('click', onStageTap);
@@ -757,7 +758,23 @@ function lightWord(k, charAt) {
   let i = -1; for (let j = 0; j < words.length && words[j].at <= charAt; j++) i = j;
   const el = words[i]?.el; if (!el || el === reader.lit) return;
   reader.lit?.classList.remove('now'); el.classList.add('now'); reader.lit = el;
-  glowWord(el);
+  glowWord(el); keepInPlace(el);
+}
+// The page follows the voice: it glides so the line being read stays at the same height, a little above the middle.
+// Scrolling by hand takes over; a few seconds after the last touch, it follows again.
+let scrollGoal = null; let scrollRaf = 0;
+function keepInPlace(el) {
+  if (!reader.follow) { if (performance.now() - (reader.letGoAt ?? 0) < 5000) return; reader.follow = true; }
+  const d = el.getBoundingClientRect().top - innerHeight * .4;
+  if (Math.abs(d) < 8) return;
+  scrollGoal = Math.max(0, scrollY + d);
+  if (!scrollRaf) scrollRaf = requestAnimationFrame(glide);
+}
+function glide() {
+  scrollRaf = 0; if (scrollGoal == null || reader.state === 'idle') return;
+  const d = scrollGoal - scrollY; if (Math.abs(d) < 1) { scrollGoal = null; return; }
+  window.scrollTo(0, scrollY + d * .07);
+  scrollRaf = requestAnimationFrame(glide);
 }
 // The spoken word's letters light one after another, a spark running across them: each flares and fades, shedding a
 // few motes of stardust that drift and twinkle out. No box around the word: only the letters glow.
@@ -836,7 +853,7 @@ async function loop() {
     markPanel();
     if (item.p !== shownPanel) {
       const r = reader.panels[item.p].getBoundingClientRect();
-      if (reader.follow && (r.top > innerHeight * .6 || r.bottom < innerHeight * .2)) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
+      if (reader.follow && !item.words?.some((w) => w.el) && (r.top > innerHeight * .6 || r.bottom < innerHeight * .2)) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
       shownPanel = item.p;
       if (run.stop) return;
     }
@@ -1371,6 +1388,7 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null, b
       const p = e.target; const i = panels.indexOf(p);
       if (e.isIntersecting && e.intersectionRatio > .3) {
         p.classList.add('in'); p.classList.remove('past');
+        const last = lastPlace(); if (last?.kind === 'idea' && last.id === node.id && i > 0) remember({ ...last, part: i, label: p.dataset.label });
         rail.querySelectorAll('.dot').forEach((d, k) => d.classList.toggle('on', k === i));
         motifLevel(LEVEL[p.dataset.kind] ?? .7);
         if (p.dataset.kind === 'source' && !sawSource) { sawSource = true; onSource?.(); }
@@ -1399,10 +1417,12 @@ function cardLinks(node, trail) {
     node.year != null && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('timeline', { focus: node.id }) }, 'Timeline'),
     node.room && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('rooms', { focus: node.id }) }, 'Room'),
     node.source_face && favoriteButton(node),
+    document.documentElement.classList.contains('can-speak') && h('button', { type: 'button', class: 'chip', onclick: () => contemplate() }, '☾ Contemplate'),
   ];
 }
 
 function showConcept(node, trail, opts = {}) {
+  remember({ kind: 'idea', id: node.id, title: node.title, thinker: node.thinker ?? null, part: opts.startAt ?? 0 });
   renderStage(node, conceptPanels(node, trail, opts), {
     links: cardLinks(node, trail), startAt: opts.startAt ?? 0, background: node.background ?? null,
     onSource: () => api('/api/event', { method: 'POST', body: { kind: 'flip', node_id: node.id, date: today() } }).catch(() => {}),
@@ -1603,6 +1623,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
 
 // The Map of ideas, over the observatory plate (see mapview.js).
 function showMap() {
+  remember({ kind: 'map', title: 'The Map' });
   setNav('gallery');
   return guarded(async () => {
     const data = await api(`/api/map?date=${today()}`);
@@ -1909,6 +1930,7 @@ const TALK_MODES = {
   workout: { label: 'Work it out', placeholder: 'What is on your mind? A habit, a feeling, a decision, something stuck…' },
 };
 function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false, voice = false } = {}) {
+  if (mode !== 'act') remember({ kind: 'talk', title: 'Your conversation in Talk' });
   setNav('talk');
   stopTalkVoice();
   return guarded(async () => {
@@ -2320,13 +2342,26 @@ function journeyView(j) {
 }
 
 // One step of the walk. `trail` is the path taken to get here, shown as breadcrumbs.
-function walkTo(id, trail) {
+function walkTo(id, trail, opts = {}) {
   return guarded(async () => {
     const res = await api(`/api/node/${encodeURIComponent(id)}?date=${today()}`);
     if (res.today) return showToday(); // today's card: write first
     setNav('');
-    showConcept(res.node, trail);
+    showConcept(res.node, trail, opts);
   });
+}
+// Where the reader was, kept on the phone, so opening the app can offer to pick up there: an idea (and the part of
+// it they had reached), a conversation, a problem being worked through, the Map, the day's practice.
+const LAST_KEY = 'continuum.last';
+function remember(place) { store.set(LAST_KEY, JSON.stringify({ ...place, at: Date.now() })); }
+function lastPlace() { try { return JSON.parse(store.get(LAST_KEY) ?? 'null'); } catch { return null; } }
+function resume(p) {
+  if (p.kind === 'idea') return walkTo(p.id, [], { startAt: p.part ?? 0 });
+  if (p.kind === 'talk') return showTalk();
+  if (p.kind === 'problem') return showWorkThrough(p.id ?? null);
+  if (p.kind === 'map') return showMap();
+  if (p.kind === 'practice') return showPractice();
+  return showToday();
 }
 
 document.addEventListener('click', (e) => {
@@ -2546,15 +2581,16 @@ function showThink() {
 }
 
 // ── Arriving ──
-// The first few days: what brought you here (to learn, to think something through, or to build a habit), and the
-// app opens there. After that, once a day: glad to see you back, where to today, led by what you usually choose.
+// Each time the app opens: a home screen. The first few days it asks what brought you here (to learn, to think
+// something through, or to build a habit); after that, glad to see you back, where to today, led by what you
+// usually choose. Either way, "Pick up where you left off" comes first when there is somewhere to pick up.
 const GREETED_KEY = 'continuum.greeted'; const WHY_KEY = 'continuum.why'; const ASK_DAYS = 3;
 // A shortcut from the home-screen icon (press and hold it) goes straight to its place.
 const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal() };
 function arrive() {
   const go = SHORTCUTS[params.get('go')];
   if (go) { store.set(GREETED_KEY, today()); go(); return; }
-  if (store.get(GREETED_KEY) === today() || params.get('day')) { showToday(); offerTour(); return; }
+  if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
   setNav('');
   return guarded(async () => {
     const t = await api(`/api/today?date=${today()}`);
@@ -2562,11 +2598,17 @@ function arrive() {
     const go = (why, fn) => () => { store.set(GREETED_KEY, today()); if (why) store.set(WHY_KEY, why); fn(); offerTour(); };
     const choice = (title, line, fn, why) => h('button', { type: 'button', class: 'think-door', onclick: go(why, fn) }, h('span', { class: 't' }, title), line && h('span', { class: 'muted small' }, line));
     const first = (t.name ?? '').split(' ')[0];
+    // Pick up where you left off: the place last open, if within the last month.
+    const last = lastPlace();
+    const fresh = last && Date.now() - (last.at ?? 0) < 30 * 86400000;
+    const lastLine = fresh && (last.kind === 'idea' ? `"${last.title}"${last.thinker ? `, ${last.thinker}` : ''}${last.label ? ` · ${last.label}` : ''}` : last.title);
+    const pickUp = fresh && h('button', { type: 'button', class: 'think-door pick-up', onclick: go(null, () => resume(last)) },
+      h('span', { class: 't' }, 'Pick up where you left off'), h('span', { class: 'muted small' }, lastLine));
     if ((t.visits ?? 1) <= ASK_DAYS) {
       return render(
         h('h1', {}, first ? `Welcome, ${first}` : 'Welcome'),
         h('p', {}, 'What brings you here?'),
-        h('div', { class: 'think-doors' },
+        h('div', { class: 'think-doors' }, pickUp,
           choice('Learn something new', 'One idea a day: you write first, then read it, then follow where it leads.', showToday, 'learn'),
           choice('Think something through', 'A problem, a decision, a disagreement, the news: bring it, and think it over with the world\'s wisdom.', showThink, 'think'),
           choice('Build a daily habit', 'Ideas into practice, from ten seconds a day.', showPractice, 'habit')),
@@ -2582,7 +2624,7 @@ function arrive() {
     render(
       h('h1', {}, first ? `Glad to see you back, ${first}` : 'Glad to see you back'),
       h('p', {}, 'Where would you like to go today?'),
-      h('div', { class: 'think-doors' }, checkin, ...order,
+      h('div', { class: 'think-doors' }, pickUp, checkin, ...order,
         choice('Explore the map', 'Every idea, and how they connect.', showMap, null),
         choice('Your diary', 'What you have written, and how your views have moved.', showJournal, null)));
   });
@@ -2633,6 +2675,7 @@ function ideaLink(id, refs) {
   return h('a', { href: '#', class: `talk-ref field-${r.field}`, onclick: (e) => { e.preventDefault(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title);
 }
 function renderCase(c) {
+  remember({ kind: 'problem', id: c.id, title: c.title ?? 'A problem you are working through' });
   pageBg = PAGE_BG.problem;
   const refresh = (x) => renderCase(x);
   const concern = [...c.turns].reverse().find((t) => t.concern) || c.plan?.concern || c.checkins.at(-1)?.concern;
