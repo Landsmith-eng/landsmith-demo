@@ -1664,6 +1664,20 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     } catch (e) { ttsWarn('reading aloud', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }
   });
 
+  // Reading with the words lit as they are spoken: the clip and each letter's start time, in one reply.
+  app.post('/api/tts/timed', auth, async (req, res) => {
+    if (!tts) return res.status(404).json({ error: 'tts_off' });
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text) return res.status(400).json({ error: 'empty_text' });
+    if (text.length > TTS_MAX) return res.status(400).json({ error: 'too_long' });
+    const voice = req.body?.voice_id ?? tts.voiceId;
+    if (!tts.validVoice(voice)) return res.status(400).json({ error: 'bad_voice' });
+    try {
+      const { audio, starts, cached } = await tts.speakTimed(text, voice);
+      res.set({ 'cache-control': 'private, max-age=86400', 'x-tts-cache': cached ? 'hit' : 'miss' }).json({ text, audio: audio.toString('base64'), starts });
+    } catch (e) { ttsWarn('reading aloud (timed)', e); res.status(502).json({ error: e.message, why: e.why ?? null }); }
+  });
+
   // The app's own code and page are checked for a newer copy on every load (no stale mix of old and new after an
   // update); pictures, fonts and sounds may be kept by the phone.
   // The home-screen app: its start address carries the user's personal link, so the icon always opens signed in,

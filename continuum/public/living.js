@@ -6,7 +6,7 @@
 import { SCENES } from '/scenes.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-let wall = null; let wrap = null; let parts = []; let raf = 0; let shown = '';
+let wall = null; let wrap = null; let parts = []; let gazeParts = []; let raf = 0; let shown = '';
 
 // Smooth randomness: a few slow waves at random speeds, added together, between about -1 and 1.
 function noise() {
@@ -25,7 +25,6 @@ function events(every, ms) {
 
 const ORIGIN = { bob: [.5, .95], sway: [.5, 1], breathe: [.5, 1], peck: [.5, 1], flicker: [.5, .9], spin: [.5, .5] };
 function build() {
-  cancelAnimationFrame(raf); raf = 0;
   if (!wrap) return;
   wrap.replaceChildren(); parts = [];
   const img = wall.querySelector('img'); const src = img?.getAttribute('src') ?? '';
@@ -35,7 +34,14 @@ function build() {
   if (!img.naturalWidth) { img.addEventListener('load', build, { once: true }); return; }
   // Where the picture lies on the screen (it covers the screen, centred).
   const W = innerWidth, H = innerHeight; const scale = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-  const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale, ox = (W - dw) / 2, oy = (H - dh) / 2;
+  const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+  parts = makeParts(wrap, src, sc, dw, dh, (W - dw) / 2, (H - dh) / 2);
+  if (parts.length && !raf) raf = requestAnimationFrame(frame);
+}
+// The moving parts of one painting, laid into `box` where the picture is drawn dw by dh at (ox, oy); px: how many of
+// the box's pixels make one on the screen (so a rocking boat moves the same few pixels however it is drawn).
+function makeParts(box, src, sc, dw, dh, ox, oy, px = 1) {
+  const made = [];
   for (const L of sc.live) {
     let [x0, y0, x1, y1] = L.r;
     let left = ox + x0 * dw, top = oy + y0 * dh, w = (x1 - x0) * dw, h = (y1 - y0) * dh;
@@ -47,18 +53,18 @@ function build() {
       backgroundImage: `url("${src}")`, backgroundSize: `${dw}px ${dh}px`, backgroundPosition: `${ox - left}px ${oy - top}px`,
       transformOrigin: `${o[0] * 100}% ${o[1] * 100}%`,
     });
-    wrap.append(el);
+    box.append(el);
     const k = L.soft ? .55 : 1;
-    parts.push({ el, m: L.m, k, slow: L.slow, a: noise(), b: noise(), c: noise(), gust: events(L.m === 'peck' ? 5000 : 14000, L.m === 'peck' ? (L.slow ? 2600 : 420) : 3200) });
+    made.push({ el, m: L.m, k, px, slow: L.slow, a: noise(), b: noise(), c: noise(), gust: events(L.m === 'peck' ? 5000 : 14000, L.m === 'peck' ? (L.slow ? 2600 : 420) : 3200) });
   }
-  if (parts.length) raf = requestAnimationFrame(frame);
+  return made;
 }
 function frame(t) {
   raf = 0;
-  if (document.hidden || !parts.length) return;
-  for (const p of parts) {
+  if (document.hidden || !(parts.length || gazeParts.length)) return;
+  for (const p of [...parts, ...gazeParts]) {
     const { k } = p; let tf = '';
-    if (p.m === 'bob') tf = `translate(${p.c(t) * 1.4 * k}px, ${p.a(t * 1.6) * 1.3 * k}px) rotate(${p.b(t * 1.3) * 1.5 * k}deg)`;
+    if (p.m === 'bob') tf = `translate(${p.c(t) * 1.4 * k * p.px}px, ${p.a(t * 1.6) * 1.3 * k * p.px}px) rotate(${p.b(t * 1.3) * 1.5 * k}deg)`;
     else if (p.m === 'sway') tf = `rotate(${(p.a(t) * .7 + p.gust(t) * 1.1 * Math.sign(p.b(t) || 1)) * k}deg)`;
     else if (p.m === 'breathe') tf = `scale(${1 + .006 * k}, ${1 + (.012 + .004 * p.a(t)) * k * (0.5 + 0.5 * Math.sin(t / 620))})`;
     else if (p.m === 'peck') tf = `rotate(${p.gust(t) * (p.slow ? 7 : 9) * k}deg)`;
@@ -69,6 +75,17 @@ function frame(t) {
   raf = requestAnimationFrame(frame);
 }
 
+// Look (the picture full screen): the same parts, in the picture's own pixels, inside a box that moves and zooms
+// with it. liveIn starts them; liveOut ends them.
+export function liveIn(box, src, iw, ih, px = 1) {
+  liveOut();
+  const sc = SCENES[src.replace(/^\/img\//, '').replace(/\.\w+$/, '')];
+  if (!sc?.live || reduced()) return;
+  gazeParts = makeParts(box, src, sc, iw, ih, 0, 0, px);
+  if (gazeParts.length && !raf) raf = requestAnimationFrame(frame);
+}
+export function liveOut() { gazeParts.forEach((p) => p.el.remove()); gazeParts = []; }
+
 export function startLiving() {
   wall = document.getElementById('wallpaper'); if (!wall || wrap) return;
   wrap = document.createElement('div'); wrap.id = 'living'; wrap.setAttribute('aria-hidden', 'true');
@@ -78,6 +95,6 @@ export function startLiving() {
     if (src !== shown || (!wall.classList.contains('on')) === Boolean(parts.length)) build();
   }).observe(wall, { subtree: true, attributes: true, attributeFilter: ['src', 'class'] });
   addEventListener('resize', build);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && parts.length && !raf) raf = requestAnimationFrame(frame); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && (parts.length || gazeParts.length) && !raf) raf = requestAnimationFrame(frame); });
   build();
 }

@@ -12,7 +12,7 @@ const NS = 'http://www.w3.org/2000/svg';
 const INK = 'rgba(16, 20, 18, .78)';
 const rnd = (a, b) => a + Math.random() * (b - a);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const busy = () => document.hidden || document.documentElement.matches('.map-full, .gazing') || document.querySelector('.tour, .intro');
+const busy = () => document.hidden || document.documentElement.matches('.map-full') || document.querySelector('.tour, .intro');
 
 // Two layers: shadows (blended into the painting) and light things (an egret, white sails) laid softly on top.
 let layer = null; let lightLayer = null; let timer = 0; let active = null; let lastTouch = performance.now();
@@ -635,6 +635,18 @@ export function startCreatures() {
   const wall = document.getElementById('wallpaper');
   if (wall) new MutationObserver(() => { if (active) { shoo(); schedule(); } }).observe(wall, { subtree: true, attributes: true, attributeFilter: ['src'] });
   schedule(rnd(7000, 14000));
+}
+// Look (the picture full screen): the visitors move into boxes that follow the picture as it drifts and zooms (their
+// places are worked out for the picture as it covers the screen; the boxes carry them to where it is now). null: back.
+export function creaturesInto(dark, light) {
+  if (!layer) return;
+  shoo();
+  if (dark) { dark.append(layer); light.append(lightLayer); layer.classList.add('in-gaze'); lightLayer.classList.add('in-gaze'); schedule(rnd(1500, 4000)); }
+  else {
+    layer.classList.remove('in-gaze'); lightLayer.classList.remove('in-gaze');
+    const motif = document.getElementById('motif'); if (motif) motif.after(layer, lightLayer); else document.body.prepend(layer, lightLayer);
+    schedule();
+  }
 }
 // For trying a visitor on a page: summon('sailboat'), and so on (it comes even where it would not belong).
 export function summon(name) {

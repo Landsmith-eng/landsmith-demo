@@ -110,3 +110,21 @@ test('speech to text: the recording goes to ElevenLabs Scribe and the text comes
   const off = await boot(null);
   try { assert.deepEqual(await (await off.call('/api/stt')).json(), { enabled: false }); } finally { off.server.close(); }
 });
+
+test('reading with timings: the clip and each letter\'s start time, kept beside the clip', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push(url);
+    return new Response(JSON.stringify({ audio_base64: Buffer.from('MP3DATA').toString('base64'),
+      alignment: { characters: [...'Hi you'], character_start_times_seconds: [0, .1, .2, .25, .3, .41234], character_end_times_seconds: [] } }));
+  };
+  const tts = createTts({ apiKey: 'k', cacheDir: mkdtempSync(join(tmpdir(), 'tts-')), fetchImpl });
+  const { server, call } = await boot(tts);
+  const r = await call('/api/tts/timed', { text: 'Hi you' }).then((x) => x.json());
+  assert.match(calls[0], /\/text-to-speech\/[A-Za-z0-9]+\/with-timestamps\?output_format=mp3_44100_128$/);
+  assert.equal(Buffer.from(r.audio, 'base64').toString(), 'MP3DATA');
+  assert.deepEqual(r.starts, [0, .1, .2, .25, .3, .412]);
+  await call('/api/tts/timed', { text: 'Hi you' }).then((x) => x.json());
+  assert.equal(calls.length, 1); // the second time from the kept copy
+  server.close();
+});

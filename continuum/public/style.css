@@ -887,3 +887,14 @@ html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0
 .writing .wline { clip-path: inset(0 100% 0 0); }
 .writing .orbit-svg { display: block; margin: 0 auto 4px; overflow: visible; }
 @media (prefers-reduced-motion: reduce) { #creatures-light { display: none; } }
+
+/* Look: the painting's moving parts and the visitors, in boxes that move and zoom with the picture. */
+.gaze .gaze-live { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
+.gaze .gaze-world { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; transform-origin: 0 0; pointer-events: none; mix-blend-mode: multiply; }
+.gaze .gaze-world:has(> #creatures.dark) { mix-blend-mode: screen; }
+.gaze .gaze-world.light { mix-blend-mode: normal; }
+#creatures.in-gaze, #creatures-light.in-gaze { position: absolute; inset: 0; mix-blend-mode: normal; }
+
+/* Following along: the word being read aloud is lit. */
+.stage span.w { border-radius: 4px; transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; }
+.stage span.w.now { background: rgba(244, 192, 99, .34); box-shadow: 0 0 0 2px rgba(244, 192, 99, .34); color: #fff; }

@@ -1,8 +1,8 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
-import { startCreatures, summon } from '/creatures.js';
-import { startLiving } from '/living.js';
+import { startCreatures, summon, creaturesInto } from '/creatures.js';
+import { startLiving, liveIn, liveOut } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
 
@@ -598,13 +598,24 @@ function chunks(text) {
 }
 
 // The phone's voice, one sentence at a time (some browsers cut off a long utterance).
-function sayPhone(text, voice, run) {
+// onWord(charIndex): the letter being spoken, for lighting words. From the phone's word boundaries where it gives
+// them; otherwise estimated from an even pace.
+function sayPhone(text, voice, run, onWord = null) {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     if (voice) { u.voice = voice; u.lang = voice.lang; }
     u.rate = .95 * readRate();
-    u.onend = u.onerror = () => resolve();
-    if (run) run.wake = resolve;
+    let heard = false; let timer = 0;
+    const end = () => { clearInterval(timer); resolve(); };
+    u.onend = u.onerror = end;
+    if (onWord) {
+      u.onboundary = (e) => { heard = true; onWord(e.charIndex); };
+      u.onstart = () => {
+        const t0 = performance.now(); const perChar = 1000 / (14.5 * u.rate);
+        timer = setInterval(() => { if (!heard) onWord(Math.floor((performance.now() - t0) / perChar)); }, 120);
+      };
+    }
+    if (run) run.wake = end;
     speech.speak(u);
   });
 }
@@ -621,6 +632,21 @@ async function fetchBlob(text, voiceId) {
     throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
   }
   return res.blob();
+}
+// A clip with each letter's start time, for lighting words as they are read; an older server gives the clip alone.
+async function fetchTimed(text, voiceId) {
+  const res = await fetch('/api/tts/timed', {
+    method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
+  });
+  if (res.status === 404) { const body = await res.json().catch(() => ({})); if (body.error !== 'tts_off') return { blob: await fetchBlob(text, voiceId), starts: null }; }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
+  }
+  const j = await res.json();
+  const bytes = Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0));
+  return { blob: new Blob([bytes], { type: 'audio/mpeg' }), starts: j.starts ?? null };
 }
 function playClip(url, run) {
   return new Promise((resolve) => {
@@ -649,9 +675,10 @@ function readerKey() {
   document.body.append(reader.key);
   return reader.key;
 }
+// The key fades after a few seconds whether playing or paused (a tap on the page brings it back).
 function showKey(ms = 2200) {
   const key = readerKey(); key.classList.add('on'); clearTimeout(reader.keyTimer);
-  if (reader.state === 'playing' && ms) reader.keyTimer = setTimeout(() => key.classList.remove('on'), ms);
+  reader.keyTimer = setTimeout(() => key.classList.remove('on'), ms || 3500);
 }
 function hideKey() { clearTimeout(reader.keyTimer); reader.key?.classList.remove('on'); }
 function markPanel() {
@@ -689,19 +716,72 @@ function onStageTap(e) {
     const k = sentenceAt(e.clientX, e.clientY);
     if (k >= 0) return jump(k);
   }
-  if (reader.state === 'playing') showKey();
+  showKey(reader.state === 'paused' ? 3500 : 2200);
 }
 // The user's own scrolling means they are looking somewhere: stop pulling the page along.
 const letGo = () => { if (reader.state !== 'idle') reader.follow = false; };
 addEventListener('touchmove', letGo, { passive: true });
 addEventListener('wheel', letGo, { passive: true });
 document.addEventListener('click', onStageTap);
+// Following along: each word of a passage in its own span, matched to the words of the sentences read aloud, so the
+// word being spoken can be lit. (The spoken text is the passage with some parts left out, so the match walks forward
+// through the page's words and skips what is not read.)
+const UNSPOKEN = '.eyebrow:not(.spoken), .who, .muted, .unspoken, .progress, a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer, .name-reveal';
+function wordSpans(panel) {
+  if (!panel.dataset.words) {
+    const walk = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.textContent.trim() && !n.parentElement.closest(UNSPOKEN) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+    const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+    for (const n of nodes) {
+      const frag = document.createDocumentFragment();
+      for (const part of n.textContent.split(/(\s+)/)) frag.append(part && /\S/.test(part) ? h('span', { class: 'w' }, part) : part);
+      n.replaceWith(frag);
+    }
+    panel.dataset.words = '1';
+  }
+  return [...panel.querySelectorAll('span.w')].map((el) => ({ el, word: plainWords(el.textContent) }));
+}
+function matchWords(items, panels) {
+  panels.forEach((panel, n) => {
+    const spans = wordSpans(panel); let at = 0;
+    for (const item of items.filter((x) => x.p === n)) {
+      item.words = [...item.text.matchAll(/\S+/g)].map((m) => {
+        const word = plainWords(m[0]); let el = null;
+        if (word) for (let j = at; j < Math.min(spans.length, at + 8); j++) if (spans[j].word === word || spans[j].word.split(' ')[0] === word.split(' ')[0]) { el = spans[j].el; at = j + 1; break; }
+        return { at: m.index, el };
+      });
+    }
+  });
+}
+function lightWord(k, charAt) {
+  const words = reader.items[k]?.words; if (!words) return;
+  let i = -1; for (let j = 0; j < words.length && words[j].at <= charAt; j++) i = j;
+  const el = words[i]?.el; if (!el || el === reader.lit) return;
+  reader.lit?.classList.remove('now'); el.classList.add('now'); reader.lit = el;
+}
+function unlight() { reader.lit?.classList.remove('now'); reader.lit = null; cancelAnimationFrame(reader.wordRaf); }
+// With the natural voice: each letter's start time from ElevenLabs (or, failing that, letters spread evenly over the
+// clip), checked against the audio as it plays.
+function followClip(k, starts) {
+  cancelAnimationFrame(reader.wordRaf);
+  const text = reader.items[k]?.text ?? '';
+  const step = () => {
+    if (reader.k !== k || reader.state === 'idle') return;
+    const t = audioEl.currentTime;
+    let at = 0;
+    if (starts?.length) { while (at + 1 < starts.length && starts[at + 1] <= t + .04) at++; }
+    else if (audioEl.duration) at = Math.floor((t / audioEl.duration) * text.length);
+    lightWord(k, at);
+    reader.wordRaf = requestAnimationFrame(step);
+  };
+  reader.wordRaf = requestAnimationFrame(step);
+}
 async function readStage() {
   stopReading();
   const panels = [...document.querySelectorAll('.stage .panel')];
   if (!panels.length) return;
   const items = panels.flatMap((p, n) => sentences(spokenText(p)).map((text) => ({ p: n, text })));
   if (!items.length) return;
+  matchWords(items, panels);
   const mid = innerHeight / 2;
   const startPanel = Math.max(0, panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; }));
   Object.assign(reader, { items, panels, k: Math.max(0, items.findIndex((x) => x.p >= startPanel)), state: 'playing', clips: new Map(), follow: true, reflecting: false, plan: await voicePlan() });
@@ -713,7 +793,7 @@ async function readStage() {
 }
 const clipFor = (k) => {
   const t = reader.items[k]?.text;
-  if (!reader.clips.has(t)) reader.clips.set(t, fetchBlob(t, reader.plan.el).catch((e) => { reader.clips.delete(t); throw e; }));
+  if (!reader.clips.has(t)) reader.clips.set(t, fetchTimed(t, reader.plan.el).catch((e) => { reader.clips.delete(t); throw e; }));
   return reader.clips.get(t);
 };
 // A passage worth resting after: two sentences or more, with more still to read (not the opening, a list of links,
@@ -737,20 +817,21 @@ async function loop() {
     }
     if ('el' in reader.plan) {
       try {
-        const blob = await clipFor(reader.k);
+        const { blob, starts } = await clipFor(reader.k);
         if (reader.k + 1 < reader.items.length) clipFor(reader.k + 1).catch(() => {});
         if (run.stop) return false;
+        followClip(reader.k, starts);
         await playClip(URL.createObjectURL(blob), run);
       } catch (e) {
         if (!speech) break;
         notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ' (check the ElevenLabs key or credits)'}. Using the phone's voice.`);
         reader.plan = { phone: null }; continue;
       }
-    } else await sayPhone(item.text, reader.plan.phone, run);
+    } else { const k = reader.k; await sayPhone(item.text, reader.plan.phone, run, (at) => lightWord(k, at)); }
     if (run.stop || reader.state === 'paused') return;
     const rest = restAfter(reader.k);
     reader.k++;
-    if (rest) { reader.state = 'paused'; reader.reflecting = true; markPanel(); showKey(0); return; }
+    if (rest) { reader.state = 'paused'; reader.reflecting = true; markPanel(); showKey(4500); return; }
     if (reader.items[reader.k]?.p !== item.p) await new Promise((x) => setTimeout(x, 400));
   }
   if (reader.run === run && !run.stop) stopReading();
@@ -760,7 +841,7 @@ function togglePause() {
   if (reader.state === 'playing') {
     reader.state = 'paused';
     if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltRun(); // the phone's voice restarts its sentence
-    markPanel(); showKey(0);
+    markPanel(); showKey(3500);
   } else if (reader.state === 'paused') {
     const wasResting = reader.reflecting;
     reader.state = 'playing'; reader.reflecting = false; reader.follow = true;
@@ -777,7 +858,7 @@ function jump(k) {
 }
 function stopReading() {
   if (reading !== reader) return;
-  haltRun(); reading = null;
+  haltRun(); reading = null; unlight();
   reader.state = 'idle'; reader.reflecting = false; markPanel(); hideKey();
   document.documentElement.classList.remove('reading-aloud');
   listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
@@ -1046,16 +1127,24 @@ function gaze(src) {
   const img = h('img', { src, alt: '', draggable: 'false' });
   const hint = h('div', { class: 'gaze-hint' }, h('span', {}, 'Drag to look around · pinch to look closer · tap to return'));
   const close = h('button', { type: 'button', class: 'gaze-close' }, 'Return');
-  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, hint, close);
+  // The painting stays alive here too: its moving parts (in the picture's own pixels, moving with it) and the
+  // visitors (placed for the picture as it covers the screen, carried to where it is now).
+  const live = h('div', { class: 'gaze-live', 'aria-hidden': 'true' });
+  const shadows = h('div', { class: 'gaze-world', 'aria-hidden': 'true' }); const lights = h('div', { class: 'gaze-world light', 'aria-hidden': 'true' });
+  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, live, shadows, lights, hint, close);
   document.body.append(box);
   document.documentElement.classList.add('gazing');
-  let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false;
-  const fit = () => { base = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight); };
+  let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false, x0 = 0, y0 = 0;
+  const fit = () => {
+    base = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight);
+    x0 = (innerWidth - img.naturalWidth * base) / 2; y0 = (innerHeight - img.naturalHeight * base) / 2; // where it lies as the wallpaper
+  };
   const draw = () => {
     const sc = base * zoom;
     x = Math.min(0, Math.max(innerWidth - img.naturalWidth * sc, x));
     y = Math.min(0, Math.max(innerHeight - img.naturalHeight * sc, y));
-    img.style.transform = `translate(${x}px, ${y}px) scale(${sc})`;
+    img.style.transform = live.style.transform = `translate(${x}px, ${y}px) scale(${sc})`;
+    shadows.style.transform = lights.style.transform = `translate(${x - x0 * zoom}px, ${y - y0 * zoom}px) scale(${zoom})`;
   };
   const zoomAt = (z, cx, cy) => {
     const next = Math.min(3, Math.max(1, z));
@@ -1073,6 +1162,8 @@ function gaze(src) {
     x = (innerWidth - img.naturalWidth * sc) / 2; y = (innerHeight - img.naturalHeight * sc) / 2; draw();
     requestAnimationFrame(() => box.classList.add('in'));
     if (!still) raf = requestAnimationFrame(drift);
+    Object.assign(live.style, { width: `${img.naturalWidth}px`, height: `${img.naturalHeight}px` });
+    liveIn(live, src, img.naturalWidth, img.naturalHeight, 1 / base); creaturesInto(shadows, lights);
   });
   setTimeout(() => hint.classList.add('gone'), 3500);
 
@@ -1116,6 +1207,7 @@ function gaze(src) {
     if (done) return; done = true;
     cancelAnimationFrame(raf); removeEventListener('keydown', onKey); removeEventListener('resize', onResize);
     box.classList.remove('in'); document.documentElement.classList.remove('gazing');
+    liveOut(); creaturesInto(null);
     setTimeout(() => box.remove(), still ? 0 : 600);
     lookBtn.focus();
   }

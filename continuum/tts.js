@@ -77,5 +77,27 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
       if (file) writeFileSync(file, audio);
       return { audio, cached: false };
     },
+
+    // The same clip with the time each letter is spoken (POST /v1/text-to-speech/{voice}/with-timestamps), so the
+    // phone can light each word as it is read. Returns { audio: Buffer, starts: number[] (seconds, one per letter of
+    // the text), cached }. The timings are kept beside the clip.
+    async speakTimed(text, voice = voiceId) {
+      const key = createHash('sha256').update(`${voice}\n${model}\n${text}`).digest('hex').slice(0, 32);
+      const file = cacheDir && join(cacheDir, `${key}.mp3`); const times = cacheDir && join(cacheDir, `${key}.json`);
+      if (file && times && existsSync(file) && existsSync(times)) return { audio: readFileSync(file), starts: JSON.parse(readFileSync(times, 'utf8')), cached: true };
+      const res = await fetchImpl(`${API}/text-to-speech/${voice}/with-timestamps?output_format=mp3_44100_128`, {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ text, model_id: model }),
+      });
+      if (!res.ok) throw await failure(res);
+      const b = await res.json();
+      const audio = Buffer.from(b.audio_base64 ?? '', 'base64');
+      const a = b.alignment ?? {};
+      // One start time per letter of the text as sent (the alignment follows the text letter by letter).
+      const starts = (a.character_start_times_seconds ?? []).map((x) => Math.round(x * 1000) / 1000);
+      if (file) { writeFileSync(file, audio); writeFileSync(times, JSON.stringify(starts)); }
+      return { audio, starts, cached: false };
+    },
   };
 }
