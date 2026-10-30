@@ -38,14 +38,15 @@
   <script type="module">
     const DAYS = 14;
     const $ = (s) => document.querySelector(s);
-    const key = () => sessionStorage.getItem('continuum.admin') ?? '';
+    // The key in the box always wins; it is remembered for this visit only.
+    const key = () => ($('#k').value.trim() || sessionStorage.getItem('continuum.admin') || '').trim();
 
     $('#inv').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!key()) { sessionStorage.setItem('continuum.admin', $('#k').value); }
-      const res = await fetch('/admin/api/invite', { method: 'POST', headers: { 'x-admin-key': key() || $('#k').value, 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#invname').value }) });
+      sessionStorage.setItem('continuum.admin', key());
+      const res = await fetch('/admin/api/invite', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#invname').value }) });
       const j = await res.json().catch(() => ({}));
-      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}` : res.status === 403 ? 'Enter the admin key above first.' : 'Type a name first.';
+      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}` : res.status === 403 ? 'That admin key does not match. Copy CONTINUUM_ADMIN_KEY again from Render (Environment), paste it in the box above, and try again.' : 'Type a name first.';
     });
     async function load() {
       const res = await fetch('/admin/api/stats', { headers: { 'x-admin-key': key() } });
@@ -75,7 +76,7 @@
       $('#t').hidden = false;
     }
 
-    $('#f').addEventListener('submit', (e) => { e.preventDefault(); sessionStorage.setItem('continuum.admin', $('#k').value); load(); });
+    $('#f').addEventListener('submit', (e) => { e.preventDefault(); sessionStorage.setItem('continuum.admin', key()); load(); });
     if (key()) load();
   </script>
 </body>

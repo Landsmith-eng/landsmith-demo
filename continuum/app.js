@@ -814,7 +814,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // Propose a connection (admin only). A proposal links two ideas, or brings in a new one (an artwork, a court case, a
   // news story, a thinker) and links it to the map. Nothing goes on the map from here: proposals queue up to be
   // verified and written into content/ in a later session (`npm run proposals` or the page's copy button).
-  const isAdmin = (req) => Boolean(adminKey) && req.get('x-admin-key') === adminKey;
+  // The admin key, compared without stray spaces (a key copied from a dashboard often brings one along).
+  const ADMIN = String(adminKey ?? '').trim();
+  const isAdmin = (req) => {
+    const given = String(req.get('x-admin-key') ?? '').trim();
+    const ok = Boolean(ADMIN) && given === ADMIN;
+    if (!ok && given) console.warn(`Admin key refused: ${ADMIN ? `the key given is ${given.length} characters, the server's is ${ADMIN.length}` : 'CONTINUUM_ADMIN_KEY is not set on the server'}.`);
+    return ok;
+  };
   const admin = (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: 'forbidden' }));
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
