@@ -84,6 +84,34 @@ export const practiceSteps = {
     ],
     intention: 'Today I will reach out to…',
   },
+  // From Gollwitzer's implementation intentions, James's "seize the very first possible opportunity", and Bandura's
+  // small wins.
+  practice_if_then_plan: {
+    tiny: 'Name one thing you keep meaning to do. Finish the sentence: "When ___ happens, I will ___."',
+    small: 'Pick one goal that keeps slipping. Find the moment it slips: a time, a place, a feeling. Write one line, "If that moment comes, then I will…", with an action small enough to do on a bad day. Read it twice.',
+    full: [
+      'Choose one habit you want to start or stop. Make it small enough to do even on a bad day.',
+      'Remember the last few times it went wrong. What was happening just before? That is your cue.',
+      'Write the plan: "If [the cue], then I will [the action]." Make the action specific enough that someone watching could see you do it.',
+      'Picture the cue arriving tomorrow, and see yourself doing the action, once, in detail.',
+      'Add a second plan for the likeliest obstacle: "If [obstacle], then I will…"',
+    ],
+    intention: 'If ___ happens, then I will…',
+  },
+  // From affect labelling (putting feelings into words), Linehan's observe-and-describe skills, Pennebaker's
+  // writing, and Spinoza on forming a clear idea of a passion.
+  practice_name_the_feeling: {
+    tiny: 'Stop and put one word to what you feel right now. Not why; only the word.',
+    small: 'Notice where the feeling sits in your body. Try a few words for it (angry, hurt, ashamed, tired, afraid) until one fits better than the rest. Then say it plainly to yourself: "This is…"',
+    full: [
+      'Sit, and bring to mind something that stirred you today.',
+      'Notice the body first: where the feeling is, how strong, tight or heavy, hot or cold.',
+      'Name it in one or two words. If the first word is vague ("bad", "stressed"), look for a sharper one.',
+      'Say what it is about in one plain sentence, as a reporter would.',
+      'Ask what the feeling is urging you to do, and whether you want to do it.',
+    ],
+    intention: 'Next time I feel it rising, I will stop and name it…',
+  },
 };
 
 // The skeleton around every exercise.

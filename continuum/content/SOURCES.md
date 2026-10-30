@@ -359,3 +359,40 @@ brief cites Antigone 751–752, Fagles). **Ours, not cited:** Socrates, Zera Yac
 echoes to Burke and Socrates); Mozi → St. Mary; Han Fei and Kant → Jouppi; Hobbes and the Grand Inquisitor → Viramontes;
 Rousseau and Tocqueville → RNC. From memory, not from a fetched text: that Socrates was charged with corrupting the
 young (Apology 24b; the Apology node quotes 38a).
+
+## Batch 11: psychology.js (psychology and the mind), 2026-10-30
+
+15 idea nodes and 2 practices for the room now named "Psychology and the mind": ideas a reader can use to work out a
+problem or change a habit. Public-domain texts were downloaded and matched with `scripts/verify-quotes.js`; everything
+else is a labelled summary with no invented quotations or page numbers.
+
+| Node | Source | Status |
+|---|---|---|
+| james_attention_is_will | Principles of Psychology (1890), vol. II, ch. XXVI "Will" | Verified (Gutenberg 57634); James's third habit maxim (vol. I, ch. IV) verified for the edge note (Gutenberg 57628) |
+| adler_feeling_of_inferiority | Understanding Human Nature, trans. Wolfe (New York: Greenberg, 1927), ch. V, pp. 70–71 | Verified (archive.org `understandinghum00adlerich`, OCR text; line-end hyphens rejoined by the verifier). US publication 1927, so public domain in the US. "The courage to be imperfect" is attributed to his followers, not quoted |
+| lewin_person_and_situation, festinger_cognitive_dissonance, ellis_abc_model, bowlby_ainsworth_attachment, mischel_delay_of_gratification, bandura_self_efficacy, prochaska_stages_of_change, pennebaker_expressive_writing, csikszentmihalyi_flow, linehan_radical_acceptance, gollwitzer_implementation_intentions, dweck_mindsets | | **Summaries** (in copyright) |
+| kahneman_tversky_loss_aversion | Econometrica 47 (1979) | **Summary**; the four-word phrase "losses loom larger than gains" is the paper's, from memory |
+| practice_if_then_plan, practice_name_the_feeling | our words, from Gollwitzer, James, Bandura; affect labelling, Linehan, Pennebaker, Spinoza | Exercises in `practice_steps.js` |
+
+Caveats stated in the plain faces: the 2018 marshmallow replication (Watts, Duncan and Quan); small mindset effects
+(Sisk et al. 2018; Yeager et al. 2019); criticism of the stages of change (West 2005); small average effect of
+expressive writing (Frattaroli 2006); debate over the generality of loss aversion (Gal and Rucker 2018); the
+three-step reading of Lewin (Cummings, Bridgman and Brown 2016).
+
+Spinoza's Ethics V Prop. III ("An emotion, which is a passion, ceases to be a passion…") verified for the
+practice_name_the_feeling edge (Gutenberg 3800, Elwes).
+
+Claims resting on memory (check these): the journal volumes and years in the citations; Gollwitzer and Sheeran's
+94 tests and "medium-to-large" effect; Tversky and Kahneman's 1992 estimate (a little over 2); Festinger and
+Carlsmith's $1/$20 design; Pennebaker and Beall's four 15-minute sessions; Lewin → Festinger (doctorate at Iowa, MIT);
+Lewin → Gollwitzer (the Ach–Lewin will-psychology lineage); Ellis citing Epictetus and Adler, and leaving
+psychoanalysis; Ellis ↔ Beck (independent start, mutual credit); Freud → Bowlby (`refuted`, the "cupboard love"
+view); Freud → Mischel (`measured`: Mischel framed delay against Freud's account of bridging delay by picturing the
+object); Freud → Pennebaker (`measured`, catharsis); Mischel recommending if-then plans in The Marshmallow Test;
+Maslow → Csikszentmihalyi (peak experiences); Linehan's Zen practice (`secularized` from Dōgen); Beck → Linehan;
+Seligman → Dweck (Diener and Dweck 1978); Skinner → Prochaska (processes taken from behaviourism). **Ours, not
+cited:** James → Mischel (`measured`), Aristotle → Bandura, Sartre ↔ Festinger, Festinger ↔ Kuhn, Lewin ↔ Prochaska,
+Ubuntu and the Harvard Study ↔ Bowlby, Buddha and Brickman ↔ loss aversion, Epicurus ↔ Mischel, Seneca ↔ Pennebaker,
+the Gita and Marx ↔ flow, Shantideva ↔ Linehan, Wang Yangming ↔ Gollwitzer, Xunzi ↔ Dweck.
+
+Two themes added in `themes.js`: "Changing a habit" and "Working out a problem".

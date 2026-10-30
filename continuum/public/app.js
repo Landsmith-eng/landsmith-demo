@@ -23,8 +23,11 @@ if (params.get('day')) {
   else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) store.set(DATE_KEY, v);
 }
 if (params.get('join')) store.set('continuum.join', params.get('join'));
-if (params.get('u') || params.get('day') || params.get('join')) history.replaceState(null, '', location.pathname);
+// The personal link stays in the address (so a bookmark, the browser's history or a home-screen icon keeps it, even
+// when a browser such as DuckDuckGo clears what the site stored); the other settings are cleaned away.
 const token = () => store.get(TOKEN_KEY) ?? '';
+if (params.get('day') || params.get('join') || (token() && !params.get('u'))) history.replaceState(null, '', token() ? `${location.pathname}?u=${encodeURIComponent(token())}` : location.pathname);
+document.getElementById('manifest')?.setAttribute('href', `/manifest.webmanifest${token() ? `?u=${encodeURIComponent(token())}` : ''}`);
 // Errors on the phone are reported to the server window (at most a few a minute), so a glitch names itself.
 let reported = 0;
 const reportError = (message, where = '') => {
@@ -117,6 +120,7 @@ function doors() {
       door('A debate with a friend', () => showTalk({ mode: 'settle' })),
       door('Something in the news', () => showTalk({ mode: 'news' })),
       door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
+      door('Work something out', () => showTalk({ mode: 'workout' })),
       door('A goal I have', () => showTalk({ mode: 'goal' })),
       door('My group, in the Parthenon', () => showParthenon()),
       door('Look something up', () => showGallery('rooms', { search: true })),
@@ -337,12 +341,37 @@ function notePanel(node) {
       node.note = r.note;
       status.textContent = r.note ? 'Saved to your diary' : 'Note removed';
       save.textContent = r.note ? 'Update note' : 'Save to diary';
+      if (r.note) askBack(); else back.replaceChildren();
     } catch { status.textContent = 'Could not save. Try again.'; } finally { save.disabled = false; }
   });
+  // After a note, Continuum asks one question back; the answer (typed or spoken) is added to the note.
+  const back = h('div', { class: 'ask-back', 'aria-live': 'polite' });
+  async function askBack() {
+    back.replaceChildren(h('p', { class: 'muted small' }, 'Continuum is reading your note…'));
+    const r = await api('/api/note/question', { method: 'POST', body: { node_id: node.id } }).catch(() => null);
+    if (!r?.question) return back.replaceChildren();
+    const reply = h('textarea', { rows: '3', maxlength: '2000', placeholder: 'Your answer, if you have one', 'aria-label': 'Your answer' });
+    const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Add to my note');
+    reply.addEventListener('input', () => { send.disabled = !reply.value.trim(); });
+    send.addEventListener('click', async () => {
+      send.disabled = true;
+      try {
+        const x = await api('/api/note/reply', { method: 'POST', body: { node_id: node.id, question: r.question, reply: reply.value, date: today() } });
+        node.note = ta.value = x.note;
+        back.replaceChildren(h('p', { class: 'muted small' }, 'Added to your note.'),
+          h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => askBack() }, 'Ask me another'));
+      } catch { send.disabled = false; notice('Could not add that. Try again.'); }
+    });
+    back.replaceChildren(
+      h('div', { class: 'eyebrow' }, 'A question back'),
+      h('p', { class: 'ask-q' }, r.question),
+      reply, h('div', { class: 'row' }, dictation(reply)?.button,
+        h('button', { type: 'button', class: 'link small', onclick: () => back.replaceChildren() }, 'Not now'), send));
+  }
   return panel('note', 'Your notes', [
     h('div', { class: 'eyebrow' }, 'Your notes'),
     h('label', { class: 'prompt unspoken', for: ta.id }, 'A note for your diary of discovery'),
-    ta, h('div', { class: 'row' }, dictation(ta)?.button, status, save),
+    ta, h('div', { class: 'row' }, dictation(ta)?.button, status, save), back,
   ]);
 }
 
@@ -596,24 +625,68 @@ function playClip(url, run) {
   });
 }
 
-// The reader: the stage as a queue of sentences, played with a small bar above the menu: Back (the sentence before),
-// Pause/Play, Forward, Stop. The part being read is marked, the page follows along, and tapping any part while
-// reading jumps there. ElevenLabs clips are kept for the visit, so going back costs nothing.
-const reader = { items: [], k: 0, state: 'idle', run: null, plan: null, clips: new Map(), panels: [], bar: null, playBtn: null };
-function readerBar() {
-  if (reader.bar) return reader.bar;
-  const btn = (label, aria, fn) => { const b = h('button', { type: 'button', class: 'chip', 'aria-label': aria }, label); b.addEventListener('click', fn); return b; };
-  reader.playBtn = btn('Pause', 'Pause or play', () => togglePause());
-  reader.bar = h('div', { class: 'reader-bar', role: 'toolbar', 'aria-label': 'Reading aloud' },
-    btn('⟲ Back', 'Back one sentence', () => jump(reader.k - 1)), reader.playBtn,
-    btn('Forward ⟳', 'Forward one sentence', () => jump(reader.k + 1)), btn('Stop', 'Stop reading', () => stopReading()));
-  document.body.append(reader.bar);
-  return reader.bar;
+// The reader: the stage as a queue of sentences. A clear play/pause key shows in the middle of the screen as reading
+// begins and fades away; a tap on the page brings it back, and a tap on the key pauses or plays. While the key shows
+// (or while paused), tapping any word reads on from there. The page is free to scroll: it follows along only until
+// the user scrolls it themselves. At the end of each passage the reading rests, so there is room to think.
+// ElevenLabs clips are kept for the visit, so going back costs nothing.
+const reader = { items: [], k: 0, state: 'idle', run: null, plan: null, clips: new Map(), panels: [], key: null, keyTimer: 0, follow: true, reflecting: false };
+function readerKey() {
+  if (reader.key) return reader.key;
+  reader.keyIcon = h('span', { class: 'rk-icon', 'aria-hidden': 'true' });
+  reader.keyNote = h('span', { class: 'rk-note' });
+  reader.key = h('button', { type: 'button', class: 'reader-key', 'aria-label': 'Pause' }, reader.keyIcon, reader.keyNote);
+  reader.key.addEventListener('click', (e) => { e.stopPropagation(); togglePause(); });
+  document.body.append(reader.key);
+  return reader.key;
 }
+function showKey(ms = 2200) {
+  const key = readerKey(); key.classList.add('on'); clearTimeout(reader.keyTimer);
+  if (reader.state === 'playing' && ms) reader.keyTimer = setTimeout(() => key.classList.remove('on'), ms);
+}
+function hideKey() { clearTimeout(reader.keyTimer); reader.key?.classList.remove('on'); }
 function markPanel() {
   reader.panels.forEach((p, n) => p.classList.toggle('reading', reader.state !== 'idle' && n === reader.items[reader.k]?.p));
-  if (reader.playBtn) reader.playBtn.textContent = reader.state === 'paused' ? 'Play' : 'Pause';
+  if (!reader.key) return;
+  const paused = reader.state === 'paused';
+  reader.keyIcon.textContent = paused ? '▶' : '❚❚';
+  reader.keyNote.textContent = reader.reflecting ? 'A moment to reflect. Tap to go on.' : paused ? 'Or tap any word to read from there' : '';
+  reader.key.setAttribute('aria-label', paused ? 'Play' : 'Pause');
 }
+// Which sentence a tap landed in: the word under the finger and a few after it, found among that passage's sentences.
+const plainWords = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function sentenceAt(x, y) {
+  const cp = document.caretPositionFromPoint?.(x, y);
+  const cr = !cp && document.caretRangeFromPoint?.(x, y);
+  const node = cp ? cp.offsetNode : cr?.startContainer; let at = cp ? cp.offset : cr?.startOffset;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return -1;
+  const p = reader.panels.findIndex((pa) => pa.contains(node));
+  if (p < 0) return -1;
+  const t = node.textContent; while (at > 0 && /\S/.test(t[at - 1])) at--;
+  const words = plainWords(t.slice(at, at + 80)).split(' ').slice(0, 5);
+  const mine = reader.items.map((x, i) => [plainWords(x.text), i]).filter(([, i]) => reader.items[i].p === p);
+  for (let n = words.length; n >= 1; n--) {
+    const phrase = words.slice(0, n).join(' ');
+    const hit = phrase && mine.find(([s]) => ` ${s} `.includes(` ${phrase} `));
+    if (hit) return hit[1];
+  }
+  return mine[0]?.[1] ?? -1;
+}
+function onStageTap(e) {
+  if (reader.state === 'idle' || !e.target.closest('.stage')) return;
+  if (e.target.closest('a, button, input, textarea, select, label, .reader-key, .keep-bar')) return;
+  if (!getSelection()?.isCollapsed) return; // choosing words to keep, not tapping
+  if (reader.state === 'paused' || reader.key?.classList.contains('on')) {
+    const k = sentenceAt(e.clientX, e.clientY);
+    if (k >= 0) return jump(k);
+  }
+  if (reader.state === 'playing') showKey();
+}
+// The user's own scrolling means they are looking somewhere: stop pulling the page along.
+const letGo = () => { if (reader.state !== 'idle') reader.follow = false; };
+addEventListener('touchmove', letGo, { passive: true });
+addEventListener('wheel', letGo, { passive: true });
+document.addEventListener('click', onStageTap);
 async function readStage() {
   stopReading();
   const panels = [...document.querySelectorAll('.stage .panel')];
@@ -622,12 +695,11 @@ async function readStage() {
   if (!items.length) return;
   const mid = innerHeight / 2;
   const startPanel = Math.max(0, panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; }));
-  Object.assign(reader, { items, panels, k: Math.max(0, items.findIndex((x) => x.p >= startPanel)), state: 'playing', clips: new Map(), plan: await voicePlan() });
+  Object.assign(reader, { items, panels, k: Math.max(0, items.findIndex((x) => x.p >= startPanel)), state: 'playing', clips: new Map(), follow: true, reflecting: false, plan: await voicePlan() });
   reading = reader; // the Listen button shows Stop while this runs
   listenBtn.setAttribute('aria-pressed', 'true'); listenBtn.querySelector('span').textContent = 'Stop';
-  readerBar().classList.add('on');
-  // Tap a part while reading: read from there.
-  panels.forEach((p, n) => { p.onclick = (e) => { if (reader.state === 'idle' || e.target.closest('a, button, input, textarea')) return; jump(items.findIndex((x) => x.p === n)); }; });
+  document.documentElement.classList.add('reading-aloud');
+  markPanel(); showKey(2600);
   loop();
 }
 const clipFor = (k) => {
@@ -635,15 +707,22 @@ const clipFor = (k) => {
   if (!reader.clips.has(t)) reader.clips.set(t, fetchBlob(t, reader.plan.el).catch((e) => { reader.clips.delete(t); throw e; }));
   return reader.clips.get(t);
 };
+// A passage worth resting after: two sentences or more, with more still to read (not the opening, a list of links,
+// the notes box or the way out).
+const NO_REST = new Set(['arrival', 'note', 'related', 'end']);
+const restAfter = (k) => {
+  const p = reader.items[k]?.p; const next = reader.items[k + 1];
+  return next && next.p !== p && !NO_REST.has(reader.panels[p]?.dataset.kind) && reader.items.filter((x) => x.p === p).length >= 2;
+};
 async function loop() {
   const run = reader.run = { stop: false, wake: null };
-  let shownPanel = -1;
+  let shownPanel = reader.panels.findIndex((pa) => { const r = pa.getBoundingClientRect(); return r.top < innerHeight * .6 && r.bottom > innerHeight * .2; });
   while (reader.k < reader.items.length && !run.stop) {
     const item = reader.items[reader.k];
     markPanel();
     if (item.p !== shownPanel) {
       const r = reader.panels[item.p].getBoundingClientRect();
-      if (shownPanel !== -1 || r.top < 0 || r.bottom > innerHeight) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
+      if (reader.follow && (r.top > innerHeight * .6 || r.bottom < innerHeight * .2)) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
       shownPanel = item.p;
       if (run.stop) return;
     }
@@ -660,7 +739,9 @@ async function loop() {
       }
     } else await sayPhone(item.text, reader.plan.phone, run);
     if (run.stop || reader.state === 'paused') return;
+    const rest = restAfter(reader.k);
     reader.k++;
+    if (rest) { reader.state = 'paused'; reader.reflecting = true; markPanel(); showKey(0); return; }
     if (reader.items[reader.k]?.p !== item.p) await new Promise((x) => setTimeout(x, 400));
   }
   if (reader.run === run && !run.stop) stopReading();
@@ -670,27 +751,60 @@ function togglePause() {
   if (reader.state === 'playing') {
     reader.state = 'paused';
     if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltRun(); // the phone's voice restarts its sentence
+    markPanel(); showKey(0);
   } else if (reader.state === 'paused') {
-    reader.state = 'playing';
-    if (reader.run && !reader.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
+    const wasResting = reader.reflecting;
+    reader.state = 'playing'; reader.reflecting = false; reader.follow = true;
+    if (!wasResting && reader.run && !reader.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
     else loop();
+    markPanel(); showKey(900);
   }
-  markPanel();
 }
 function jump(k) {
   if (reader.state === 'idle' || k < 0 || k >= reader.items.length) return;
-  haltRun(); reader.k = k;
-  if (reader.state === 'paused') reader.state = 'playing';
+  haltRun(); reader.k = k; reader.reflecting = false;
+  reader.state = 'playing'; markPanel(); showKey(900);
   loop();
 }
 function stopReading() {
   if (reading !== reader) return;
   haltRun(); reading = null;
-  reader.state = 'idle'; markPanel();
-  reader.panels.forEach((p) => { p.onclick = null; });
-  reader.bar?.classList.remove('on');
+  reader.state = 'idle'; reader.reflecting = false; markPanel(); hideKey();
+  document.documentElement.classList.remove('reading-aloud');
   listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
 }
+// Keeping words: choose any words on an idea's page (press and hold, then drag the handles) and a "Keep" button shows
+// above the menu; kept words go to the Diary with the idea they came from.
+let keepBar = null; let keepTimer = 0;
+function keepableSelection() {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const text = sel.toString().replace(/\s+/g, ' ').trim();
+  const stage = document.querySelector('.stage');
+  const id = stage?.dataset.node;
+  if (!id || text.length < 2 || !stage.contains(sel.getRangeAt(0).commonAncestorContainer)) return null;
+  if (sel.anchorNode?.parentElement?.closest('input, textarea')) return null;
+  return { id, text: text.slice(0, 2000) };
+}
+function showKeepBar() {
+  const pick = keepableSelection();
+  if (!pick) { keepBar?.classList.remove('on'); return; }
+  if (!keepBar) {
+    keepBar = h('div', { class: 'keep-bar', role: 'toolbar', 'aria-label': 'Keep the chosen words' },
+      h('button', { type: 'button', class: 'chip', onpointerdown: (e) => e.preventDefault(), onclick: async () => {
+        const now = keepableSelection(); if (!now) return keepBar.classList.remove('on');
+        try {
+          await api('/api/highlight', { method: 'POST', body: { node_id: now.id, text: now.text } });
+          getSelection().removeAllRanges(); keepBar.classList.remove('on');
+          notice('Kept. You will find it in your Diary.');
+        } catch { notice('Could not keep that. Try again.'); }
+      } }, '✦ Keep these words'));
+    document.body.append(keepBar);
+  }
+  keepBar.classList.add('on');
+}
+document.addEventListener('selectionchange', () => { clearTimeout(keepTimer); keepTimer = setTimeout(showKeepBar, 250); });
+
 // A short message at the top of the screen that fades away.
 function notice(text) {
   const n = h('div', { class: 'toast', role: 'status' }, text);
@@ -1000,7 +1114,7 @@ function gaze(src) {
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   stopReading();
-  const wrap = h('div', { class: `stage field-${node.field}` }, panels);
+  const wrap = h('div', { class: `stage field-${node.field}`, 'data-node': node.id }, panels);
   render(wrap);
   document.documentElement.classList.add('staged');
   setWallpaper(background, backgroundMax);
@@ -1370,7 +1484,8 @@ function inviteView() {
   render(
     h('h1', {}, 'Continuum'),
     h('p', {}, 'One small idea a day. You write first, then read it, then follow where it came from and where it went.'),
-    h('p', { class: 'muted' }, 'This is a small private test. Open the personal link you were sent to begin.'));
+    h('p', { class: 'muted' }, 'This is a small private test. Open the personal link you were sent to begin.'),
+    h('p', { class: 'muted small' }, 'Been here before? Your browser forgot you (DuckDuckGo does this when it clears its data). Open your personal link again; nothing you wrote is lost. To stop it happening: in DuckDuckGo, open the menu and choose "Fireproof this site", or add Continuum to your home screen from the browser menu.'));
 }
 
 function errorView() {
@@ -1393,7 +1508,7 @@ function showToday() {
 
 // The diary of discovery: new roads chosen from the user's own writing, the threads they have found between ideas they
 // met, and everything they wrote or kept, newest first.
-const ENTRY_LABEL = { answer: 'Your answer', note: 'Your note', kept: 'A line you kept' };
+const ENTRY_LABEL = { answer: 'Your answer', note: 'Your note', kept: 'A line you kept', highlight: 'Words you kept' };
 function showJournal() {
   setNav('journal');
   return guarded(async () => {
@@ -1421,7 +1536,11 @@ function showJournal() {
           h('div', { class: 'muted small' }, ENTRY_LABEL[e.kind]),
           h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: open(e.id) }, h('span', { class: 't' }, e.title)),
           e.prompt && h('p', { class: 'muted small' }, e.prompt),
-          e.kind === 'kept' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body));
+          e.kind === 'kept' || e.kind === 'highlight' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body),
+          e.kind === 'highlight' && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: async (ev) => {
+            const li = ev.currentTarget.closest('li');
+            await api(`/api/highlight/${e.hid}`, { method: 'DELETE' }).then(() => li.remove()).catch(() => notice('Could not remove it. Try again.'));
+          } }, 'Remove'));
       })))
       : h('p', { class: 'muted' }, 'Nothing yet. Write today\'s answer, or leave a note on any idea you walk to: "Your notes" is near the end of every idea.');
     const st = await api('/api/stance').catch(() => null);
@@ -1547,6 +1666,7 @@ const TALK_MODES = {
   settle: { label: 'A debate with a friend', placeholder: 'What did you disagree about? Say what you think, and what they think…' },
   news: { label: 'In the news', placeholder: 'A headline or a story you want to make sense of…' },
   goal: { label: 'A goal', placeholder: 'Something you want to do, change or become…' },
+  workout: { label: 'Work it out', placeholder: 'What is on your mind? A habit, a feeling, a decision, something stuck…' },
 };
 function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false, voice = false } = {}) {
   setNav('talk');
@@ -1584,6 +1704,21 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       b.replaceChildren(h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again));
       return view;
     }
+    // A reply that lays out a path (several ideas named in order) can be walked as a journey: it leads the next days.
+    function journeyOffer(text, how) {
+      const ids = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((x) => x[1]))].filter((id) => refs[id] && !id.startsWith('practice_'));
+      if (ids.length < (['workout', 'goal'].includes(how) ? 2 : 3)) return null;
+      const go = h('button', { type: 'button', class: 'chip' }, 'Walk these as a journey →');
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        try {
+          await api('/api/trail', { method: 'POST', body: { from_id: ids[0], ids: ids.slice(1), date: today() } });
+          notice(`A journey of ${ids.length} ideas. It starts now, and leads your next days.`);
+          walkTo(ids[0], []);
+        } catch { go.disabled = false; notice('Could not start that journey. Try again.'); }
+      });
+      return h('div', { class: 'talk-controls' }, go);
+    }
     // The pages a web search drew on, under the reply.
     const sourceList = (sources) => sources?.length > 0 && h('div', { class: 'talk-sources' },
       h('div', { class: 'eyebrow' }, 'Sources'),
@@ -1602,7 +1737,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
 
     const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '4000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
-    // Talk or Weigh an opinion (a voice of reason): what the next message asks for. Act (from a practice) is its own page.
+    // Talk, or one of the modes (weigh, teach, settle, news, goal, work it out): what the next message asks for. Act (from a practice) is its own page.
     const modeChips = current !== 'act' && h('div', { class: 'size-chips talk-modes', role: 'group', 'aria-label': 'Mode' },
       Object.entries(TALK_MODES).map(([k, m]) => {
         const b = h('button', { type: 'button', class: `chip ${k === current ? 'on' : ''}`, 'aria-pressed': String(k === current) }, m.label);
@@ -1628,7 +1763,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     async function submit() {
       const typed = ta.value.trim();
       if (!typed || send.disabled) return;
-      const sendAs = ['act', 'weigh', 'teach'].includes(current) ? current : null;
+      const sendAs = current !== 'talk' ? current : null; // every mode but plain Talk asks for its own kind of reply
       const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
       stopTalkVoice(); stopMic();
       send.disabled = true; ta.value = ''; status.textContent = '';
@@ -1660,6 +1795,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
             else if (m.t === 'done') {
               Object.assign(refs, m.refs); view = finishReply(out, reply.trim());
               const src = sourceList(m.sources); if (src) out.append(src);
+              const walk = journeyOffer(reply, sendAs ?? current); if (walk) out.append(walk);
               keepInView(out);
             }
             else if (m.t === 'error') throw new Error(m.error);

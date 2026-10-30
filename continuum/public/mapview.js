@@ -4,6 +4,8 @@
 // relearn them among their neighbours. Drag to move, pinch or scroll to zoom, tap a point to see it and its links.
 // Zooming in takes the map to the full screen (the header and menu fade away), with names growing as you go closer;
 // tapping an idea offers a short journey from it, which the daily walk then follows.
+// A chosen idea gathers its circle: zoomed right in, the ideas it links to stand in a ring around it, each link named;
+// zooming out a little brings the next ring (their links); further out, the whole map returns.
 
 const ERA_COLORS = { ancient: '#e9c46a', medieval: '#c98bdb', early_modern: '#7fb7e8', c19: '#f08a6c', c20: '#8fe8b4', now: '#7fe0e6' };
 const FIELD_VARS = ['philosophy', 'science', 'religion', 'practice', 'art', 'culture', 'law', 'now'];
@@ -37,7 +39,7 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     query = search.value.trim().toLowerCase();
     const hit = matches()[0];
     if (hit && query.length > 2) focusOn(hit.id, false);
-    else if (!query) { selected = null; showInfo(null); }
+    else if (!query) { selected = null; ego = null; showInfo(null); }
     draw();
   });
   const exit = h('button', { type: 'button', class: 'pill map-exit', 'aria-label': 'Leave the full-screen map', onclick: () => setFull(false, true) }, '✕');
@@ -86,6 +88,46 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
   const matches = () => (query.length < 2 ? [] : data.nodes.filter((n) => n.state !== 'upcoming'
     && `${n.title} ${n.thinker ?? ''}`.toLowerCase().includes(query)));
 
+  // ── The chosen idea's circle ──
+  // Offsets (in map units) from the chosen idea: its own links on an inner ring, ordered round as they lie on the map;
+  // their links on an outer ring, each near the inner idea it came through.
+  let ego = null; let ew = { w: 0, r2: 0 };
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const R1 = .055, R2 = .11; // ring radii (map units); at the circle's zoom (4.5x) the inner ring is a quarter of the screen out
+  function buildEgo(id) {
+    const c = pos.get(id); const ang = (o) => { const p = pos.get(o); return Math.atan2(p[1] - c[1], p[0] - c[0]); };
+    const inner = [...new Set(links.get(id).map((l) => l.other))].filter((o) => byId.get(o)?.state !== 'today').sort((a, b) => ang(a) - ang(b));
+    const ring1 = new Map(); const at = new Map(); const r1 = R1 * (inner.length > 10 ? 1.25 : 1);
+    const start = inner.length ? ang(inner[0]) : 0;
+    inner.forEach((o, i) => { const a = start + (i * 2 * Math.PI) / inner.length; at.set(o, a); ring1.set(o, [Math.cos(a) * r1, Math.sin(a) * r1]); });
+    const groups = new Map();
+    for (const o of inner) for (const l of links.get(o)) {
+      const x = l.other;
+      if (x === id || ring1.has(x) || byId.get(x)?.state === 'today' || [...groups.values()].some((g) => g.includes(x))) continue;
+      if (!groups.has(o)) groups.set(o, []);
+      if (groups.get(o).length < 6) groups.get(o).push(x);
+    }
+    const ring2 = new Map(); const sector = (2 * Math.PI) / Math.max(1, inner.length);
+    for (const [o, xs] of groups) xs.forEach((x, i) => {
+      const a = at.get(o) + (xs.length < 2 ? 0 : (i / (xs.length - 1) - .5) * sector * .85);
+      const r = Math.max(R2, r1 * 1.9) * (xs.length > 3 && i % 2 ? 1.18 : 1);
+      ring2.set(x, [Math.cos(a) * r, Math.sin(a) * r]);
+    });
+    return { id, ring1, ring2 };
+  }
+  // How far the circle has gathered (w) and how much of the outer ring shows (r2), from the zoom.
+  function weigh() {
+    const z = s / Math.min(W, H);
+    ew = ego ? { w: clamp((z - 2) / 1.5), r2: clamp((4.6 - z) / 1.1) } : { w: 0, r2: 0 };
+  }
+  function shown(id) {
+    const p = pos.get(id);
+    if (!ego || !ew.w || id === ego.id) return p;
+    const off = ego.ring1.get(id) ?? ego.ring2.get(id); if (!off) return p;
+    const c = pos.get(ego.id);
+    return [p[0] + (c[0] + off[0] - p[0]) * ew.w, p[1] + (c[1] + off[1] - p[1]) * ew.w];
+  }
+
   // ── View transform: world (0..1) to screen ──
   let W = 0, H = 0, dpr = 1, s = 1, tx = 0, ty = 0;
   function size() {
@@ -113,28 +155,34 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
   function draw() {
     const g = canvas.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    weigh();
     const near = selected ? new Set(links.get(selected).map((l) => l.other)) : null;
     const found = new Set(matches().map((n) => n.id));
     // Links: all of them, faint, when drawn by influence; only the chosen idea's when drawn by meaning.
     g.lineWidth = 1;
+    const outer = ego ? ew.w * ew.r2 : 0;
+    const named = [];
     for (const e of data.edges) {
       const on = selected && (e.from === selected || e.to === selected);
-      if (!on && (mode !== 'influence' || selected)) continue;
-      const a = pos.get(e.from), b = pos.get(e.to); if (!a || !b) continue;
-      g.strokeStyle = on ? 'rgba(244,192,99,.85)' : 'rgba(255,255,255,.09)';
-      g.lineWidth = on ? 1.6 : 1;
+      // In the circle: the links between the inner and outer rings, faint, as the outer ring shows.
+      const wider = !on && outer > .02 && ((ego.ring1.has(e.from) && ego.ring2.has(e.to)) || (ego.ring2.has(e.from) && ego.ring1.has(e.to)));
+      if (!on && !wider && (mode !== 'influence' || selected)) continue;
+      const a = shown(e.from), b = shown(e.to); if (!a || !b) continue;
+      g.strokeStyle = on ? 'rgba(244,192,99,.85)' : wider ? `rgba(160,220,255,${.45 * outer})` : 'rgba(255,255,255,.09)';
+      g.lineWidth = on ? 1.6 + ew.w : 1;
       g.beginPath(); g.moveTo(sx(a[0]), sy(a[1])); g.lineTo(sx(b[0]), sy(b[1])); g.stroke();
+      if (on && ew.w > .6) named.push([e, a, b]);
     }
     // The road walked, in order.
     if (showRoad && data.road.length > 1) {
       g.strokeStyle = 'rgba(244,192,99,.9)'; g.lineWidth = 2; g.setLineDash([5, 5]);
       g.beginPath();
-      data.road.forEach((id, i) => { const p = pos.get(id); if (p) (i ? g.lineTo : g.moveTo).call(g, sx(p[0]), sy(p[1])); });
+      data.road.forEach((id, i) => { const p = shown(id); if (p) (i ? g.lineTo : g.moveTo).call(g, sx(p[0]), sy(p[1])); });
       g.stroke(); g.setLineDash([]);
     }
     // A journey: the one started (solid), or the one offered for the tapped idea (dashed).
     const path = (ids, dash, alpha) => {
-      const ps = ids.map((id) => pos.get(id)).filter(Boolean); if (ps.length < 2) return;
+      const ps = ids.map((id) => shown(id)).filter(Boolean); if (ps.length < 2) return;
       g.strokeStyle = `rgba(143,232,180,${alpha})`; g.lineWidth = 2.5; g.setLineDash(dash);
       g.beginPath(); ps.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, sx(p[0]), sy(p[1]))); g.stroke(); g.setLineDash([]);
     };
@@ -143,12 +191,19 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     const zoom = s / Math.min(W, H);
     const r0 = Math.max(3.6, Math.min(7.5, 3.6 * zoom ** .5));
     // Points.
+    // How visible each idea is: in the circle, the outer ring follows the zoom and the rest of the map fades away.
+    const fade = (n) => {
+      if (!ego || n.id === ego.id || ego.ring1.has(n.id)) return null;
+      if (ego.ring2.has(n.id)) return (1 - ew.w) * .2 + ew.w * .85 * ew.r2;
+      return (1 - ew.w) * .2;
+    };
     for (const n of data.nodes) {
-      const p = pos.get(n.id), x = sx(p[0]), y = sy(p[1]);
+      const p = shown(n.id), x = sx(p[0]), y = sy(p[1]);
       if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
       const met = n.state === 'written' || n.state === 'visited';
+      const f = fade(n); if (f !== null && f < .02) continue;
       const dim = (selected && n.id !== selected && !near.has(n.id) && !offered?.some((x) => x.id === n.id)) || (found.size && !found.has(n.id));
-      g.globalAlpha = dim ? .2 : met || n.state === 'today' ? 1 : .72;
+      g.globalAlpha = f ?? (dim ? .2 : met || n.state === 'today' ? 1 : .72);
       if (n.fuzzy && !dim) { g.shadowColor = '#f4c063'; g.shadowBlur = 16; }
       g.fillStyle = colorOf(n);
       g.beginPath();
@@ -160,6 +215,23 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       if (n.id === selected) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r0 * 2.4, 0, Math.PI * 2); g.stroke(); }
     }
     g.globalAlpha = 1;
+    // In the circle, each of the chosen idea's links says what it is, along its line.
+    if (named.length) {
+      g.font = `italic ${Math.round(11 + 2 * ew.w)}px Manrope, system-ui, sans-serif`; g.textAlign = 'center';
+      g.globalAlpha = clamp((ew.w - .6) / .3);
+      const used = [];
+      for (const [e, a, b] of named) {
+        const verb = REL_WORDS[e.relation] ?? e.relation.replace(/_/g, ' ');
+        const [c, o] = e.from === selected ? [a, b] : [b, a]; // from the chosen idea out toward the other
+        const mx = sx(c[0] + (o[0] - c[0]) * .62), my = sy(c[1] + (o[1] - c[1]) * .62);
+        const w = g.measureText(verb).width; const box = [mx - w / 2, my - 15, mx + w / 2, my];
+        if (used.some((u) => box[0] < u[2] && box[2] > u[0] && box[1] < u[3] && box[3] > u[1])) continue;
+        used.push(box);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(6,10,8,.75)'; g.strokeText(verb, mx, my - 3);
+        g.fillStyle = 'rgba(244,214,150,.95)'; g.fillText(verb, mx, my - 3);
+      }
+      g.textAlign = 'start'; g.globalAlpha = 1;
+    }
     // Labels, without overlapping: the chosen idea and its links first, then search hits, then ideas met, then the
     // rest as the zoom gives room.
     const taken = [];
@@ -167,19 +239,27 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     const order = [...data.nodes].sort((a, b) => rankLabel(b) - rankLabel(a));
     function rankLabel(n) {
       if (n.id === selected) return 5; if (near?.has(n.id) || offered?.some((x) => x.id === n.id)) return 4; if (found.has(n.id)) return 3;
+      if (ego?.ring2.has(n.id) && outer > .5) return 3.5;
+      if (ego && ew.w > .5) return 0; // faded away
       if (n.state === 'written' || n.state === 'visited') return 2; return n.fuzzy ? 2.5 : 1;
     }
-    const fs = Math.round(Math.min(20, Math.max(12, 12 * zoom ** .42)) + (full ? 1 : 0)); // names grow as you go closer
+    const fs = Math.round(Math.min(ego && ew.w > .5 ? 16 : 20, Math.max(12, 12 * zoom ** .42)) + (full ? 1 : 0)); // names grow as you go closer
     g.font = `${fs}px Manrope, system-ui, sans-serif`; g.textBaseline = 'alphabetic';
     for (const n of order) {
       const text = label(n); if (!text) continue;
       const rank = rankLabel(n);
-      if (selected && rank < 4 && zoom < 2.2) continue;
+      if (!rank) continue;
+      if (selected && rank < 3.5 && zoom < 2.2) continue;
       if (rank < 2 && zoom < 1.8) continue;
-      const p = pos.get(n.id), x = sx(p[0]) + r0 + 5, y = sy(p[1]) + 4;
-      if (x > W || y > H + 10 || y < 0) continue;
-      const cap = full ? 34 : 26; const t = text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
+      const p = shown(n.id);
+      // In the circle, names sit centred over (upper half) or under (lower half) their point, so the ring fits a phone.
+      const ringed = ego && ew.w > .5 && n.id !== ego.id;
+      const cap = ringed ? 20 : full ? 34 : 26; const t = text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
       const w = g.measureText(t).width;
+      const above = ringed && p[1] < pos.get(ego.id)[1];
+      const x = ringed ? sx(p[0]) - w / 2 : sx(p[0]) + r0 + 5;
+      const y = !ringed ? sy(p[1]) + 4 : above ? sy(p[1]) - r0 - 6 : sy(p[1]) + r0 + fs;
+      if (x > W || x + w < 0 || y > H + 10 || y < 0) continue;
       if (!free(x, y, w) && rank < 5) continue;
       taken.push([x, y - fs, x + w, y + 4]);
       g.lineWidth = Math.max(3, fs / 4); g.strokeStyle = 'rgba(6,10,8,.8)'; g.strokeText(t, x, y);
@@ -232,7 +312,9 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       n.line && h('p', { class: 'small' }, n.line),
       n.fuzzy && h('p', { class: 'small map-fuzzy' }, 'This one came back fuzzy in your daily review. Its neighbours here can help it stick.'),
       h('div', { class: 'row', style: 'justify-content:flex-start' },
-        h('button', { type: 'button', class: 'btn', onclick: () => onOpen(n) }, 'Open this idea')),
+        h('button', { type: 'button', class: 'btn', onclick: () => onOpen(n) }, 'Open this idea'),
+        ls.length ? h('button', { type: 'button', class: 'btn ghost', onclick: () => focusOn(n.id, true) }, 'Its circle, up close') : null),
+      ls.length ? h('p', { class: 'muted small' }, 'Zoom in on it to gather its links around it; zoom out to see their links, then the whole map.') : null,
       offered.length ? h('div', { class: 'map-journey' },
         h('div', { class: 'eyebrow' }, 'A journey from here'),
         h('ol', {}, offered.map((x) => h('li', {},
@@ -249,19 +331,31 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       ls.length ? h('div', { class: 'map-links' }, h('div', { class: 'eyebrow' }, 'Its links'), ls.slice(0, 8).map(relLine)) : null,
     );
   }
+  let glide = null;
   function focusOn(id, center) {
-    selected = id; showInfo(byId.get(id));
+    selected = id; ego = buildEgo(id); showInfo(byId.get(id));
     if (center) {
-      const p = pos.get(id); const want = Math.max(s, Math.min(W, H) * 2.2);
-      s = want; if (!full) setFull(true);
-      tx = W / 2 - p[0] * s; ty = (full ? H * .38 : H / 2) - p[1] * s; // leave room for the sheet below
+      if (!full) setFull(true);
+      // Glide in until the circle has gathered, the idea a little above the middle (room for the sheet below).
+      const p = pos.get(id); const s0 = s, tx0 = tx, ty0 = ty; const s1 = Math.min(W, H) * 4.5;
+      const x1 = W / 2, y1 = H * .36; const t0 = performance.now();
+      cancelAnimationFrame(glide);
+      const step = (t) => {
+        const k = Math.min(1, (t - t0) / 900), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+        const sx0 = tx0 + p[0] * s0, sy0 = ty0 + p[1] * s0; // where the idea was on the screen
+        s = s0 * (s1 / s0) ** e;
+        tx = sx0 + (x1 - sx0) * e - p[0] * s; ty = sy0 + (y1 - sy0) * e - p[1] * s;
+        draw(); if (k < 1) glide = requestAnimationFrame(step);
+      };
+      glide = requestAnimationFrame(step);
+      return;
     }
     draw();
   }
 
   // ── Touch, mouse and wheel ──
   const pts = new Map(); let pinch = null, moved = 0, down = null;
-  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; down = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerdown', (e) => { cancelAnimationFrame(glide); canvas.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; down = { x: e.clientX, y: e.clientY }; });
   canvas.addEventListener('pointermove', (e) => {
     if (!pts.has(e.pointerId)) return;
     const prev = pts.get(e.pointerId); const cur = { x: e.clientX, y: e.clientY }; pts.set(e.pointerId, cur);
@@ -278,6 +372,9 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
   canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * .0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   function zoomAt(f, mx, my) {
+    cancelAnimationFrame(glide);
+    // With an idea chosen, zoom around it (so its circle gathers in place), while it is on the screen.
+    if (selected) { const p = pos.get(selected); const x = sx(p[0]), y = sy(p[1]); if (x > 0 && y > 0 && x < W && y < H) { mx = x; my = y; } }
     const base = Math.min(W, H); const ns = Math.min(base * 12, Math.max(base * .7, s * f)); const k = ns / s;
     tx = mx - (mx - tx) * k; ty = my - (my - ty) * k; s = ns;
     if (!full && s > base * 1.35) return setFull(true);
@@ -287,8 +384,12 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
   function tap(cx, cy) {
     const r = canvas.getBoundingClientRect(); const x = cx - r.left, y = cy - r.top;
     let best = null, bd = 22;
-    for (const n of data.nodes) { const p = pos.get(n.id); const d = Math.hypot(sx(p[0]) - x, sy(p[1]) - y); if (d < bd) { bd = d; best = n; } }
-    if (best) focusOn(best.id, false); else { selected = null; showInfo(null); draw(); }
+    for (const n of data.nodes) {
+      const f = ego && n.id !== ego.id && !ego.ring1.has(n.id) ? (ego.ring2.has(n.id) ? ew.w * ew.r2 + (1 - ew.w) : 1 - ew.w) : 1;
+      if (f < .3) continue; // faded out of the circle: not tappable
+      const p = shown(n.id); const d = Math.hypot(sx(p[0]) - x, sy(p[1]) - y); if (d < bd) { bd = d; best = n; }
+    }
+    if (best) focusOn(best.id, false); else { selected = null; ego = null; showInfo(null); draw(); }
   }
 
   const ro = new ResizeObserver(() => { const was = W; size(); if (!was) fit(); draw(); });

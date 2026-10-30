@@ -10,7 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
@@ -353,6 +353,28 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (text) dq.saveNote.run(req.user.id, nodeId, text, date); else dq.deleteNote.run(req.user.id, nodeId);
     res.json({ note: text || null });
   });
+  // After a note: one question back, to learn about themselves and the idea. What they say to it is added to the note.
+  app.post('/api/note/question', auth, async (req, res) => {
+    const n = q.node.get(req.body?.node_id);
+    const note = dq.noteOn.get(req.user.id, n?.id)?.body;
+    if (!n || !note) return res.status(404).json({ error: 'not_found' });
+    if (!talk) return res.json({ question: null });
+    try {
+      const question = await askBack(talk, { note: clip(note, 3000), idea: n, views: viewsText(req.user.id) });
+      res.json({ question });
+    } catch (e) { console.warn(`Asking back: ${e.status ?? ''} ${e.message}`); res.json({ question: null }); }
+  });
+  app.post('/api/note/reply', auth, (req, res) => {
+    const { node_id: nodeId, question, reply } = req.body ?? {};
+    const old = dq.noteOn.get(req.user.id, nodeId)?.body;
+    const said = typeof reply === 'string' ? reply.trim() : '';
+    if (!old || !said || typeof question !== 'string') return res.status(400).json({ error: 'bad_reply' });
+    const date = localDate(req.body?.date);
+    const body = `${old}\n\nContinuum asked: ${clip(question, 400)}\nI said: ${said}`.slice(0, MAX_BODY);
+    dq.saveNote.run(req.user.id, nodeId, body, date);
+    noteFrom(req.user.id, date, said, `Their reply to the question "${clip(question, 300)}", asked after their note on "${q.node.get(nodeId)?.title}".`, 'note');
+    res.json({ note: body });
+  });
 
   // Thread sentences for the diary: which side of the link comes first, and the verb.
   const THREAD = {
@@ -443,14 +465,16 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const lead = ranked.find((r) => r.byWords);
     const roads = [lead, ...ranked.filter((r) => r !== lead)].filter(Boolean).slice(0, 3).map(({ byWords, ...r }) => r);
 
-    // Entries: answers, notes and kept lines, newest first.
+    // Entries: answers, notes, kept lines and highlights, newest first.
+    const highlights = hq.all.all(uid);
     const items = [
       ...answers.map((a) => ({ kind: 'answer', id: a.id, title: a.title, thinker: a.thinker, field: a.field, prompt: a.prompt, body: a.body, date: a.local_date, at: a.created_at })),
       ...notes.map((n) => ({ kind: 'note', id: n.id, title: n.title, thinker: n.thinker, field: n.field, body: n.body, date: n.local_date, at: n.updated_at })),
       ...kept.map((f) => ({ kind: 'kept', id: f.id, title: f.title, thinker: f.thinker, field: f.field, body: firstLine(f.source_face) || f.title, date: f.created_at.slice(0, 10), at: f.created_at })),
+      ...highlights.map((x) => ({ kind: 'highlight', hid: x.hid, id: x.id, title: x.title, thinker: x.thinker, field: x.field, body: x.body, date: x.created_at.slice(0, 10), at: x.created_at })),
     ].sort((x, y) => (y.date + y.at).localeCompare(x.date + x.at));
     const views = vq.recent.all(uid, 80).map((v) => ({ id: v.id, kind: v.kind, topic: v.topic, body: v.body, date: v.local_date, source: v.source }));
-    res.json({ counts: { met: met.size, notes: notes.length, answers: answers.length, kept: kept.length }, roads, threads, entries: items, views, experience: experienceOf(uid) });
+    res.json({ counts: { met: met.size, notes: notes.length, answers: answers.length, kept: kept.length + highlights.length }, roads, threads, entries: items, views, experience: experienceOf(uid) });
   });
   // A noted view can be taken out of the ledger (it was noted wrongly, or the user would rather it were not kept).
   app.delete('/api/views/:id', auth, (req, res) => {
@@ -464,6 +488,27 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!q.node.get(nodeId)) return res.status(404).json({ error: 'not_found' });
     if (on === false) q.removeFavorite.run(req.user.id, nodeId); else q.addFavorite.run(req.user.id, nodeId);
     res.json({ favorite: on !== false });
+  });
+
+  // A highlight: any words the user chose on an idea's page and kept. The same words are kept once.
+  const hq = {
+    add: db.prepare('INSERT INTO highlights (user_id, node_id, body) VALUES (?, ?, ?)'),
+    has: db.prepare('SELECT id FROM highlights WHERE user_id = ? AND node_id = ? AND body = ?'),
+    drop: db.prepare('DELETE FROM highlights WHERE id = ? AND user_id = ?'),
+    all: db.prepare(`SELECT h.id AS hid, n.id, n.title, n.thinker, n.field, h.body, h.created_at FROM highlights h JOIN nodes n ON n.id = h.node_id
+      WHERE h.user_id = ? ORDER BY h.created_at DESC`),
+  };
+  app.post('/api/highlight', auth, (req, res) => {
+    const { node_id: nodeId } = req.body ?? {};
+    const text = typeof req.body?.text === 'string' ? req.body.text.replace(/\s+/g, ' ').trim() : '';
+    if (!q.node.get(nodeId)) return res.status(404).json({ error: 'not_found' });
+    if (text.length < 2 || text.length > 2000) return res.status(400).json({ error: 'bad_text' });
+    const id = hq.has.get(req.user.id, nodeId, text)?.id ?? Number(hq.add.run(req.user.id, nodeId, text).lastInsertRowid);
+    res.json({ id });
+  });
+  app.delete('/api/highlight/:id', auth, (req, res) => {
+    hq.drop.run(Number(req.params.id), req.user.id);
+    res.json({ ok: true });
   });
 
   // One question after reading: did the source change your mind? The answer steers the suggested next step.
@@ -1441,6 +1486,20 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   // The app's own code and page are checked for a newer copy on every load (no stale mix of old and new after an
   // update); pictures, fonts and sounds may be kept by the phone.
+  // The home-screen app: its start address carries the user's personal link, so the icon always opens signed in,
+  // even after the browser clears what the site stored.
+  app.get('/manifest.webmanifest', (req, res) => {
+    const u = typeof req.query.u === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(req.query.u) ? req.query.u : null;
+    res.type('application/manifest+json').set('Cache-Control', 'no-cache').send(JSON.stringify({
+      name: 'Continuum', short_name: 'Continuum', description: 'One small idea a day.',
+      start_url: u ? `/?u=${u}` : '/', scope: '/', display: 'standalone', orientation: 'portrait',
+      background_color: '#0d120f', theme_color: '#0d120f',
+      icons: [
+        { src: '/img/icon/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/img/icon/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      ],
+    }));
+  });
   app.use(express.static(PUBLIC_DIR, {
     extensions: ['html'],
     setHeaders: (res, file) => { if (/\.(html|js|css)$/.test(file)) res.setHeader('cache-control', 'no-cache'); },

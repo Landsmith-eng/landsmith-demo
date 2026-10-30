@@ -84,6 +84,7 @@ Then end with one question for the user. Use web_search only to check current fa
 End with one question the user could ask their friend next time, to understand them better. Do not declare a winner. Use web_search only if a factual point needs checking now. About 200 to 300 words.`,
   news: `For this message, the user wants to make sense of something in the news. Use web_search to find what is actually being reported now (two or three reputable sources), and say briefly what happened, in plain words, with the dates. Then, in short paragraphs with no other formatting: which ideas on the map shed light on it (in brackets) and how; the strongest competing readings of it, held to the same standard; and what remains unknown. End with one question that asks the user what they make of it, and why. Never invent a fact or a quotation; list only what the search found. About 200 to 300 words.`,
   goal: `For this message, the user is working on a goal or a way they want to live. Help them make it clear and their own: ask what it is for, what it would look like on an ordinary day, and what gets in the way. Draw on the map's practices and ideas (in brackets) that fit it, and suggest one small first step for this week. If the goal seems to pull against a view or another goal they have stated (below), say so gently and ask how they would reconcile them. Keep it to two to four short paragraphs and one question.`,
+  workout: `For this message, the user wants help working out a problem in their own life: a habit, a feeling, a decision, a relationship, something stuck. Meet them where they are, like a good counsellor who also knows the history of ideas. First listen: reflect back in a sentence what you hear (the situation, and what seems to matter to them in it), without judging or fixing. If you do not yet understand, ask one clear question and stop there. When you do understand, draw on the psychology on the map first (for example [[ellis_abc_model]], [[festinger_cognitive_dissonance]], [[gollwitzer_implementation_intentions]], [[prochaska_stages_of_change]], [[linehan_radical_acceptance]]) and the philosophy that saw it earlier, in brackets: name what may be going on, gently, as a possibility, not a diagnosis. Then offer one small, concrete step for this week (a practice from the map if one fits), and, when it would help, a short journey of two to four ideas in a sensible order, each in brackets, that would help them challenge the habit or the belief behind it and make a new decision. If their views or goals (below) bear on it, connect them lightly. Keep it to two to four short paragraphs and end with one question. If they mention harming themselves or someone else, or being in danger, respond with warmth first, say plainly that this is more than Continuum can help with, and urge them to contact someone they trust or a crisis line now (in the US, call or text 988). You are not a therapist and do not claim to be one.`,
   act: `For this message, the user wants to put a practice into action where they live. Use web_search to find three to five current, real volunteer or community opportunities near the place they name that fit the practice: for example soup kitchens, food banks, shelters, holiday gift drives, mentoring, visiting the elderly, and for civic life, poll worker sign-up through the official state or county election office. For each, one plain sentence: the organisation, what you would do there, and the link where the search found it (write the full URL). List only what the search actually found; never invent an organisation, a date or a phone number. If the search finds little, say so and suggest where to look (the county website, the public library, VolunteerMatch, Idealist). End with one small first step for this week. Do not ask for, or repeat, any personal detail beyond the place.`,
 };
 
@@ -229,6 +230,22 @@ export async function noteViews(talk, { said, context = '', catalogue }) {
   });
   if (msg.stop_reason !== 'end_turn') return null;
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
+// One question back after the user writes a note on an idea: something that helps them learn about themselves and the
+// idea at once. Uses what they have said before (views) only to make the question personal, never to judge it.
+export async function askBack(talk, { note, idea, views = '' }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 4000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low' },
+    system: `You are Continuum, a daily philosophy app. The user has just written a note on one idea. Ask them ONE question back, in one or two short sentences, that helps them learn something about themselves and about the idea at the same time: about a word they used, an assumption in what they wrote, a time in their own life it touches, or where a thinker on the other side would push. Be warm and curious, never a test. Use their earlier views only if one plainly connects ("Earlier you said…"), and quote nothing you were not given. No preamble, no praise, no formatting: just the question.`,
+    messages: [{ role: 'user', content: `The idea: "${idea.title}"${idea.thinker ? ` (${idea.thinker})` : ''}. In plain words: ${idea.plain_face}\n\n${views ? `Their earlier views (dated):\n${views}\n\n` : ''}Their note:\n${note}` }],
+  });
+  if (msg.stop_reason === 'refusal') return null;
+  return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || null;
 }
 
 // The Parthenon's moderator: reads a group's discussion of one topic and helps it along, the way a good seminar leader

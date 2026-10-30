@@ -12,7 +12,7 @@ export const rooms = [
   { id: 'africa', name: 'Africa and the diaspora', blurb: 'Reason, freedom and personhood, from an Ethiopian cave to Birmingham jail and the idea of Ubuntu.' },
   { id: 'americas', name: 'The Americas', blurb: 'Indigenous philosophy and Latin American thought: the seventh generation, conquest, and what the land teaches.' },
   { id: 'science', name: 'How we came to know the world', blurb: 'Proof, observation and revolution in science, from Euclid to Kuhn.' },
-  { id: 'mind', name: 'The study of the mind', blurb: 'Psychology puts the old questions to the test: habit, meaning, happiness and how we fool ourselves.' },
+  { id: 'mind', name: 'Psychology and the mind', blurb: 'How minds work and how people change: habits, beliefs, emotions and decisions, with psychology putting the old questions to the test.' },
   { id: 'art', name: 'Art and the image', blurb: 'Paintings, sculpture and music that put an old idea in front of the eyes and ears.' },
   { id: 'culture', name: 'Culture and everyday life', blurb: 'Films, novels, rituals and habits where the great questions turn up without being named.' },
   { id: 'law', name: 'Law and the state', blurb: 'Courts and constitutions working out conscience, liberty, equality and power, opinion by opinion.' },
@@ -66,7 +66,11 @@ const R = {
   mind: ['wundt_first_laboratory', 'william_james_habit', 'jung_the_shadow', 'freud_pleasure_principle', 'pavlov_conditioned_reflex',
     'harvard_study_adult_development', 'maslow_hierarchy', 'frankl_mans_search_for_meaning', 'rogers_unconditional_positive_regard',
     'milgram_obedience', 'seligman_learned_helplessness', 'skinner_beyond_freedom', 'brickman_lottery_winners',
-    'beck_cognitive_therapy_stoicism_tested', 'kabat_zinn_mbsr', 'kahneman_peak_end'],
+    'beck_cognitive_therapy_stoicism_tested', 'kabat_zinn_mbsr', 'kahneman_peak_end',
+    'james_attention_is_will', 'adler_feeling_of_inferiority', 'lewin_person_and_situation', 'festinger_cognitive_dissonance',
+    'ellis_abc_model', 'bowlby_ainsworth_attachment', 'mischel_delay_of_gratification', 'bandura_self_efficacy',
+    'kahneman_tversky_loss_aversion', 'prochaska_stages_of_change', 'pennebaker_expressive_writing', 'csikszentmihalyi_flow',
+    'linehan_radical_acceptance', 'gollwitzer_implementation_intentions', 'dweck_mindsets'],
 };
 
 export const roomOf = {};

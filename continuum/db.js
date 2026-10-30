@@ -211,6 +211,16 @@ CREATE TABLE IF NOT EXISTS notes (
   PRIMARY KEY (user_id, node_id)
 );
 
+-- Highlights: any words the user chose on a page and kept, found again in the Diary.
+CREATE TABLE IF NOT EXISTS highlights (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS highlights_user ON highlights(user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS reactions (
   user_id INTEGER NOT NULL REFERENCES users(id),
   node_id TEXT NOT NULL REFERENCES nodes(id),
