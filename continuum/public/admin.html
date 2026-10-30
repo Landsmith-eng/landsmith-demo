@@ -46,7 +46,10 @@
       sessionStorage.setItem('continuum.admin', key());
       const res = await fetch('/admin/api/invite', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#invname').value }) });
       const j = await res.json().catch(() => ({}));
-      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}` : res.status === 403 ? 'That admin key does not match. Copy CONTINUUM_ADMIN_KEY again from Render (Environment), paste it in the box above, and try again.' : 'Type a name first.';
+      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}`
+        : res.status === 403 ? 'That admin key does not match. Copy CONTINUUM_ADMIN_KEY again from Render (Environment), paste it in the box above, and try again.'
+          : j.error === 'name_required' ? 'Type a name first.'
+            : `The server said no (${res.status}${j.error ? `: ${j.error}` : ''}). If Render is still deploying, wait a minute and try again.`;
     });
     async function load() {
       const res = await fetch('/admin/api/stats', { headers: { 'x-admin-key': key() } });
