@@ -2422,7 +2422,7 @@ addEventListener('touchend', (e) => {
 // skips it. Skipped when testing with ?day=, and shown as a still for reduced-motion settings.
 function intro(then = () => {}) {
   try { if (sessionStorage.getItem('continuum.intro')) return then(); sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
-  if (params.get('day')) return then();
+  if (params.get('day') || params.get('visit')) return then(); // a test date, or a link to see a visitor: straight in
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const hall = h('img', { class: 'hall', src: '/img/tabs/gallery_empty.webp', alt: '' });
   const cat = h('img', { class: 'cat', src: '/img/tabs/gallery.webp', alt: '' });

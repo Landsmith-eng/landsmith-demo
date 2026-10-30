@@ -482,7 +482,10 @@ async function frog(run, sc) {
   const band = waterBand(sc, 0, 1); if (!band || !sc.shore) return;
   // In the foreground: on the near bank if it is in view, otherwise on a lily pad in the near water. Smaller farther up.
   const W = innerWidth, H = innerHeight; const bank = imgY(sc.shore, sc); const near = bank > H * .72 && bank < dockTop() - 10;
-  const edge = near ? bank : Math.min(band[1], dockTop()) - rnd(14, 40); const size = Math.max(14, 26 * (edge / (H * .9)) ** 1.5);
+  const edge = near ? bank : Math.min(band[1], dockTop()) - rnd(14, 40); const size = Math.max(17, 30 * (edge / (H * .9)) ** 1.5);
+  // Beside the water: where it fills only part of the width (a river to one side), keep to that stretch of bank.
+  const span = sc.waterX ? rectOf([sc.waterX[0], 0, sc.waterX[1], 0], sc) : { x: W * .12, w: W * .68 };
+  const xMin = Math.max(8, span.x + 6), xMax = Math.min(W - size - 8, span.x + span.w - size - 6);
   const el = svg('0 0 36 26', size, `<g class="frog">
     <path class="legs-in" d="M6 18 C1 18 1 23 8 23 L15 23 C12 21 10 18 6 18Z" fill="rgba(44,66,36,.92)"/>
     <path class="legs-out" d="M9 18 L1 21 L-5 20 M10 20 L2 25 L-4 26" stroke="rgba(44,66,36,.92)" stroke-width="2.4" stroke-linecap="round" fill="none"/>
@@ -491,7 +494,7 @@ async function frog(run, sc) {
     <circle cx="24" cy="9" r="3.1" fill="rgba(44,66,36,.95)"/><circle class="eye" cx="24.7" cy="8.5" r="1.15" fill="rgba(220,200,120,.9)"/>
     <path d="M24 19 L27 23.5 L30.5 23.5" stroke="rgba(44,66,36,.92)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>`);
   el.classList.add('creature', 'froggy', 'gone'); const right = Math.random() < .5; if (!right) el.style.setProperty('--flip', '-1');
-  let x = rnd(W * .12, W * .8); let y = edge - size * 23 / 36;
+  let x = rnd(xMin, Math.max(xMin, xMax)); let y = edge - size * 23 / 36;
   const pad = !near && svg('0 0 40 12', size * 1.5, '<path d="M20 6 L33 2.5 A19 5.5 0 1 1 26 1.2 Z" fill="rgba(52,86,40,.85)"/>');
   if (pad) { pad.classList.add('creature', 'lilypad'); pad.style.transform = `translate(${x - size * .2}px, ${edge - size * .2}px)`; layer.append(pad); }
   layer.append(el);
@@ -505,7 +508,7 @@ async function frog(run, sc) {
   for (let i = 0; i < Math.round(rnd(1, 3)); i++) {
     await wait(rnd(1800, 4200), run);
     if (Math.random() < .5) { el.classList.add('blink'); await wait(220, run); el.classList.remove('blink'); await wait(rnd(500, 1500), run); }
-    if (near) await hop((right ? 1 : -1) * rnd(16, 34), rnd(10, 18), 420);
+    if (near) { const step = (right ? 1 : -1) * rnd(16, 34); if (x + step > xMin && x + step < xMax) await hop(step, rnd(10, 18), 420); }
   }
   await wait(rnd(1500, 3500), run);
   // Into the water: a last leap, a ripple where it went in.
