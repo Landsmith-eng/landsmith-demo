@@ -95,6 +95,7 @@ const TAB_BG = {
   practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp',
   talk: '/img/spares/talk_two_chairs.webp', // two chairs under a plane tree, two cups: a conversation waiting
 };
+TAB_BG.think = TAB_BG.talk; TAB_BG.explore = TAB_BG.gallery; TAB_BG.you = TAB_BG.journal;
 // Plates for pages outside the tabs: the debates in a colonnade where two groups argue at either end, an owl
 // between them. Pages whose plate has not arrived yet borrow one with a kindred meaning.
 const PAGE_BG = {
@@ -120,6 +121,7 @@ function doors() {
       door('A debate with a friend', () => showTalk({ mode: 'settle' })),
       door('Something in the news', () => showTalk({ mode: 'news' })),
       door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
+      door('Today\'s practice', () => showPractice()),
       door('Work through a problem', () => showWorkThrough()),
       door('A goal I have', () => showTalk({ mode: 'goal' })),
       door('My group, in the Parthenon', () => showParthenon()),
@@ -155,10 +157,15 @@ const MOOD_BG = {
 };
 let currentTab = null;
 let pageBg = null; // a page's own plate in place of its tab's, set just before render
+// Four tabs: Wander (today's idea and practice), Think (talk, problems, debates, the Parthenon), Explore (the Gallery
+// and the Map), You (the diary and the week's review). Pages keep their own names (for their plates); the tab lit is
+// the one they live under.
+const TAB_OF = { practice: 'today', talk: 'think', gallery: 'explore', journal: 'you', review: 'you' };
 function setNav(name) {
   currentTab = name; pageBg = null;
+  const tab = TAB_OF[name] ?? name;
   for (const b of document.querySelectorAll('nav [data-nav]')) {
-    if (b.dataset.nav === name) b.setAttribute('aria-current', 'page');
+    if (b.dataset.nav === tab) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   }
 }
@@ -1365,7 +1372,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
       }, 220);
     });
     const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Explore ↝');
-    render(h('h1', {}, 'Gallery of thought'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
+    render(h('h1', {}, 'Explore'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     if (search) box.focus();
     const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
@@ -1582,7 +1589,11 @@ function showJournal() {
       h('ul', { class: 'path' }, cs.cases.filter((c) => c.status === 'open').map((c) => h('li', {},
         h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)),
         h('div', { class: 'muted small' }, `Since ${c.date} · ${c.checkins.length} ${c.checkins.length === 1 ? 'check-in' : 'check-ins'}${c.started ? ' · your course' : ''}`)))));
-    render(h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again);
+    const youChips = h('div', { class: 'size-chips' },
+      h('button', { type: 'button', class: 'chip on', 'aria-pressed': 'true' }, 'Diary'),
+      h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
+      h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again);
   });
 }
 
@@ -2102,11 +2113,13 @@ document.addEventListener('click', (e) => {
   if (!nav) return;
   e.preventDefault();
   if (!tourState) document.querySelectorAll('.tour').forEach((x) => x.remove()); // a welcome card left behind
-  if (nav.dataset.nav === 'journal') showJournal();
-  else if (nav.dataset.nav === 'talk') showTalk();
-  else if (nav.dataset.nav === 'practice') showPractice();
-  else if (nav.dataset.nav === 'review') showReview(7);
-  else if (nav.dataset.nav === 'gallery') showGallery('rooms');
+  const to = nav.dataset.nav;
+  if (to === 'you' || to === 'journal') showJournal();
+  else if (to === 'think') showThink();
+  else if (to === 'talk') showTalk();
+  else if (to === 'practice') showPractice();
+  else if (to === 'review') showReview(7);
+  else if (to === 'explore' || to === 'gallery') showGallery('rooms');
   else showToday();
 });
 
@@ -2179,11 +2192,11 @@ const TOUR = [
   { text: 'Welcome: a journey of discovery: the ideas that shaped how we think, what we value and how we live, from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
   { text: 'Most of what we believe, we picked up without choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
   { target: '.tabs [data-nav=today]', text: 'Wander: one question a day, answered before you read anything. Then the idea opens one part at a time. About two minutes.' },
-  { target: '.tabs [data-nav=talk]', text: 'Respond by voice or in writing. Bring a debate with a friend, the news or a goal. It remembers what you\'ve said, pushes back when you\'re very sure, and what you talk about chooses what comes next.' },
-  { target: '.tabs [data-nav=talk]', text: 'The Parthenon: small groups talking over one question together, live, with Continuum as moderator.' },
-  { target: '.tabs [data-nav=journal]', text: 'Diary: everything you write, and your views over time. When your thinking shifts, it notices and asks what changed.' },
-  { target: '.tabs [data-nav=practice]', text: 'Practice: ideas into habits, from ten seconds a day.' },
-  { target: '.tabs [data-nav=gallery]', text: 'Gallery: every idea by room, time and theme, plus the Map, where any idea suggests a journey. Review shows your week.' },
+  { target: '.tabs [data-nav=think]', text: 'Think: respond by voice or in writing. Bring a debate with a friend, the news or a goal. It remembers what you\'ve said, pushes back when you\'re very sure, and what you talk about chooses what comes next.' },
+  { target: '.tabs [data-nav=think]', text: 'Work through a problem, or join the Parthenon: small groups talking over one question together, live, with Continuum as moderator.' },
+  { target: '.tabs [data-nav=today]', text: 'Practice, on Wander too: ideas into habits, from ten seconds a day.' },
+  { target: '.tabs [data-nav=explore]', text: 'Explore: every idea by room, time and theme, plus the Map, where any idea suggests a journey.' },
+  { target: '.tabs [data-nav=you]', text: 'You: your diary, everything you write, and your views over time. When your thinking shifts, it notices and asks what changed. Review shows your week.' },
   { target: '#listen', text: 'Two small touches: tap Listen to hear any idea read aloud. And pinch the screen to make the words bigger, and to look closer at the picture.' },
   { text: 'The debates: an invitation, not a test. Nothing is graded.' },
 ];
@@ -2256,6 +2269,69 @@ async function shareInvite(g) {
   try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
   catch { notice(url); }
 }
+// ── Think: everything for thinking something through, in one place ──
+function showThink() {
+  setNav('think');
+  return guarded(async () => {
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const open = cs?.cases.filter((c) => c.status === 'open') ?? [];
+    const big = (title, line, go) => h('button', { type: 'button', class: 'think-door', onclick: go }, h('span', { class: 't' }, title), h('span', { class: 'muted small' }, line));
+    render(
+      h('h1', {}, 'Think'),
+      h('p', {}, 'Bring what is on your mind. Continuum answers from the ideas on the map and from what you have written, and pushes back when you are very sure.'),
+      h('div', { class: 'think-doors' },
+        big('Work through a problem', 'A few questions, then a route through it, and check-ins as you go.', () => showWorkThrough()),
+        big('Talk', 'Argue a point, test a belief, ask for a practice or a reading path.', () => showTalk()),
+        big('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
+        big('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
+        big('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
+        big('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
+        big('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
+        big('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'),
+        h('ul', { class: 'path' }, open.map((c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)))))));
+  });
+}
+
+// ── Arriving ──
+// The first few days: what brought you here (to learn, to think something through, or to build a habit), and the
+// app opens there. After that, once a day: glad to see you back, where to today, led by what you usually choose.
+const GREETED_KEY = 'continuum.greeted'; const WHY_KEY = 'continuum.why'; const ASK_DAYS = 3;
+function arrive() {
+  if (store.get(GREETED_KEY) === today() || params.get('day')) { showToday(); offerTour(); return; }
+  setNav('');
+  return guarded(async () => {
+    const t = await api(`/api/today?date=${today()}`);
+    pageBg = brightFor('arrive') ?? null;
+    const go = (why, fn) => () => { store.set(GREETED_KEY, today()); if (why) store.set(WHY_KEY, why); fn(); offerTour(); };
+    const choice = (title, line, fn, why) => h('button', { type: 'button', class: 'think-door', onclick: go(why, fn) }, h('span', { class: 't' }, title), line && h('span', { class: 'muted small' }, line));
+    const first = (t.name ?? '').split(' ')[0];
+    if ((t.visits ?? 1) <= ASK_DAYS) {
+      return render(
+        h('h1', {}, first ? `Welcome, ${first}` : 'Welcome'),
+        h('p', {}, 'What brings you here?'),
+        h('div', { class: 'think-doors' },
+          choice('Learn something new', 'One idea a day: you write first, then read it, then follow where it leads.', showToday, 'learn'),
+          choice('Think something through', 'A problem, a decision, a disagreement, the news: bring it, and think it over with the world\'s wisdom.', showThink, 'think'),
+          choice('Build a daily habit', 'Ideas into practice, from ten seconds a day.', showPractice, 'habit')),
+        h('p', { class: 'muted small' }, 'Every way is open from the menu below, whichever you choose.'));
+    }
+    const idea = t.state === 'write'
+      ? choice('Today\'s idea', t.node?.why ?? 'A new question is waiting. Write first, then read.', showToday, 'learn')
+      : t.state === 'done_today' ? choice('Back to today\'s idea', `"${t.node.title}": walk on from where you were.`, showToday, 'learn') : null;
+    const checkin = t.checkin && choice(`Check in: ${t.checkin.title}`, t.checkin.question, () => showWorkThrough(t.checkin.id), 'think');
+    const think = choice('Think something through', 'Talk, a problem, a debate, the news.', showThink, 'think');
+    const habit = choice('Today\'s practice', 'Ideas into habits, from ten seconds a day.', showPractice, 'habit');
+    const order = { learn: [idea, think, habit], think: [think, idea, habit], habit: [habit, idea, think] }[store.get(WHY_KEY)] ?? [idea, think, habit];
+    render(
+      h('h1', {}, first ? `Glad to see you back, ${first}` : 'Glad to see you back'),
+      h('p', {}, 'Where would you like to go today?'),
+      h('div', { class: 'think-doors' }, checkin, ...order,
+        choice('Explore the map', 'Every idea, and how they connect.', showMap, null),
+        choice('Your diary', 'What you have written, and how your views have moved.', showJournal, null)));
+  });
+}
+
 // ── Working through a problem ──────────────────────────────────────────────────────────────────────────────
 // The user brings a problem; Continuum asks a few questions, one at a time (as a good counsellor opens a first
 // session), then draws on the whole map for what may be going on, the pitfalls that may keep them stuck, and a route of
@@ -2543,6 +2619,6 @@ function offerTour() {
   document.body.append(box);
 }
 
-intro(offerTour);
+intro();
 if (store.get('continuum.join')) joinFromLink(store.get('continuum.join'));
-else showToday();
+else arrive();

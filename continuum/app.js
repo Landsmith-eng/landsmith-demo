@@ -39,6 +39,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   const q = {
     userByToken: db.prepare('SELECT id, name, created_at FROM users WHERE token = ?'),
+    visitDays: db.prepare("SELECT COUNT(DISTINCT local_date) AS n FROM events WHERE user_id = ? AND kind = 'open'"),
     lineCount: db.prepare('SELECT COUNT(*) AS n FROM nodes WHERE seq IS NOT NULL'),
     node: db.prepare('SELECT * FROM nodes WHERE id = ?'),
     pickFor: db.prepare('SELECT node_id, why FROM daily_pick WHERE user_id = ? AND local_date = ?'),
@@ -305,7 +306,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
     const due = kq.due.get(uid, shiftDay(date, -CHECKIN_DAYS));
     const checkin = due ? { id: due.id, title: due.title, question: lastQuestion(due) } : null;
-    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin });
+    // Days they have opened Continuum (counting today): the first few times it asks what brought them.
+    const visits = q.visitDays.get(uid).n;
+    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin, visits });
   });
 
   app.post('/api/respond', auth, (req, res) => {
