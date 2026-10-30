@@ -1,11 +1,11 @@
-// Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): a sailboat crossing the sea
-// on the horizon, sandpipers running at the water's edge, a school of fish; ducks paddling and an egret wading on a
-// lake or river, a fish turning under the surface; a cat wandering, a bird landing to peck, birds passing over;
-// caterpillars, inchworms, a dragonfly, bees, butterflies and a hummingbird at the flowers, a frog at the edge of a pond, and a spider building a small web and letting itself down on a thread.
-// They are faint, see-through shapes blended into the painting (shadows on a light picture, a soft light on a dark
-// one), behind the words, never in the way of a tap. One at a time, and more often while the reader sits still with a
-// page: a small thing to watch while thinking. None while the phone asks to reduce motion, while the tab is hidden,
-// or while the map or a picture fills the screen.
+// Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): birds passing over or
+// landing, a dragonfly crossing, bees, butterflies and a hummingbird at the flowers, leaves on the wind, a caterpillar,
+// an inchworm on a dark trunk, a spider in the branches, a small frog at a pond; on the water, a sailboat among the
+// painted ones, ducks, an egret, sandpipers at the edge, ripples; light through a window, writing on a page,
+// equations on a board. They are faint, see-through shapes blended into the painting (shadows on a light picture, a
+// soft light on a dark one), behind the words, never in the way of a tap: one at a time, now and then, a little more
+// often while the reader sits still. None while the phone asks to reduce motion, the tab is hidden, or the map fills
+// the screen.
 import { SCENES, DEFAULT_SCENE } from '/scenes.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -57,34 +57,6 @@ const noise = () => { const w = [1, 2.3, 4.1].map((m) => ({ f: m * (0.0004 + Mat
 function waterBand(sc, from = 0, to = 1) {
   const [a, b] = sc.water; const top = imgY(a + (b - a) * from, sc); const bottom = Math.min(imgY(a + (b - a) * to, sc), dockTop() - 12);
   return bottom > top + 8 ? [top, bottom] : null;
-}
-
-// ── The cat: walks in along the top of the menu, stops to look about (tail swaying), walks on. ──
-async function cat(run) {
-  const leg = (x, cls) => `<line class="${cls}" x1="${x}" y1="38" x2="${x}" y2="60" stroke="${INK}" stroke-width="5" stroke-linecap="round"/>`;
-  const el = svg('0 0 120 66', 104, `
-    <g class="cat">
-      <path class="tail" d="M27 32 C12 30 6 14 15 5" fill="none" stroke="${INK}" stroke-width="4.5" stroke-linecap="round"/>
-      ${leg(33, 'leg a')}${leg(40, 'leg b')}${leg(74, 'leg b')}${leg(80, 'leg a')}
-      <ellipse cx="56" cy="36" rx="30" ry="11.5" fill="${INK}"/>
-      <path d="M78 30 C82 22 86 18 92 18 L92 34 C86 36 81 36 78 34Z" fill="${INK}"/>
-      <circle class="head" cx="93" cy="23" r="9.5" fill="${INK}"/>
-      <path d="M86 17 L87.5 7 L93 14Z M95 14 L100 6.5 L101 17Z" fill="${INK}"/>
-    </g>`);
-  el.classList.add('creature', 'walker');
-  const right = Math.random() < .5;
-  if (!right) el.style.setProperty('--flip', '-1');
-  layer.append(el);
-  const w = innerWidth; const y = dockTop() - 104 * 61 / 120; // paws on the top edge of the menu
-  const from = right ? -100 : w + 10; const to = right ? w + 10 : -100; const stop = rnd(.3, .65);
-  const at = (k) => from + (to - from) * k;
-  el.style.top = `${y}px`;
-  const walk = (k0, k1, ms) => frames(run, (t) => { const k = Math.min(1, t / ms); el.style.transform = `translateX(${at(k0 + (k1 - k0) * k)}px)`; return k < 1; });
-  const dur = Math.abs(to - from) * 26; // about 38 px a second
-  await walk(0, stop, dur * stop);
-  el.classList.add('still'); await wait(rnd(2500, 4500), run); el.classList.remove('still');
-  await walk(stop, 1, dur * (1 - stop));
-  el.remove();
 }
 
 // ── A bird: flies in on a curve, lands on the top edge of the menu, pecks, hops, and flies off. ──
@@ -168,10 +140,10 @@ async function flock(run) {
   box.remove();
 }
 
-// ── The dragonfly: darts in, circles and hovers over the upper part of the picture, and darts away. ──
+// ── The dragonfly: crosses the screen on one easy course, drifting a little, now and then pausing to hover. ──
 async function dragonfly(run) {
   const wing = (cx, cy, rot) => `<ellipse class="dw" cx="${cx}" cy="${cy}" rx="10.5" ry="3" transform="rotate(${rot} ${cx} ${cy})" fill="rgba(235,245,255,.42)" stroke="rgba(16,20,18,.55)" stroke-width=".6"/>`;
-  const el = svg('0 0 50 50', 50, `
+  const el = svg('0 0 50 50', 44, `
     <g class="dragon">
       ${wing(15, 17, -8)}${wing(35, 17, 8)}${wing(15.5, 23, 10)}${wing(34.5, 23, -10)}
       <line x1="25" y1="11" x2="25" y2="45" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>
@@ -180,83 +152,16 @@ async function dragonfly(run) {
     </g>`);
   el.classList.add('creature', 'darter');
   layer.append(el);
-  const W = innerWidth, H = innerHeight;
-  const c = { x: rnd(W * .3, W * .7), y: rnd(H * .18, H * .45) }; const R = rnd(45, 80);
-  let x = Math.random() < .5 ? -50 : W + 10, y = rnd(H * .1, H * .5), heading = 0;
-  const steer = (tx, ty, speed) => {
-    const dx = tx - x, dy = ty - y, d = Math.hypot(dx, dy) || 1;
-    const s = Math.min(speed, d); x += (dx / d) * s; y += (dy / d) * s;
-    heading = Math.atan2(dy, dx) * 180 / Math.PI + 90;
-    el.style.transform = `translate(${x - 20}px, ${y - 20}px) rotate(${heading}deg)`;
-    return d;
-  };
-  await frames(run, () => steer(c.x + R, c.y, 3.5) > 2);
-  const laps = rnd(1.4, 2.4); let a = 0; let hover = 0;
+  const W = innerWidth, H = innerHeight; const right = Math.random() < .5;
+  let x = right ? -50 : W + 10; const y0 = rnd(H * .15, H * .5); const slope = rnd(-.12, .12); const drift = noise();
+  const speed = rnd(.6, 1.1); let hover = 0; let travelled = 0;
   await frames(run, (t) => {
-    if (hover > 0) { hover--; el.style.transform = `translate(${x - 20 + Math.sin(t / 60)}px, ${y - 20}px) rotate(${heading}deg)`; return true; }
-    if (Math.random() < .006) hover = Math.round(rnd(60, 160));
-    a += .014; const r = R * (1 + .25 * Math.sin(a * 3));
-    steer(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * .7, 3);
-    return a < laps * Math.PI * 2;
+    if (hover > 0) { hover--; } else { if (Math.random() < .004) hover = Math.round(rnd(40, 110)); x += right ? speed : -speed; travelled += speed; }
+    const y = y0 + travelled * slope + drift(t) * 18;
+    el.style.transform = `translate(${x - 20}px, ${y - 20}px) rotate(${right ? 90 : -90}deg)`;
+    return right ? x < W + 50 : x > -50;
   });
-  const out = { x: Math.random() < .5 ? -60 : W + 60, y: rnd(-40, H * .3) };
-  await frames(run, () => steer(out.x, out.y, 4.5) > 2);
   el.remove();
-}
-
-// ── A school of fish: twenty or so, swimming together through the sea in a slow wave. Drawn on one canvas. ──
-async function school(run, sc) {
-  const band = waterBand(sc, .25, 1); if (!band) return;
-  const W = innerWidth, H = innerHeight; const dpr = Math.min(devicePixelRatio || 1, 2);
-  const cv = document.createElement('canvas'); cv.className = 'creature school';
-  cv.width = W * dpr; cv.height = H * dpr; cv.style.width = `${W}px`; cv.style.height = `${H}px`;
-  layer.append(cv);
-  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const right = Math.random() < .5; const base = rnd(band[0] + 30, Math.max(band[0] + 31, band[1] - 30)); const amp = Math.min(30, (band[1] - band[0]) / 4);
-  const n = Math.round(rnd(14, 26));
-  const fishes = Array.from({ length: n }, () => ({ dx: rnd(-90, 70), dy: rnd(-26, 26), len: rnd(11, 18), ph: rnd(0, 6.28), sp: rnd(.8, 1.3) }));
-  const span = W + 320; const ms = span / rnd(.045, .07);
-  await frames(run, (t) => {
-    const k = Math.min(1, t / ms); const lead = right ? -160 + span * k : W + 160 - span * k;
-    g.clearRect(0, 0, W, H);
-    for (const f of fishes) {
-      const x = lead + (right ? f.dx : -f.dx) + Math.sin(t / 900 * f.sp + f.ph) * 6;
-      const y = base + f.dy + Math.sin((x / 170) + t / 2600) * amp + Math.cos(t / 700 * f.sp + f.ph) * 3;
-      const ang = Math.atan2(Math.cos((x / 170) + t / 2600) * amp / 170 * (right ? 1 : -1), right ? 1 : -1);
-      const wag = Math.sin(t / 110 * f.sp + f.ph) * .45; const L = f.len;
-      g.save(); g.translate(x, y); g.rotate(ang); g.fillStyle = 'rgba(16,24,26,1)'; g.globalAlpha = .9;
-      g.beginPath(); g.ellipse(0, 0, L / 2, L / 6.5, 0, 0, Math.PI * 2); g.fill();
-      g.beginPath(); g.moveTo(-L / 2 + 1, 0); g.lineTo(-L / 2 - L * .32, -L * .2 + wag * 3); g.lineTo(-L / 2 - L * .32, L * .2 + wag * 3); g.closePath(); g.fill();
-      g.restore();
-    }
-    return k < 1;
-  });
-  cv.remove();
-}
-
-// ── One fish, under the surface: comes into view, wanders and turns, and sinks out of sight. ──
-async function fishOne(run, sc) {
-  const band = waterBand(sc, .2, 1); if (!band) return;
-  const W = innerWidth; const L = rnd(26, 40);
-  const el = svg('0 0 44 18', L, `<g class="onefish"><path class="tailfin" d="M9 9 L1 3 L2.5 9 L1 15Z" fill="${INK}"/><ellipse cx="23" cy="9" rx="14" ry="5" fill="${INK}"/><path d="M20 4.5 L25 1.5 L27 5Z" fill="${INK}"/></g>`);
-  el.classList.add('creature', 'swimmer', 'gone'); layer.append(el);
-  let x = rnd(W * .15, W * .85), y = rnd(band[0] + 10, band[1] - 10), heading = Math.random() < .5 ? 0 : Math.PI; let target = null; let rest = 0;
-  const place = () => { el.style.transform = `translate(${x - L / 2}px, ${y - L * .2}px) rotate(${heading}rad)`; };
-  place(); await wait(50, run); el.style.transition = 'opacity 2.5s ease'; el.classList.remove('gone');
-  const until = rnd(18000, 28000);
-  await frames(run, (t) => {
-    if (rest > 0) { rest--; return t < until; }
-    if (!target || Math.hypot(target.x - x, target.y - y) < 6) {
-      target = { x: Math.max(20, Math.min(W - 20, x + rnd(-140, 140))), y: rnd(band[0] + 8, band[1] - 8) };
-      if (Math.random() < .35) rest = Math.round(rnd(40, 120));
-    }
-    const want = Math.atan2(target.y - y, target.x - x); let turn = want - heading;
-    while (turn > Math.PI) turn -= 2 * Math.PI; while (turn < -Math.PI) turn += 2 * Math.PI;
-    heading += Math.max(-.04, Math.min(.04, turn));
-    x += Math.cos(heading) * .45; y += Math.sin(heading) * .3; place();
-    return t < until;
-  });
-  await fadeOut(el, run); el.remove();
 }
 
 // ── A sailboat: crosses the water slowly near the horizon, heeling a little; nearer boats are larger. ──
@@ -418,9 +323,9 @@ async function inchworm(run, sc) {
   await fadeOut(el, run); el.remove();
 }
 
-// ── A spider: spins a small web near the top of the page (spokes, then the spiral), lets itself down on a thread,
+// ── A spider: spins a small web in the branches of a painted tree (spokes, then the spiral), lets itself down on a thread,
 // sways, climbs back, and the web fades. ──
-async function spider(run) {
+async function spider(run, sc) {
   const W = innerWidth; const R = rnd(18, 26); const n = Math.round(rnd(7, 9)); const drop = rnd(90, 170);
   const size = R * 2 + 20; const cx = size / 2, cy = R + 10;
   const ang = Array.from({ length: n }, (_, i) => (i / n) * Math.PI * 2 + rnd(-.15, .15));
@@ -432,7 +337,10 @@ async function spider(run) {
     <g class="spider"><ellipse cx="0" cy="2.6" rx="2.6" ry="3.4" fill="${INK}"/><circle cx="0" cy="-1.6" r="1.8" fill="${INK}"/>
       <path d="M-1.5 -1 L-5 -4 L-6.5 -1 M1.5 -1 L5 -4 L6.5 -1 M-1.8 0 L-6 0 L-7 3 M1.8 0 L6 0 L7 3 M-1.8 1 L-5.5 3.5 L-6 7 M1.8 1 L5.5 3.5 L6 7 M-1.5 2 L-4 6 L-4 9 M1.5 2 L4 6 L4 9" stroke="${INK}" stroke-width=".7" fill="none"/></g>`);
   el.classList.add('creature', 'webber'); layer.append(el);
-  const left = Math.random() < .5; const x = left ? rnd(6, W * .22) : rnd(W * .62, W - size - 6); const y = rnd(64, 120);
+  // In the branches: somewhere in the painted canopy (kept clear of the top bar).
+  const leafy = rectOf(sc.canopy, sc);
+  const x = Math.max(6, Math.min(W - size - 6, rnd(leafy.x, leafy.x + Math.max(0, leafy.w - size))));
+  const y = Math.max(64, rnd(leafy.y, leafy.y + Math.max(0, leafy.h - size * .6)));
   el.style.transform = `translate(${x}px, ${y}px)`;
   const bug = el.querySelector('.spider'); const silk = el.querySelector('.silk');
   const at = (px, py) => { bug.style.transform = `translate(${px}px, ${py}px)`; }; // a style, since the stylesheet sets these groups' transform
@@ -686,19 +594,16 @@ const equations = (run, sc) => writing(run, sc, sc.board ? 'board' : 'chart');
 
 // Who may visit which picture, and how often (weights).
 const VISITORS = [
-  { name: 'cat', fn: cat, w: 1.5, ok: (s) => (s.has('out') || s.has('in')) && groundBelow(s) },
   { name: 'bird', fn: bird, w: 1.5, ok: (s) => s.has('out') || s.has('garden') || s.has('sea') || s.has('lake') },
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
   { name: 'dragonfly', fn: dragonfly, w: 1, ok: (s) => s.has('garden') || s.has('lake') },
-  { name: 'fish', fn: school, w: 2, ok: (s) => s.has('sea') && s.water },
-  { name: 'onefish', fn: fishOne, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
-  { name: 'sailboat', fn: sailboat, w: 3, ok: (s) => s.has('boats') && s.water },
+  { name: 'sailboat', fn: sailboat, w: 2, ok: (s) => s.has('boats') && s.water && (s.live ?? []).some((x) => x.m === 'bob' && !x.soft) }, // only among painted boats
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },
   { name: 'egret', fn: egret, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'sandpipers', fn: sandpipers, w: 2.5, ok: (s) => s.has('beach') && s.shore },
   { name: 'caterpillar', fn: caterpillar, w: 1, ok: (s) => s.has('garden') && groundBelow(s) },
   { name: 'inchworm', fn: inchworm, w: 1.5, ok: (s) => s.trunks },
-  { name: 'spider', fn: spider, w: 1, ok: (s) => s.has('in') || s.has('garden') },
+  { name: 'spider', fn: spider, w: 1, ok: (s) => s.canopy },
   { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
   { name: 'butterfly', fn: butterfly, w: 2, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
@@ -731,7 +636,7 @@ function visit() {
 function schedule(ms) {
   clearTimeout(timer);
   const still = performance.now() - lastTouch > 15000;
-  timer = setTimeout(visit, ms ?? (still ? rnd(4000, 11000) : rnd(16000, 34000)));
+  timer = setTimeout(visit, ms ?? (still ? rnd(12000, 26000) : rnd(28000, 55000)));
 }
 function shoo() {
   if (!active) return;
@@ -769,8 +674,8 @@ export function creaturesInto(dark, light) {
 export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
-  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'onefish', 'fish', 'ripples', 'sandpipers', 'frog'].includes(name);
-  if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88];
+  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'ripples', 'sandpipers', 'frog'].includes(name);
+  if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88]; if (!sc.canopy) sc.canopy = [.15, .05, .85, .3];
   if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);
 }
