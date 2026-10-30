@@ -1,7 +1,7 @@
 // Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): a sailboat crossing the sea
 // on the horizon, sandpipers running at the water's edge, a school of fish; ducks paddling and an egret wading on a
 // lake or river, a fish turning under the surface; a cat wandering, a bird landing to peck, birds passing over;
-// caterpillars, inchworms, a dragonfly, and a spider building a small web and letting itself down on a thread.
+// caterpillars, inchworms, a dragonfly, bees and a hummingbird at the flowers, and a spider building a small web and letting itself down on a thread.
 // They are faint, see-through shapes blended into the painting (shadows on a light picture, a soft light on a dark
 // one), behind the words, never in the way of a tap. One at a time, and more often while the reader sits still with a
 // page: a small thing to watch while thinking. None while the phone asks to reduce motion, while the tab is hidden,
@@ -535,6 +535,36 @@ async function bees(run, sc) {
   await wait(1300, run); all.forEach((b) => b.el.remove());
 }
 
+// ── A hummingbird: darts in a straight dash to a flower, hovers there (wings a blur, tail flicking), backs off,
+// darts to the next, and zips away. Quick where the dragonfly is slow. ──
+async function hummingbird(run, sc) {
+  const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .2, y: H * .5, w: W * .6, h: H * .25 };
+  const el = svg('0 0 40 26', 26, `<g class="hum">
+    <path class="htail" d="M12 15 L3 21 L6 15.5 L2 12.5Z" fill="rgba(22,44,32,.9)"/>
+    <ellipse cx="18" cy="14" rx="7.5" ry="4" transform="rotate(-22 18 14)" fill="rgba(22,44,32,.9)"/>
+    <circle cx="25" cy="9.5" r="3.1" fill="rgba(22,44,32,.95)"/><path d="M27.4 9 L38 6.2" stroke="rgba(22,30,24,.95)" stroke-width="1.1" stroke-linecap="round"/>
+    <ellipse class="hw" cx="16" cy="6" rx="9.5" ry="2.4" transform="rotate(-38 16 6)" fill="rgba(200,230,215,.45)"/>
+    <ellipse class="hw b" cx="17" cy="7" rx="8" ry="2" transform="rotate(-18 17 7)" fill="rgba(200,230,215,.3)"/></g>`);
+  el.classList.add('creature', 'hummer'); layer.append(el);
+  let x = Math.random() < .5 ? -30 : W + 10, y = rnd(area.y - 60, area.y + area.h * .5); let facing = x < 0 ? 1 : -1;
+  const place = (jx = 0, jy = 0) => { el.style.setProperty('--flip', String(facing)); el.style.transform = `translate(${x + jx}px, ${y + jy}px)`; };
+  const dash = (tx, ty, speed) => frames(run, () => {
+    const dx = tx - x, dy = ty - y, d = Math.hypot(dx, dy); if (Math.abs(dx) > 2) facing = dx > 0 ? 1 : -1;
+    const s = Math.min(d, speed * (d < 30 ? .5 : 1)); x += dx / (d || 1) * s; y += dy / (d || 1) * s; place(); return d > 1.5;
+  });
+  const hover = (ms) => frames(run, (t) => { place(Math.sin(t / 37) * .8, Math.sin(t / 53) * 1.2); return t < ms; });
+  const visits = Math.round(rnd(3, 6));
+  for (let i = 0; i < visits; i++) {
+    const fx = rnd(area.x, area.x + area.w), fy = rnd(area.y, area.y + area.h);
+    await dash(fx - facing * 6, fy - 14, rnd(7, 11));
+    await hover(rnd(900, 2400));
+    if (Math.random() < .5) { await dash(x - facing * rnd(10, 22), y - rnd(2, 8), 2.5); await hover(rnd(300, 800)); } // backs off from the flower
+  }
+  const out = { x: Math.random() < .5 ? -50 : W + 50, y: rnd(-20, H * .3) };
+  await dash(out.x, out.y, 13);
+  el.remove();
+}
+
 // ── Rays of light: through the painted window, doorway or trees, soft beams brighten, drift a little, and fade. ──
 async function rays(run, sc) {
   const r = sc.rays; const at = rectOf([r.x, r.y, r.x, r.y], sc); const H = innerHeight;
@@ -617,6 +647,7 @@ const VISITORS = [
   { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
   { name: 'butterfly', fn: butterfly, w: 1.3, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
+  { name: 'hummingbird', fn: hummingbird, w: 2, ok: (s) => s.flowers },
   { name: 'rays', fn: rays, w: 2.5, ok: (s) => s.rays },
   { name: 'ripples', fn: ripples, w: 2, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'writing', fn: writing, w: 3, ok: (s) => s.paper },
@@ -683,7 +714,7 @@ export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
   const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'onefish', 'fish', 'ripples', 'sandpipers'].includes(name);
-  if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }];
+  if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88];
   if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);
 }

@@ -929,3 +929,8 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .gaze .lyrics.paused .lyric.in { opacity: .6; }
 .gaze .lyric-dust { position: absolute; inset: 0; pointer-events: none; }
 .think-door.pick-up { border-color: rgba(244, 192, 99, .55); background: rgba(40, 30, 10, .42); }
+.creature.hummer { opacity: .55; }
+.hummer .hw { animation: dragon-wing .035s linear infinite alternate; }
+.hummer .hw.b { animation-delay: -.017s; }
+.hummer .htail { transform-box: fill-box; transform-origin: 100% 0; animation: htail 1.1s ease-in-out infinite alternate; }
+@keyframes htail { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
