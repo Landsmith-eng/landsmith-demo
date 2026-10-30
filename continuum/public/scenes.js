@@ -12,7 +12,8 @@
 //   city    a town's river or quay (no frogs there)
 //   dark    a dark painting (mean brightness under .35): the visitors show light on it, not dark
 // water: [top, bottom] of the water, as fractions of the picture's height (top is the horizon or the far shore);
-// shore: where water meets land, for waders and sandpipers.
+// shore: where water meets land, for waders and sandpipers; waterX: [x0, x1] when the water fills only part of the
+// picture's width (a river to one side).
 // paper: a page or open book [x0, y0, x1, y1] where a few lines are written; board: a chalkboard for equations;
 // chart: a dark sky or dome where equations and orbits are chalked; rays: where light comes in (x, y) and its
 // direction in degrees from straight down (+ leans right).
@@ -23,7 +24,7 @@
 // inchworm may climb (x, and the height from y1 up to y0). All read from the paintings.
 export const SCENES = {
   // By day: bright plates
-  'bright/balloons_dawn': { k: 'sky lake garden out', water: [.73, .88], shore: .86 },
+  'bright/balloons_dawn': { k: 'sky lake garden out', water: [.73, .88], shore: .86, waterX: [.52, .87] },
   'bright/beach_morning': { k: 'sky sea boats beach out', water: [.63, .79], shore: .8 },
   'bright/birds_lift': { k: 'sky sea boats out', water: [.7, .93], live: [{ r: [.64, .61, .84, .73], m: 'bob' }] },
   'bright/blossom_picnic': { k: 'sky garden out', live: [{ r: [.1, -.02, .52, .17], m: 'sway', p: [0, 0] }], canopy: [.12, 0, .5, .14], flowers: [.14, .02, .48, .16] },
@@ -32,9 +33,9 @@ export const SCENES = {
   'bright/garden_swing': { k: 'sky garden out', live: [{ r: [.12, -.02, .6, .12], m: 'sway', p: [.5, 0] }, { r: [.13, .84, .24, .94], m: 'peck' }, { r: [.64, .85, .73, .93], m: 'peck' }], canopy: [.15, 0, .55, .1], flowers: [.2, .72, .8, .86] },
   'bright/happy_clouds': { k: 'sky garden out', flowers: [.15, .74, .6, .92] },
   'bright/kites_park': { k: 'sky garden out', flowers: [.15, .74, .85, .9] },
-  'bright/meadow_morning': { k: 'sky lake garden out', water: [.68, .78], shore: .77, flowers: [.15, .72, .85, .9] },
+  'bright/meadow_morning': { k: 'sky lake garden out', water: [.68, .78], shore: .77, flowers: [.15, .72, .85, .9], waterX: [.66, .87] },
   'bright/sail_bay_noon': { k: 'sky sea boats', water: [.57, 1], live: [{ r: [.12, .56, .29, .73], m: 'bob' }, { r: [.32, .57, .39, .67], m: 'bob' }, { r: [.53, .57, .64, .69], m: 'bob' }, { r: [.75, .57, .84, .67], m: 'bob' }] },
-  'bright/sail_river_morning': { k: 'sky lake boats garden', water: [.62, .9], shore: .82, live: [{ r: [.16, .54, .36, .72], m: 'bob' }] },
+  'bright/sail_river_morning': { k: 'sky lake boats garden', water: [.62, .9], shore: .82, live: [{ r: [.16, .54, .36, .72], m: 'bob' }], waterX: [.13, .8] },
   'bright/sailing_regatta': { k: 'sky sea boats', water: [.57, 1], live: [{ r: [.12, .51, .36, .75], m: 'bob' }, { r: [.31, .56, .44, .71], m: 'bob' }, { r: [.67, .56, .84, .73], m: 'bob' }] },
   'bright/sunflowers_bees': { k: 'sky garden out', live: [{ r: [.63, .73, .88, .97], m: 'sway', p: [.5, 1] }, { r: [.12, .77, .4, .99], m: 'sway', p: [.5, 1] }], flowers: [.15, .72, .85, .95] },
   'bright/sunrise_beach_walk': { k: 'sky sea boats beach out', water: [.62, .74], shore: .76 },

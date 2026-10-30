@@ -1,7 +1,7 @@
 // Small visitors on the pictures, chosen to fit what each painting holds (see scenes.js): birds passing over or
 // landing, a dragonfly crossing, bees, butterflies and a hummingbird at the flowers, leaves on the wind, a caterpillar,
-// an inchworm on a dark trunk, a spider in the branches, a small frog at a pond; on the water, a sailboat among the
-// painted ones, ducks, an egret, sandpipers at the edge, ripples; light through a window, writing on a page,
+// an inchworm on a dark trunk, a spider in the branches, a small frog at a pond; on the water, a school of fish
+// glimpsed beneath the surface, a sailboat among the painted ones, ducks, an egret, sandpipers at the edge, ripples; light through a window, writing on a page,
 // equations on a board. They are faint, see-through shapes blended into the painting (shadows on a light picture, a
 // soft light on a dark one), behind the words, never in the way of a tap: one at a time, now and then, a little more
 // often while the reader sits still. None while the phone asks to reduce motion, the tab is hidden, or the map fills
@@ -162,6 +162,50 @@ async function dragonfly(run) {
     return right ? x < W + 50 : x > -50;
   });
   el.remove();
+}
+
+// ── A school of fish, under the surface: it never comes in from the edge (so never over land), but rises into view
+// somewhere in the water, keeps within it (below the surface line, clear of the banks, turning back before an edge),
+// and sinks out of sight again. As the fish move they fade in and out, as through clearer and murkier water. ──
+async function school(run, sc) {
+  const W = innerWidth, H = innerHeight;
+  const band = waterBand(sc, .18, .96); if (!band || band[1] - band[0] < H * .1) return;
+  const xs = sc.waterX ? rectOf([sc.waterX[0], 0, sc.waterX[1], 0], sc) : { x: 0, w: W };
+  const left = Math.max(12, xs.x + 24), right = Math.min(W - 12, xs.x + xs.w - 24); if (right - left < 140) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const cv = document.createElement('canvas'); cv.className = 'creature school';
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  layer.append(cv);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const depthH = band[1] - band[0]; const n = Math.round(rnd(10, 20));
+  const fishes = Array.from({ length: n }, () => ({ dx: rnd(-75, 60), dy: rnd(-.28, .28) * depthH, len: rnd(9, 15), ph: rnd(0, 6.28), sp: rnd(.8, 1.3) }));
+  let cx = rnd(left + 90, Math.max(left + 91, right - 90)); const cy = band[0] + depthH * rnd(.4, .6);
+  let vx = (Math.random() < .5 ? -1 : 1) * rnd(.018, .032); const dur = rnd(16000, 24000); let last = 0;
+  const edgeFade = (v, a, b, m) => Math.max(0, Math.min(1, (v - a) / m, (b - v) / m));
+  await frames(run, (t) => {
+    const dt = Math.min(50, t - last); last = t;
+    // Turn back well before the edge of the water.
+    if ((cx > right - 100 && vx > 0) || (cx < left + 100 && vx < 0)) vx -= Math.sign(vx) * .00008 * dt; else vx = Math.sign(vx) * Math.min(.032, Math.abs(vx) + .00002 * dt);
+    cx += vx * dt;
+    const env = Math.min(1, t / 3500, (dur - t) / 3500);
+    g.clearRect(0, 0, W, H); g.filter = 'blur(.7px)';
+    const dir = vx >= 0 ? 1 : -1;
+    for (const f of fishes) {
+      const x = cx + dir * f.dx + Math.sin(t / 900 * f.sp + f.ph) * 5;
+      const y = Math.max(band[0] + 6, Math.min(band[1] - 6, cy + f.dy + Math.sin(x / 150 + t / 2600) * depthH * .12 + Math.cos(t / 700 * f.sp + f.ph) * 2));
+      // Clear and murky water drifting: each fish shows only where the water lets it.
+      const murk = .5 + .6 * Math.sin(x / 85 + t / 1600 + f.ph * .3) * Math.cos(y / 38 - t / 2200);
+      const a = env * Math.max(0, Math.min(1, murk)) * edgeFade(y, band[0], band[1], 14) * edgeFade(x, left, right, 30);
+      if (a < .02) continue;
+      const wag = Math.sin(t / 120 * f.sp + f.ph) * .45; const L = f.len;
+      g.save(); g.translate(x, y); g.scale(dir, 1); g.globalAlpha = a; g.fillStyle = 'rgba(16,24,26,1)';
+      g.beginPath(); g.ellipse(0, 0, L / 2, L / 6.5, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(-L / 2 + 1, 0); g.lineTo(-L / 2 - L * .32, -L * .2 + wag * 3); g.lineTo(-L / 2 - L * .32, L * .2 + wag * 3); g.closePath(); g.fill();
+      g.restore();
+    }
+    return t < dur;
+  });
+  cv.remove();
 }
 
 // ── A sailboat: crosses the water slowly near the horizon, heeling a little; nearer boats are larger. ──
@@ -598,6 +642,7 @@ const VISITORS = [
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
   { name: 'dragonfly', fn: dragonfly, w: 1, ok: (s) => s.has('garden') || s.has('lake') },
   { name: 'sailboat', fn: sailboat, w: 2, ok: (s) => s.has('boats') && s.water && (s.live ?? []).some((x) => x.m === 'bob' && !x.soft) }, // only among painted boats
+  { name: 'fish', fn: school, w: 1.5, ok: (s) => (s.has('sea') || s.has('lake')) && s.water && !s.has('city') },
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },
   { name: 'egret', fn: egret, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'sandpipers', fn: sandpipers, w: 2.5, ok: (s) => s.has('beach') && s.shore },
@@ -674,7 +719,7 @@ export function creaturesInto(dark, light) {
 export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
-  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'ripples', 'sandpipers', 'frog'].includes(name);
+  const sc = scene(); const wet = ['sailboat', 'ducks', 'egret', 'ripples', 'sandpipers', 'frog', 'fish'].includes(name);
   if (wet && !sc.water) sc.water = [.6, .88]; if (wet && !sc.shore) sc.shore = .8; if (!sc.trunks) sc.trunks = [{ x: .3, y0: .15, y1: .6 }]; if (!sc.flowers) sc.flowers = [.2, .7, .8, .88]; if (!sc.canopy) sc.canopy = [.15, .05, .85, .3];
   if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);

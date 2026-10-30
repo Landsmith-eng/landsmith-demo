@@ -927,3 +927,4 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 @keyframes throat { 0%, 60%, 100% { transform: scale(1); } 75% { transform: scale(1.45, 1.6); } }
 .froggy.blink .eye { opacity: 0; }
 .creature.lilypad { opacity: .5; }
+.creature.school { opacity: .3; }
