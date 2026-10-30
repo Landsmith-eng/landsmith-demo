@@ -23,6 +23,10 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
   const links = new Map(data.nodes.map((n) => [n.id, []]));
   for (const e of data.edges) { links.get(e.from)?.push({ other: e.to, e }); links.get(e.to)?.push({ other: e.from, e }); }
+  // For the zoom levels: how linked each idea is (its rank among all, 0 = the most), and the rooms as regions.
+  const degree = new Map(data.nodes.map((n) => [n.id, links.get(n.id).length]));
+  const importance = new Map([...data.nodes].sort((a, b) => degree.get(b.id) - degree.get(a.id)).map((n, i) => [n.id, i]));
+  const regions = data.rooms.map((r) => ({ ...r, ids: data.nodes.filter((n) => n.room === r.id).map((n) => n.id) })).filter((r) => r.ids.length >= 3);
 
   let mode = startMode, colorBy = startColor, showRoad = false, selected = null, query = '';
   // Positions animate between the two layouts.
@@ -168,7 +172,7 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       const wider = !on && outer > .02 && ((ego.ring1.has(e.from) && ego.ring2.has(e.to)) || (ego.ring2.has(e.from) && ego.ring1.has(e.to)));
       if (!on && !wider && (mode !== 'influence' || selected)) continue;
       const a = shown(e.from), b = shown(e.to); if (!a || !b) continue;
-      g.strokeStyle = on ? 'rgba(244,192,99,.85)' : wider ? `rgba(160,220,255,${.45 * outer})` : 'rgba(255,255,255,.09)';
+      g.strokeStyle = on ? 'rgba(244,192,99,.85)' : wider ? `rgba(160,220,255,${.45 * outer})` : `rgba(255,255,255,${Math.min(.24, .09 * (s / Math.min(W, H)) ** .5)})`;
       g.lineWidth = on ? 1.6 + ew.w : 1;
       g.beginPath(); g.moveTo(sx(a[0]), sy(a[1])); g.lineTo(sx(b[0]), sy(b[1])); g.stroke();
       if (on && ew.w > .6) named.push([e, a, b]);
@@ -232,38 +236,103 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       }
       g.textAlign = 'start'; g.globalAlpha = 1;
     }
-    // Labels, without overlapping: the chosen idea and its links first, then search hits, then ideas met, then the
-    // rest as the zoom gives room.
+    // Labels, like a road map: zoomed out, the regions (rooms) and only the great crossroads (the most linked ideas);
+    // closer in, more names as the room allows; closer still, each idea's title under its name, then its one line in
+    // plain words. The chosen idea and its links, search hits and ideas met are named first.
     const taken = [];
-    const free = (x, y, w) => !taken.some((b) => x < b[2] && x + w > b[0] && y - fs < b[3] && y + 4 > b[1]);
-    const order = [...data.nodes].sort((a, b) => rankLabel(b) - rankLabel(a));
+    const free = (b) => !taken.some((t) => b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]);
+    // Regions: each room's name over the middle of its ideas, fading as names take over.
+    const regionA = selected ? 0 : Math.max(0, Math.min(1, (2.3 - zoom) / 1.1)) * .62;
+    if (regionA > .02) {
+      g.textAlign = 'center'; g.font = `600 ${Math.round(12 + 2 * (2.3 - Math.min(2.3, zoom)))}px Manrope, system-ui, sans-serif`;
+      for (const r of regions) {
+        const xs = r.ids.map((id) => pos.get(id)[0]).sort((p, q) => p - q), ys = r.ids.map((id) => pos.get(id)[1]).sort((p, q) => p - q);
+        const mid = (v) => v[Math.floor(v.length / 2)];
+        const spread = (xs[Math.floor(xs.length * .8)] - xs[Math.floor(xs.length * .2)]) + (ys[Math.floor(ys.length * .8)] - ys[Math.floor(ys.length * .2)]);
+        if (spread > .55) continue; // scattered across the map: no one place to name
+        const x = sx(mid(xs)), y = sy(mid(ys)); const text = r.name.toUpperCase();
+        const w = g.measureText(text).width + text.length * 1.5; const box = [x - w / 2, y - 14, x + w / 2, y + 4];
+        if (x < -w || x > W + w || y < 0 || y > H || !free(box)) continue;
+        taken.push(box);
+        g.globalAlpha = regionA; g.lineWidth = 3; g.strokeStyle = 'rgba(6,10,8,.6)'; g.strokeText(text, x, y); g.fillStyle = colorBy === 'room' ? roomColor[r.id] : 'rgba(236,230,210,1)'; g.fillText(text, x, y);
+      }
+      g.globalAlpha = 1; g.textAlign = 'start';
+    }
+    const order = [...data.nodes].sort((a, b) => rankLabel(b) - rankLabel(a) || (degree.get(b.id) - degree.get(a.id)));
     function rankLabel(n) {
       if (n.id === selected) return 5; if (near?.has(n.id) || offered?.some((x) => x.id === n.id)) return 4; if (found.has(n.id)) return 3;
       if (ego?.ring2.has(n.id) && outer > .5) return 3.5;
       if (ego && ew.w > .5) return 0; // faded away
       if (n.state === 'written' || n.state === 'visited') return 2; return n.fuzzy ? 2.5 : 1;
     }
+    // How many of the most-linked ideas may be named at this zoom (the rest wait for room).
+    const quota = Math.round(10 * zoom ** 2.2);
     const fs = Math.round(Math.min(ego && ew.w > .5 ? 16 : 20, Math.max(12, 12 * zoom ** .42)) + (full ? 1 : 0)); // names grow as you go closer
-    g.font = `${fs}px Manrope, system-ui, sans-serif`; g.textBaseline = 'alphabetic';
+    const detail = ego && ew.w > .5 ? 0 : zoom > 4.2 ? 2 : zoom > 2.6 ? 1 : 0; // 1: titles; 2: titles and the plain line
+    const small = Math.round(fs * .78);
+    const wrap = (text, max, lines) => {
+      const out = []; let cur = '';
+      for (const word of text.split(' ')) { const t = cur ? `${cur} ${word}` : word; if (g.measureText(t).width > max && cur) { out.push(cur); cur = word; if (out.length === lines) break; } else cur = t; }
+      if (out.length < lines && cur) out.push(cur);
+      if (out.length === lines && out.join(' ').length < text.length) out[lines - 1] = `${out[lines - 1].replace(/[\s,;:.]*$/, '')}…`;
+      return out;
+    };
     for (const n of order) {
       const text = label(n); if (!text) continue;
       const rank = rankLabel(n);
       if (!rank) continue;
       if (selected && rank < 3.5 && zoom < 2.2) continue;
-      if (rank < 2 && zoom < 1.8) continue;
+      if (rank < 2 && importance.get(n.id) >= quota) continue;
       const p = shown(n.id);
       // In the circle, names sit centred over (upper half) or under (lower half) their point, so the ring fits a phone.
       const ringed = ego && ew.w > .5 && n.id !== ego.id;
+      g.font = `${fs}px Manrope, system-ui, sans-serif`;
       const cap = ringed ? 20 : full ? 34 : 26; const t = text.length > cap ? `${text.slice(0, cap - 1)}…` : text;
       const w = g.measureText(t).width;
       const above = ringed && p[1] < pos.get(ego.id)[1];
-      const x = ringed ? sx(p[0]) - w / 2 : sx(p[0]) + r0 + 5;
+      let x = ringed ? sx(p[0]) - w / 2 : sx(p[0]) + r0 + 5;
       const y = !ringed ? sy(p[1]) + 4 : above ? sy(p[1]) - r0 - 6 : sy(p[1]) + r0 + fs;
       if (x > W || x + w < 0 || y > H + 10 || y < 0) continue;
-      if (!free(x, y, w) && rank < 5) continue;
-      taken.push([x, y - fs, x + w, y + 4]);
+      // The details under the name, as the zoom allows.
+      const extra = [];
+      if (detail && !ringed) {
+        g.font = `italic ${small}px Manrope, system-ui, sans-serif`;
+        if (n.title && n.title !== text) extra.push(...wrap(n.title, 200, 2).map((l) => ['t', l]));
+        if (detail === 2 && n.line) { g.font = `${small - 1}px Manrope, system-ui, sans-serif`; extra.push(...wrap(n.line, 210, 3).map((l) => ['l', l])); }
+      }
+      const width = Math.max(w, ...extra.map(([k, l]) => { g.font = k === 't' ? `italic ${small}px Manrope, system-ui, sans-serif` : `${small - 1}px Manrope, system-ui, sans-serif`; return g.measureText(l).width; }));
+      // Near the right edge, the name goes on the left of its point; one starting off the left edge waits.
+      if (!ringed && x + width > W - 4) x = sx(p[0]) - r0 - 5 - width;
+      if (!ringed && x < 2 && rank < 5) continue;
+      const box = [x, y - fs, x + width, y + 4 + extra.length * (small + 3)];
+      if (!free(box) && rank < 5) {
+        // No room for the details: try the name alone.
+        if (!extra.length || !free([x, y - fs, x + w, y + 4])) continue;
+        extra.length = 0; taken.push([x, y - fs, x + w, y + 4]);
+      } else taken.push(box);
+      g.font = `${fs}px Manrope, system-ui, sans-serif`;
       g.lineWidth = Math.max(3, fs / 4); g.strokeStyle = 'rgba(6,10,8,.8)'; g.strokeText(t, x, y);
       g.fillStyle = rank >= 4 ? '#fff' : 'rgba(240,246,240,.88)'; g.fillText(t, x, y);
+      extra.forEach(([k, l], i) => {
+        g.font = k === 't' ? `italic ${small}px Manrope, system-ui, sans-serif` : `${small - 1}px Manrope, system-ui, sans-serif`;
+        const ly = y + (i + 1) * (small + 3);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(6,10,8,.75)'; g.strokeText(l, x, ly);
+        g.fillStyle = k === 't' ? 'rgba(244,214,150,.95)' : 'rgba(225,232,226,.82)'; g.fillText(l, x, ly);
+      });
+    }
+    // Closest in: what each visible link means, along its line.
+    if (!selected && zoom > 5.5) {
+      g.font = `italic ${Math.round(small * .92)}px Manrope, system-ui, sans-serif`; g.textAlign = 'center'; g.globalAlpha = Math.min(1, (zoom - 5.5) / 1.2) * .8;
+      for (const e of data.edges) {
+        const a = pos.get(e.from), b = pos.get(e.to); if (!a || !b) continue;
+        const ax = sx(a[0]), ay = sy(a[1]), bx = sx(b[0]), by = sy(b[1]);
+        if (Math.hypot(bx - ax, by - ay) < 150 || Math.max(ax, bx) < 0 || Math.min(ax, bx) > W || Math.max(ay, by) < 0 || Math.min(ay, by) > H) continue;
+        const verb = REL_WORDS[e.relation] ?? e.relation.replace(/_/g, ' ');
+        const mx = (ax + bx) / 2, my = (ay + by) / 2; const w = g.measureText(verb).width; const box = [mx - w / 2, my - 12, mx + w / 2, my + 2];
+        if (box[0] < 2 || box[2] > W - 2 || !free(box)) continue; taken.push(box);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(6,10,8,.7)'; g.strokeText(verb, mx, my - 2); g.fillStyle = 'rgba(244,214,150,.9)'; g.fillText(verb, mx, my - 2);
+      }
+      g.textAlign = 'start'; g.globalAlpha = 1;
     }
   }
 

@@ -1,7 +1,8 @@
-// Small visitors on the pictures: now and then a cat wanders along the bottom of the screen, a bird flies in and lands,
-// or a dragonfly circles for a while. They are shadows on the painting (dark ink with a faint light rim, so they show
-// on bright plates and dark ones), behind the text, never in the way of a tap. One at a time, a minute or two apart;
-// none while the phone asks to reduce motion, while the tab is hidden, or while the map or a picture fills the screen.
+// Small visitors on the pictures: a cat wandering along the bottom, a school of fish swimming across, a bird flying in
+// to land, a dragonfly circling. They are faint, see-through shapes blended into the painting (by day they darken it
+// like a shadow; by night they lighten it like a reflection), behind the text, never in the way of a tap. One at a
+// time, every half minute or so; fish come more often over water. None while the phone asks to reduce motion, while
+// the tab is hidden, or while the map or a picture fills the screen.
 
 const NS = 'http://www.w3.org/2000/svg';
 const INK = 'rgba(16, 20, 18, .78)';
@@ -132,18 +133,53 @@ async function dragonfly(run) {
   el.remove();
 }
 
-const VISITORS = [cat, bird, bird, dragonfly];
+// ── A school of fish: twenty or so, swimming together across the lower part of the picture in a slow wave, each
+// with its own small wander and a flick of the tail. Drawn on one canvas. ──
+async function fish(run) {
+  const W = innerWidth, H = innerHeight; const dpr = Math.min(devicePixelRatio || 1, 2);
+  const cv = document.createElement('canvas'); cv.className = 'creature school';
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  layer.append(cv);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const right = Math.random() < .5; const base = rnd(H * .45, H * .78); const amp = rnd(14, 34);
+  const n = Math.round(rnd(14, 26));
+  const school = Array.from({ length: n }, () => ({ dx: rnd(-90, 70), dy: rnd(-34, 34), len: rnd(11, 18), ph: rnd(0, 6.28), sp: rnd(.8, 1.3) }));
+  const span = W + 320; const ms = span / rnd(.045, .07); // 45 to 70 px a second
+  const fill = night() ? 'rgba(235,242,236,1)' : 'rgba(16,24,26,1)';
+  await frames(run, (t) => {
+    const k = Math.min(1, t / ms); const lead = right ? -160 + span * k : W + 160 - span * k;
+    g.clearRect(0, 0, W, H);
+    for (const f of school) {
+      const x = lead + (right ? f.dx : -f.dx) + Math.sin(t / 900 * f.sp + f.ph) * 6;
+      const y = base + f.dy + Math.sin((x / 170) + t / 2600) * amp + Math.cos(t / 700 * f.sp + f.ph) * 3;
+      const ang = Math.atan2(Math.cos((x / 170) + t / 2600) * amp / 170 * (right ? 1 : -1), right ? 1 : -1);
+      const wag = Math.sin(t / 110 * f.sp + f.ph) * .45; const L = f.len;
+      g.save(); g.translate(x, y); g.rotate(ang); g.fillStyle = fill; g.globalAlpha = .9;
+      g.beginPath(); g.ellipse(0, 0, L / 2, L / 6.5, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(-L / 2 + 1, 0); g.lineTo(-L / 2 - L * .32, -L * .2 + wag * 3); g.lineTo(-L / 2 - L * .32, L * .2 + wag * 3); g.closePath(); g.fill();
+      g.restore();
+    }
+    return k < 1;
+  });
+  cv.remove();
+}
+
+const night = () => { const hr = new Date().getHours(); return hr < 7 || hr >= 17; };
+const overWater = () => /sea|sail|beach|lake|coast|river|bay|harbou?r|fish|regatta|pond|rain|bridge/i.test(document.querySelector('#wallpaper img')?.src ?? '');
+const VISITORS = [cat, fish, bird, dragonfly];
 let last = null;
 async function visit() {
   timer = 0;
   if (!layer || active || reduced() || busy()) return schedule(20000);
-  const pick = VISITORS.filter((v) => v !== last); const who = pick[Math.floor(Math.random() * pick.length)]; last = who;
+  const pick = VISITORS.filter((v) => v !== last); if (overWater() && last !== fish) pick.push(fish, fish);
+  const who = pick[Math.floor(Math.random() * pick.length)]; last = who;
+  layer.classList.toggle('night', night());
   const run = active = { stopped: false, raf: 0, cancel: [] };
   try { await who(run); } catch { /* a visitor never breaks the page */ }
   if (active === run) active = null;
   schedule();
 }
-function schedule(ms = rnd(55000, 110000)) { clearTimeout(timer); timer = setTimeout(visit, ms); }
+function schedule(ms = rnd(22000, 50000)) { clearTimeout(timer); timer = setTimeout(visit, ms); }
 function shoo() {
   if (!active) return;
   active.stopped = true; cancelAnimationFrame(active.raf); active.cancel.forEach((f) => f());
@@ -157,7 +193,7 @@ export function startCreatures() {
   const motif = document.getElementById('motif'); if (motif) motif.after(layer); else document.body.prepend(layer);
   document.addEventListener('visibilitychange', () => { if (document.hidden) shoo(); });
   addEventListener('resize', shoo);
-  schedule(rnd(20000, 40000));
+  schedule(rnd(8000, 16000));
 }
-// For testing on a page: bring one now ('cat', 'bird' or 'dragonfly').
-export function summon(name) { shoo(); clearTimeout(timer); last = null; const v = { cat, bird, dragonfly }[name]; if (!v || !layer) return; const run = active = { stopped: false, raf: 0, cancel: [] }; v(run).finally(() => { if (active === run) active = null; schedule(); }); }
+// For testing on a page: bring one now ('cat', 'fish', 'bird' or 'dragonfly').
+export function summon(name) { shoo(); clearTimeout(timer); last = null; const v = { cat, bird, dragonfly, fish }[name]; if (!v || !layer) return; layer.classList.toggle('night', night()); const run = active = { stopped: false, raf: 0, cancel: [] }; v(run).finally(() => { if (active === run) active = null; schedule(); }); }

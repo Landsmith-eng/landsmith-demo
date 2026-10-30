@@ -786,10 +786,15 @@ details.wt-part summary, details.diary-block summary { cursor: pointer; color: v
 .think-door .t { font-family: var(--display); font-size: 1.18rem; }
 .think-door:active { transform: scale(.99); }
 
-/* Visitors on the pictures (creatures.js): shadows on the painting, behind the words, never in the way of a tap. */
+/* Visitors on the pictures (creatures.js): faint, see-through shapes blended into the painting, behind the words. */
 #creatures { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.creature { position: absolute; left: 0; top: 0; overflow: visible; will-change: transform;
-  filter: drop-shadow(0 0 1.2px rgba(255, 255, 255, .45)) drop-shadow(0 2px 3px rgba(0, 0, 0, .25)); }
+#creatures { mix-blend-mode: multiply; }
+.creature { position: absolute; left: 0; top: 0; overflow: visible; will-change: transform; opacity: .3; }
+/* By night the plates are dark: the visitors lighten the painting instead, like a reflection. */
+#creatures.night { mix-blend-mode: screen; }
+#creatures.night .creature { opacity: .26; filter: invert(1); }
+#creatures.night .creature.school { filter: none; }
+.creature.school { opacity: .34; }
 .creature > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
 /* The cat: legs in pairs, a slight bob, the tail always moving; standing still to look about. */
 .walker .leg { transform-box: fill-box; transform-origin: top center; animation: cat-step .62s ease-in-out infinite alternate; }
