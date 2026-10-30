@@ -895,6 +895,21 @@ html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0
 .gaze .gaze-world.light { mix-blend-mode: normal; }
 #creatures.in-gaze, #creatures-light.in-gaze { position: absolute; inset: 0; mix-blend-mode: normal; }
 
-/* Following along: the word being read aloud is lit. */
-.stage span.w { border-radius: 4px; transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; }
-.stage span.w.now { background: rgba(244, 192, 99, .34); box-shadow: 0 0 0 2px rgba(244, 192, 99, .34); color: #fff; }
+/* Following along: the letters of the word being read flare one after another and fade (no box around them), and
+   motes of stardust drift off them and twinkle out. */
+.stage span.ch.lit { animation: letter-glow 1.9s ease-out both; }
+@keyframes letter-glow {
+  0% { color: inherit; text-shadow: var(--text-shadow, none); }
+  10% { color: #fff6d8; text-shadow: 0 0 3px #ffe7a6, 0 0 9px rgba(255, 205, 110, .85), 0 0 18px rgba(255, 180, 80, .5); }
+  45% { color: #ffefc4; text-shadow: 0 0 4px rgba(255, 220, 140, .55), 0 0 12px rgba(255, 190, 90, .25); }
+  100% { color: inherit; text-shadow: var(--text-shadow, none); } }
+#stardust { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+#stardust .mote { position: absolute; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
+  background: radial-gradient(circle, #fffdf2 0, #ffe1a0 45%, rgba(255, 200, 110, 0) 70%); box-shadow: 0 0 4px rgba(255, 220, 150, .9);
+  animation: mote 1.4s ease-out forwards; }
+@keyframes mote {
+  0% { transform: translate(0, 0) scale(var(--s, 1)); opacity: 0; }
+  12% { opacity: 1; }
+  35% { opacity: .55; } 50% { opacity: .95; } 70% { opacity: .4; }
+  100% { transform: translate(var(--dx, 0), var(--dy, -14px)) scale(.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #stardust { display: none; } .stage span.ch.lit { animation-duration: .9s; } }

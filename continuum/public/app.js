@@ -757,6 +757,31 @@ function lightWord(k, charAt) {
   let i = -1; for (let j = 0; j < words.length && words[j].at <= charAt; j++) i = j;
   const el = words[i]?.el; if (!el || el === reader.lit) return;
   reader.lit?.classList.remove('now'); el.classList.add('now'); reader.lit = el;
+  glowWord(el);
+}
+// The spoken word's letters light one after another, a spark running across them: each flares and fades, shedding a
+// few motes of stardust that drift and twinkle out. No box around the word: only the letters glow.
+const stardust = h('div', { id: 'stardust', 'aria-hidden': 'true' }); document.body.append(stardust);
+const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function mote(x, y) {
+  if (stardust.childElementCount > 70) return;
+  const m = h('i', { class: 'mote' });
+  const a = Math.random() * Math.PI * 2; const d = 6 + Math.random() * 16;
+  Object.assign(m.style, { left: `${x}px`, top: `${y}px`, animationDuration: `${900 + Math.random() * 900}ms` });
+  m.style.setProperty('--dx', `${Math.cos(a) * d}px`); m.style.setProperty('--dy', `${Math.sin(a) * d - 10 - Math.random() * 10}px`); m.style.setProperty('--s', String(.6 + Math.random() * .9));
+  stardust.append(m); setTimeout(() => m.remove(), 1900);
+}
+function glowWord(el) {
+  if (!el.dataset.split) { el.replaceChildren(...[...el.textContent].map((c) => h('span', { class: 'ch' }, c))); el.dataset.split = '1'; }
+  const letters = [...el.children]; const step = Math.max(28, Math.min(75, 320 / letters.length));
+  letters.forEach((c, i) => {
+    c.classList.remove('lit'); c.style.animationDelay = `${i * step}ms`; void c.offsetWidth; c.classList.add('lit');
+    if (stillMotion()) return;
+    setTimeout(() => {
+      const r = c.getBoundingClientRect(); if (!r.width) return;
+      for (let n = 0; n < 2; n++) mote(r.left + Math.random() * r.width, r.top + r.height * (.25 + Math.random() * .6));
+    }, i * step);
+  });
 }
 function unlight() { reader.lit?.classList.remove('now'); reader.lit = null; cancelAnimationFrame(reader.wordRaf); }
 // With the natural voice: each letter's start time from ElevenLabs (or, failing that, letters spread evenly over the
