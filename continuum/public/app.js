@@ -28,7 +28,7 @@ if (params.get('join')) store.set('continuum.join', params.get('join'));
 // The personal link stays in the address (so a bookmark, the browser's history or a home-screen icon keeps it, even
 // when a browser such as DuckDuckGo clears what the site stored); the other settings are cleaned away.
 const token = () => store.get(TOKEN_KEY) ?? '';
-if (params.get('day') || params.get('join') || (token() && !params.get('u'))) history.replaceState(null, '', token() ? `${location.pathname}?u=${encodeURIComponent(token())}` : location.pathname);
+if (params.get('day') || params.get('join') || params.get('go') || (token() && !params.get('u'))) history.replaceState(null, '', token() ? `${location.pathname}?u=${encodeURIComponent(token())}` : location.pathname);
 document.getElementById('manifest')?.setAttribute('href', `/manifest.webmanifest${token() ? `?u=${encodeURIComponent(token())}` : ''}`);
 // Errors on the phone are reported to the server window (at most a few a minute), so a glitch names itself.
 let reported = 0;
@@ -2330,7 +2330,11 @@ function showThink() {
 // The first few days: what brought you here (to learn, to think something through, or to build a habit), and the
 // app opens there. After that, once a day: glad to see you back, where to today, led by what you usually choose.
 const GREETED_KEY = 'continuum.greeted'; const WHY_KEY = 'continuum.why'; const ASK_DAYS = 3;
+// A shortcut from the home-screen icon (press and hold it) goes straight to its place.
+const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal() };
 function arrive() {
+  const go = SHORTCUTS[params.get('go')];
+  if (go) { store.set(GREETED_KEY, today()); go(); return; }
   if (store.get(GREETED_KEY) === today() || params.get('day')) { showToday(); offerTour(); return; }
   setNav('');
   return guarded(async () => {

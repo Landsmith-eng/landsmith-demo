@@ -56,5 +56,6 @@ test('a note brings one question back, and the answer is added to the note', asy
 test('the home-screen manifest opens the personal link', async () => {
   const m = await fetch(`${base}/manifest.webmanifest?u=abcDEF123_-x`).then((r) => r.json());
   assert.equal(m.start_url, '/?u=abcDEF123_-x');
+  assert.deepEqual(m.shortcuts.map((x) => x.url), ['/?u=abcDEF123_-x&go=wander', '/?u=abcDEF123_-x&go=think', '/?u=abcDEF123_-x&go=problem', '/?u=abcDEF123_-x&go=you']);
   assert.equal((await fetch(`${base}/manifest.webmanifest?u=<bad>`).then((r) => r.json())).start_url, '/');
 });

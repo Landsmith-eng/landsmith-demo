@@ -1678,6 +1678,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         { src: '/img/icon/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/img/icon/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
       ],
+      // Press and hold the icon: straight to a place.
+      shortcuts: [
+        ['Today\'s idea', 'Wander', 'wander'], ['Think something through', 'Think', 'think'],
+        ['Work through a problem', 'A problem', 'problem'], ['Your diary', 'Diary', 'you'],
+      ].map(([name, short_name, go]) => ({ name, short_name, url: `/?${u ? `u=${u}&` : ''}go=${go}`, icons: [{ src: '/img/icon/icon-192.png', sizes: '192x192', type: 'image/png' }] })),
     }));
   });
   app.use(express.static(PUBLIC_DIR, {
