@@ -45,6 +45,14 @@ function imgY(f, sc) {
   if (W / H <= r) return f * H;
   const h = W / r; return (H - h) / 2 + f * h;
 }
+// A part of the picture [x0, y0, x1, y1] as a rectangle on the screen.
+function rectOf(r, sc) {
+  const img = sc.img; const iw = img?.naturalWidth || 2, ih = img?.naturalHeight || 3;
+  const W = innerWidth, H = innerHeight; const k = Math.max(W / iw, H / ih); const dw = iw * k, dh = ih * k;
+  const ox = (W - dw) / 2, oy = (H - dh) / 2;
+  return { x: ox + r[0] * dw, y: oy + r[1] * dh, w: (r[2] - r[0]) * dw, h: (r[3] - r[1]) * dh };
+}
+const noise = () => { const w = [1, 2.3, 4.1].map((m) => ({ f: m * (0.0004 + Math.random() * 0.0004), p: Math.random() * 6.28 })); return (t) => (Math.sin(t * w[0].f + w[0].p) + .5 * Math.sin(t * w[1].f + w[1].p) + .25 * Math.sin(t * w[2].f + w[2].p)) / 1.75; };
 // The water's band on the screen, kept above the menu.
 function waterBand(sc, from = 0, to = 1) {
   const [a, b] = sc.water; const top = imgY(a + (b - a) * from, sc); const bottom = Math.min(imgY(a + (b - a) * to, sc), dockTop() - 12);
@@ -415,6 +423,152 @@ async function spider(run) {
   await fadeOut(el, run, 3000); el.remove();
 }
 
+// ── Leaves: from the painted trees, a few come loose and fall, rocking and drifting on the wind; with no trees in the
+// picture, they blow across. ──
+async function leaves(run, sc) {
+  const W = innerWidth, H = innerHeight; const n = Math.round(rnd(2, 6)); const wind = rnd(-.025, .025) || .01;
+  const from = sc.canopy ? rectOf(sc.canopy, sc) : null;
+  const tints = ['rgba(90,70,30,.9)', 'rgba(60,80,30,.9)', 'rgba(120,70,30,.9)', 'rgba(70,60,40,.9)'];
+  const all = Array.from({ length: n }, (_, i) => {
+    const size = rnd(9, 15);
+    const el = svg('0 0 20 12', size, `<path d="M1 6 C5 0 14 0 19 6 C14 12 5 12 1 6Z" fill="${tints[i % 4]}"/><path d="M1 6 L17 6" stroke="rgba(20,20,10,.5)" stroke-width=".6"/>`);
+    el.classList.add('creature', 'leaf'); layer.append(el);
+    const x0 = from ? rnd(from.x, from.x + from.w) : (wind > 0 ? rnd(-60, -10) : rnd(W + 10, W + 60));
+    const y0 = from ? rnd(from.y, from.y + from.h * .8) : rnd(H * .1, H * .5);
+    return { el, x0, y0, delay: i * rnd(600, 2200) + rnd(0, 800), sway: rnd(18, 40), fall: rnd(.018, .035), spin: rnd(.6, 1.6), ph: rnd(0, 6), n: noise() };
+  });
+  const floor = dockTop() - 6;
+  await frames(run, (t) => {
+    let alive = false;
+    for (const l of all) {
+      const u = t - l.delay; if (u < 0) { l.el.style.opacity = '0'; alive = true; continue; }
+      l.el.style.opacity = '';
+      const y = l.y0 + u * l.fall * (from ? 1 : .35) + Math.abs(Math.sin(u / 700 + l.ph)) * 6;
+      const x = l.x0 + u * wind * (from ? 1 : 6) + Math.sin(u / 900 + l.ph) * l.sway + l.n(u) * 20;
+      const rot = Math.sin(u / 700 + l.ph) * 55 * l.spin;
+      l.el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg) scaleY(${.55 + .45 * Math.abs(Math.cos(u / 500 + l.ph))})`;
+      if (y < floor && x > -80 && x < W + 80) alive = true; else l.el.style.opacity = '0';
+    }
+    return alive;
+  });
+  all.forEach((l) => l.el.remove());
+}
+
+// ── A butterfly: wanders over the flowers or the garden, never in a straight line, settles a moment, flutters off. ──
+async function butterfly(run, sc) {
+  const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .1, y: H * .35, w: W * .8, h: H * .4 };
+  const el = svg('0 0 24 20', rnd(16, 22), `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="rgba(70,50,20,.85)"/>
+    <path class="bw r" d="M12 10 C18 1 23 2 22 8 C22 12 17 13 12 10 C17 14 20 19 16 18 C14 17 13 14 12 10Z" fill="rgba(70,50,20,.85)"/>
+    <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>`);
+  el.classList.add('creature', 'flutter'); layer.append(el);
+  let x = Math.random() < .5 ? -20 : W + 20, y = rnd(area.y, area.y + area.h); const nx = noise(), ny = noise();
+  let target = { x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) }; let rest = 0; let legs = Math.round(rnd(4, 8));
+  await frames(run, (t) => {
+    if (rest > 0) { rest--; if (!rest) el.classList.remove('resting'); return true; }
+    const dx = target.x - x, dy = target.y - y, d = Math.hypot(dx, dy);
+    if (d < 8) {
+      if (--legs <= 0) return false;
+      if (Math.random() < .35) { rest = Math.round(rnd(60, 160)); el.classList.add('resting'); }
+      target = { x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) };
+    }
+    x += (dx / (d || 1)) * 1.1 + nx(t) * 1.4; y += (dy / (d || 1)) * 1.1 + ny(t * 1.3) * 1.6 + Math.sin(t / 140) * .6;
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    return true;
+  });
+  const out = { x: Math.random() < .5 ? -40 : W + 40, y: rnd(0, H * .4) };
+  await frames(run, (t) => { const dx = out.x - x, dy = out.y - y, d = Math.hypot(dx, dy); x += dx / d * 1.6 + nx(t) * 1.2; y += dy / d * 1.6 + Math.sin(t / 140); el.style.transform = `translate(${x}px, ${y}px)`; return d > 10; });
+  el.remove();
+}
+
+// ── Bees: two or three, busy among the flowers, darting from one to the next and hovering. ──
+async function bees(run, sc) {
+  const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .1, y: H * .5, w: W * .8, h: H * .3 };
+  const n = Math.round(rnd(2, 3));
+  const all = Array.from({ length: n }, () => {
+    const el = svg('0 0 14 10', rnd(8, 11), `<ellipse cx="7" cy="6" rx="4.4" ry="2.8" fill="rgba(60,45,10,.9)"/><path d="M5.5 3.6 L5.5 8.4 M8 3.4 L8 8.6" stroke="rgba(230,190,60,.9)" stroke-width="1"/><ellipse class="bw2" cx="6.5" cy="2.6" rx="2.6" ry="1.7" fill="rgba(240,245,255,.8)"/>`);
+    el.classList.add('creature', 'bee'); layer.append(el);
+    return { el, x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h), tx: 0, ty: 0, hover: 0, nx: noise(), ny: noise() };
+  });
+  all.forEach((b) => { b.tx = b.x; b.ty = b.y; b.el.classList.add('gone'); });
+  await wait(30, run); all.forEach((b) => { b.el.style.transition = 'opacity 1.2s'; b.el.classList.remove('gone'); });
+  const until = rnd(14000, 22000);
+  await frames(run, (t) => {
+    for (const b of all) {
+      if (b.hover > 0) b.hover--;
+      else if (Math.hypot(b.tx - b.x, b.ty - b.y) < 3) { b.hover = Math.round(rnd(20, 90)); b.tx = rnd(area.x, area.x + area.w); b.ty = rnd(area.y, area.y + area.h); }
+      else { const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy); b.x += dx / d * 2.4; b.y += dy / d * 2.4; }
+      b.el.style.transform = `translate(${b.x + b.nx(t * 4) * 3}px, ${b.y + b.ny(t * 5) * 3}px)`;
+    }
+    return t < until;
+  });
+  for (const b of all) { b.el.style.transition = 'opacity 1.2s'; b.el.classList.add('gone'); }
+  await wait(1300, run); all.forEach((b) => b.el.remove());
+}
+
+// ── Rays of light: through the painted window, doorway or trees, soft beams brighten, drift a little, and fade. ──
+async function rays(run, sc) {
+  const r = sc.rays; const at = rectOf([r.x, r.y, r.x, r.y], sc); const H = innerHeight;
+  const box = document.createElement('div'); box.className = 'creature rays gone'; lightLayer.append(box);
+  const beams = Array.from({ length: Math.round(rnd(3, 5)) }, (_, i, arr) => {
+    const b = document.createElement('div'); b.className = 'beam';
+    const width = rnd(28, 70); const len = H * rnd(.7, 1.1);
+    Object.assign(b.style, { left: `${at.x - width / 2}px`, top: `${at.y}px`, width: `${width}px`, height: `${len}px` });
+    box.append(b); return { b, base: -r.a + (i - (arr.length - 1) / 2) * rnd(5, 9), n: noise(), op: rnd(.5, 1) };
+  });
+  const until = rnd(16000, 24000);
+  await wait(30, run); box.style.transition = 'opacity 4s ease'; box.classList.remove('gone');
+  await frames(run, (t) => {
+    for (const x of beams) { x.b.style.transform = `rotate(${x.base + x.n(t) * 2.2}deg)`; x.b.style.opacity = String(x.op * (.65 + .35 * x.n(t * 1.7 + 999))); }
+    return t < until;
+  });
+  box.classList.add('gone'); await wait(4000, run); box.remove();
+}
+
+// ── Ripples: on the water, a ring or two spreads and fades, as if a fish rose or a drop fell; one, then another. ──
+async function ripples(run, sc) {
+  const band = waterBand(sc, .12, .95); if (!band) return;
+  const W = innerWidth; const n = Math.round(rnd(3, 7));
+  for (let i = 0; i < n; i++) {
+    const y = rnd(band[0], band[1]); const depth = (y - band[0]) / Math.max(1, band[1] - band[0]); const R = 10 + 34 * depth;
+    const x = rnd(W * .08, W * .92);
+    const el = svg(`0 0 ${R * 2 + 4} ${R * .7 + 4}`, R * 2 + 4, `${[0, 1, 2].map((k) => `<ellipse class="ring" style="animation-delay:${k * .7}s" cx="${R + 2}" cy="${R * .35 + 2}" rx="${R}" ry="${R * .35}" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="1"/>`).join('')}`);
+    el.classList.add('creature', 'ripple'); el.style.transform = `translate(${x - R}px, ${y - R * .35}px)`;
+    lightLayer.append(el); setTimeout(() => el.remove(), 4800);
+    await wait(rnd(1200, 4200), run);
+  }
+  await wait(4000, run);
+}
+
+// ── Writing: on a painted page or open book, a few lines appear as if written by an unseen hand, rest, and fade. ──
+const LINES = ['Know thyself.', 'Some things are up to us,', 'and some are not.', 'What did I do well today?', 'Begin at once to live.', 'The unexamined life', 'is not worth living.', 'I think, therefore I am.', 'Dear friend,', 'Today I learned', 'Let us balance the account', 'of each day.', 'Be patient toward', 'all that is unsolved.', 'Nothing in excess.', 'What is it I ought to do?'];
+const EQUATIONS = ['F = ma', 'E = mc²', 'a² + b² = c²', 'F = G m₁m₂ / r²', 'ΔxΔp ≥ ħ/2', 'PV = nRT', 'S = k log W', 'e^{iπ} + 1 = 0', '∇ · E = ρ / ε₀', 'T² ∝ a³', 'v = λf', 'iħ ∂ψ/∂t = Ĥψ', 'p = mv', 'λ = h / p', 'ds² = c²dt² − dx²'];
+async function writing(run, sc, kind = 'paper') {
+  const r = rectOf(sc[kind], sc); const chalk = kind !== 'paper';
+  const pick = (list, k) => { const start = Math.floor(Math.random() * list.length); return Array.from({ length: k }, (_, i) => list[(start + i * (chalk ? 3 : 1)) % list.length]); };
+  const lines = chalk ? pick(EQUATIONS, kind === 'chart' ? Math.round(rnd(2, 3)) : Math.round(rnd(2, 4))) : pick(LINES, Math.round(rnd(2, 3)));
+  const box = document.createElement('div'); box.className = `creature writing ${chalk ? 'chalk' : 'ink'}`;
+  const fs = chalk ? Math.max(11, Math.min(20, r.h / (lines.length + .8))) : Math.max(7, Math.min(13, r.h / (lines.length + .6)));
+  Object.assign(box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, fontSize: `${fs}px`,
+    transform: chalk ? `rotate(${rnd(-2, 2)}deg)` : `perspective(400px) rotateX(${rnd(38, 52)}deg) rotate(${rnd(-4, 3)}deg)` });
+  lightLayer.append(box);
+  if (kind === 'chart') { // an orbit chalked first, then the law that describes it
+    const o = svg('0 0 100 50', Math.min(r.w * .7, 160), '<ellipse class="orbit" cx="50" cy="25" rx="44" ry="18" fill="none" stroke="rgba(240,240,225,.9)" stroke-width=".8"/><circle cx="36" cy="25" r="2.4" fill="rgba(240,240,225,.9)"/>');
+    o.classList.add('orbit-svg'); box.append(o);
+    const e = o.querySelector('.orbit'); const len = e.getTotalLength(); e.style.strokeDasharray = `${len}`; e.style.strokeDashoffset = `${len}`;
+    await frames(run, (t) => { const k = Math.min(1, t / 3500); e.style.strokeDashoffset = String(len * (1 - k)); return k < 1; });
+  }
+  for (const [i, text] of lines.entries()) {
+    const line = document.createElement('div'); line.className = 'wline'; line.textContent = text;
+    line.style.marginLeft = `${chalk ? rnd(0, 18) : i * rnd(0, 4)}px`; box.append(line);
+    const ms = text.length * (chalk ? 140 : 110) + 400;
+    await frames(run, (t) => { const k = Math.min(1, t / ms); line.style.clipPath = `inset(0 ${100 - k * 100}% 0 0)`; return k < 1; });
+    await wait(rnd(300, 900), run);
+  }
+  await wait(rnd(5000, 8000), run);
+  await fadeOut(box, run, 3000); box.remove();
+}
+const equations = (run, sc) => writing(run, sc, sc.board ? 'board' : 'chart');
+
 // Who may visit which picture, and how often (weights).
 const VISITORS = [
   { name: 'cat', fn: cat, w: 1.5, ok: (s) => s.has('out') || s.has('in') },
@@ -430,6 +584,13 @@ const VISITORS = [
   { name: 'caterpillar', fn: caterpillar, w: 1, ok: (s) => s.has('garden') },
   { name: 'inchworm', fn: inchworm, w: 1, ok: (s) => s.has('garden') },
   { name: 'spider', fn: spider, w: 1, ok: (s) => s.has('in') || s.has('garden') },
+  { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
+  { name: 'butterfly', fn: butterfly, w: 1.3, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
+  { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
+  { name: 'rays', fn: rays, w: 2.5, ok: (s) => s.rays },
+  { name: 'ripples', fn: ripples, w: 2, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
+  { name: 'writing', fn: writing, w: 3, ok: (s) => s.paper },
+  { name: 'equations', fn: equations, w: 3, ok: (s) => s.board || s.chart },
 ];
 let last = null;
 async function go(v, sc) {
@@ -480,6 +641,7 @@ export function summon(name) {
   const v = VISITORS.find((x) => x.name === name); if (!v || !layer) return;
   shoo(); clearTimeout(timer); last = null;
   const sc = scene(); if (!sc.water) sc.water = [.6, .95]; if (!sc.shore) sc.shore = .8;
+  if (!sc.paper) sc.paper = [.3, .78, .7, .88]; if (!sc.board && !sc.chart) sc.board = [.15, .2, .7, .34]; if (!sc.rays) sc.rays = { x: .3, y: 0, a: 15 };
   go(v, sc);
 }
 export const VISITOR_NAMES = VISITORS.map((v) => v.name);

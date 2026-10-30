@@ -2,6 +2,7 @@
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
 import { startCreatures, summon } from '/creatures.js';
+import { startLiving } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
 
@@ -1594,7 +1595,7 @@ function showJournal() {
       h('button', { type: 'button', class: 'chip on', 'aria-pressed': 'true' }, 'Diary'),
       h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
       h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again, keepOnPhone());
   });
 }
 
@@ -2270,6 +2271,37 @@ async function shareInvite(g) {
   try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
   catch { notice(url); }
 }
+// ── Keeping Continuum on the phone ──
+// Chrome offers to install a site like this as an app; the offer is kept so a button can make it. Once installed,
+// links to Continuum open the app itself (no browser page, so no browser menu), and its icon is in the app list.
+let installOffer = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installOffer = e; });
+addEventListener('appinstalled', () => { installOffer = null; notice('Continuum is on your phone. Look for its icon with your other apps.'); });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const myLink = () => `${location.origin}/?u=${encodeURIComponent(token())}`;
+function keepOnPhone() {
+  const out = h('p', { class: 'muted small', role: 'status' });
+  const btn = (label, fn, cls = 'btn ghost') => h('button', { type: 'button', class: cls, onclick: fn }, label);
+  const copy = btn('Copy my personal link', async () => {
+    try { await navigator.clipboard.writeText(myLink()); out.textContent = 'Copied. Paste it somewhere safe (a note, or an email to yourself).'; }
+    catch { out.textContent = myLink(); }
+  });
+  const share = navigator.share && btn('Send my link to myself', () => navigator.share({ title: 'Continuum', text: 'My Continuum link (it signs me in; keep it private)', url: myLink() }).catch(() => {}));
+  const install = !standalone() && installOffer && btn('Add Continuum to my home screen', async () => {
+    const offer = installOffer; installOffer = null; offer.prompt();
+    const r = await offer.userChoice.catch(() => null);
+    if (r?.outcome !== 'accepted') out.textContent = 'Not added. You can add it later from the browser menu.';
+  }, 'btn');
+  const how = standalone()
+    ? 'You are in the Continuum app. Its icon is in your phone\'s list of apps (swipe up from the home screen). To put it on the home screen: press and hold the icon there, then drag it where you like.'
+    : install ? 'One tap adds Continuum to your home screen, signed in.'
+      : /iPhone|iPad/.test(navigator.userAgent) ? 'In Safari: tap Share (the square with an arrow), then Add to Home Screen.'
+        : 'In the browser menu (⋮), choose Add to Home screen or Install app. If links to Continuum open the app straight away, it is already installed: look for its icon in your list of apps.';
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'Keep Continuum on your phone'), h('p', { class: 'small' }, how),
+    h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' }, install, copy, share), out,
+    h('p', { class: 'muted small' }, 'Your personal link signs you in. Keep it private.'));
+}
+
 // ── Think: everything for thinking something through, in one place ──
 function showThink() {
   setNav('think');
@@ -2622,6 +2654,7 @@ function offerTour() {
 
 intro();
 startCreatures();
+startLiving();
 window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('sailboat'), or ?visit=sailboat (names in creatures.js)
 if (params.get('visit')) setTimeout(() => summon(params.get('visit')), 1500);
 

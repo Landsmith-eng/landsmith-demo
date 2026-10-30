@@ -851,3 +851,39 @@ details.wt-part summary, details.diary-block summary { cursor: pointer; color: v
 /* Calm: while an idea is read, the buttons fade to nothing after a few seconds untouched; a touch brings them back. */
 html .bar, html .corner, html .dock, html .rail { transition: opacity .8s ease; }
 html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0; pointer-events: none; }
+
+/* The living painting (living.js): soft-edged copies of spots of the picture, laid over it and moved a pixel or two.
+   The layer takes the picture's own blur, zoom and fade, so the copies sit exactly on it. */
+#living { position: absolute; inset: 0; pointer-events: none; transform-origin: var(--wall-origin, 50% 50%);
+  filter: blur(calc((1 - var(--focus, 0)) * 1.5px)) saturate(calc(.95 + var(--focus, 0) * .1));
+  transform: scale(calc((1.02 - var(--focus, 0) * .02) * var(--wall-zoom, 1))); transition: filter .25s linear, transform .25s linear; }
+#wallpaper.plain #living { filter: none; transform: scale(var(--wall-zoom, 1)); transition: transform .35s ease; }
+#wallpaper.nolook #living { filter: blur(6px) saturate(.9); }
+#wallpaper.pinching #living { transition: none !important; }
+.live-part { position: absolute; background-repeat: no-repeat; will-change: transform;
+  -webkit-mask-image: radial-gradient(closest-side, #000 58%, transparent 100%); mask-image: radial-gradient(closest-side, #000 58%, transparent 100%); }
+.live-part.live-spin { -webkit-mask-image: radial-gradient(closest-side, #000 86%, transparent 100%); mask-image: radial-gradient(closest-side, #000 86%, transparent 100%); }
+@media (prefers-reduced-motion: reduce) { #living { display: none; } }
+
+/* Visitors from the paintings: leaves, a butterfly, bees, rays of light, ripples, writing. */
+.creature.leaf { opacity: .5; }
+.flutter .bw { transform-box: fill-box; animation: bwing .16s ease-in-out infinite alternate; }
+.flutter .bw.l { transform-origin: 100% 50%; } .flutter .bw.r { transform-origin: 0% 50%; }
+.flutter.resting .bw { animation-duration: 1.4s; }
+@keyframes bwing { from { transform: scaleX(1); } to { transform: scaleX(.25); } }
+.creature.flutter { opacity: .5; }
+.creature.bee { opacity: .55; }
+.bee .bw2 { animation: dragon-wing .05s linear infinite alternate; }
+.creature.rays { inset: 0; opacity: 1; mix-blend-mode: normal; }
+.creature.rays .beam { position: absolute; transform-origin: 50% 0; filter: blur(9px);
+  background: linear-gradient(to bottom, rgba(255, 246, 214, .26), rgba(255, 246, 214, .12) 55%, rgba(255, 246, 214, 0));
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); }
+.creature.ripple { opacity: .5; }
+.ripple .ring { transform-box: fill-box; transform-origin: center; opacity: 0; animation: ring 3.6s ease-out forwards; }
+@keyframes ring { 0% { transform: scale(.08); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+.creature.writing { overflow: visible; display: flex; flex-direction: column; justify-content: flex-start; transform-origin: 50% 50%; line-height: 1.25; white-space: nowrap; }
+.writing.ink { opacity: .62; color: rgba(34, 26, 18, .95); font-family: "Cormorant Garamond", var(--display), serif; font-style: italic; }
+.writing.chalk { opacity: .55; color: rgba(244, 242, 228, .95); font-family: var(--display), serif; font-style: italic; letter-spacing: .02em; text-shadow: 0 0 1px rgba(255,255,255,.5); }
+.writing .wline { clip-path: inset(0 100% 0 0); }
+.writing .orbit-svg { display: block; margin: 0 auto 4px; overflow: visible; }
+@media (prefers-reduced-motion: reduce) { #creatures-light { display: none; } }
