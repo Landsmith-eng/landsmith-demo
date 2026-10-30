@@ -1123,6 +1123,8 @@ function gaze(src) {
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   stopReading();
+  // Every page stands on a painting: an idea without its own (or its room's) takes the day's plate.
+  background ??= brightFor(`stage:${node.id}`) ?? dailyPlate();
   const wrap = h('div', { class: `stage field-${node.field}`, 'data-node': node.id }, panels);
   render(wrap);
   document.documentElement.classList.add('staged'); wake();

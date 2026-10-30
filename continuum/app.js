@@ -299,9 +299,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const pick = todaysPick(uid, date);
       state = pick ? 'write' : 'complete';
       const n = pick ? q.node.get(pick) : null;
-      // The closed card carries only the picture's address, shown faded behind the title as atmosphere.
+      // The closed card carries only the picture's address (its own, or else its room's), shown faded behind the title.
       // The picture itself, with alt text and credit, belongs to the reveal after writing.
-      node = n ? { ...card(n), backdrop: n.image ? JSON.parse(n.image).src : null, why: q.pickFor.get(uid, date)?.why ?? null } : null;
+      node = n ? { ...card(n), backdrop: (n.image ? JSON.parse(n.image).src : null) ?? roomBgOn(n.room, date), why: q.pickFor.get(uid, date)?.why ?? null } : null;
     }
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
     const due = kq.due.get(uid, shiftDay(date, -CHECKIN_DAYS));
