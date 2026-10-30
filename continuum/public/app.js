@@ -1,7 +1,7 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
-import { startCreatures, summon, creaturesInto } from '/creatures.js';
+import { startCreatures, summon, creaturesInto, sceneFor } from '/creatures.js';
 import { startLiving, liveIn, liveOut } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
@@ -2922,7 +2922,14 @@ intro();
 startCreatures();
 startLiving();
 window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('sailboat'), or ?visit=sailboat (names in creatures.js)
-if (params.get('visit')) setTimeout(() => summon(params.get('visit')), 1500);
+// A link with ?visit=fish (or sailboat, frog…): opens a painting where that visitor belongs, full screen, and brings it.
+if (params.get('visit')) {
+  setTimeout(() => {
+    const src = sceneFor(params.get('visit'));
+    if (src) { setWallpaper(src, 1, { plain: true }); gaze(src); }
+    setTimeout(() => summon(params.get('visit')), 1600);
+  }, 1500);
+}
 
 // Calm: while an idea is being read, the buttons (corner, menu, the card's links, the rail) fade away after a few
 // seconds untouched, leaving the words on the picture. Any touch, key or mouse movement brings them back.

@@ -642,7 +642,7 @@ const VISITORS = [
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
   { name: 'dragonfly', fn: dragonfly, w: 1, ok: (s) => s.has('garden') || s.has('lake') },
   { name: 'sailboat', fn: sailboat, w: 2, ok: (s) => s.has('boats') && s.water && (s.live ?? []).some((x) => x.m === 'bob' && !x.soft) }, // only among painted boats
-  { name: 'fish', fn: school, w: 1.5, ok: (s) => (s.has('sea') || s.has('lake')) && s.water && !s.has('city') },
+  { name: 'fish', fn: school, w: 1.5, ok: (s) => (s.has('sea') || s.has('lake')) && s.water && !s.has('city') && s.water[1] - s.water[0] >= .15 && (!s.waterX || s.waterX[1] - s.waterX[0] >= .4) }, // water deep and wide enough for a school
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },
   { name: 'egret', fn: egret, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'sandpipers', fn: sandpipers, w: 2.5, ok: (s) => s.has('beach') && s.shore },
@@ -725,3 +725,12 @@ export function summon(name) {
   go(v, sc);
 }
 export const VISITOR_NAMES = VISITORS.map((v) => v.name);
+
+// A painting where this visitor belongs (bright ones first), for a link that asks to see it: '/img/....webp' or null.
+export function sceneFor(name) {
+  const v = VISITORS.find((x) => x.name === name); if (!v) return null;
+  const fits = Object.entries(SCENES).filter(([, s]) => v.ok({ ...s, has: (k) => s.k.split(' ').includes(k) })).map(([key]) => key);
+  const bright = fits.filter((k) => k.startsWith('bright/'));
+  const pool = bright.length ? bright : fits;
+  return pool.length ? `/img/${pool[Math.floor(Math.random() * pool.length)]}.webp` : null;
+}
