@@ -128,3 +128,13 @@ test('reading with timings: the clip and each letter\'s start time, kept beside 
   assert.equal(calls.length, 1); // the second time from the kept copy
   server.close();
 });
+
+test('the voice named Jon on the account becomes the default', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ voices: [{ voice_id: 'George1234', name: 'George' }, { voice_id: 'JonVoice99', name: 'Jon' }] }));
+  const tts = createTts({ apiKey: 'k', fetchImpl });
+  assert.equal((await tts.preferVoice('jon')).id, 'JonVoice99');
+  assert.equal(tts.voiceId, 'JonVoice99');
+  const none = createTts({ apiKey: 'k', voiceId: 'George1234', fetchImpl: async () => new Response(JSON.stringify({ voices: [] })) });
+  assert.equal(await none.preferVoice('Jon'), null);
+  assert.equal(none.voiceId, 'George1234');
+});

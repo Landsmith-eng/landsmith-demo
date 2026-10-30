@@ -58,6 +58,13 @@ const tts = createTts({
   cacheDir: process.env.CONTINUUM_TTS_CACHE || fileURLToPath(new URL('./data/tts/', import.meta.url)),
 });
 
+// The default reading voice: the one named "Jon" on the ElevenLabs account (ELEVENLABS_VOICE_NAME to choose
+// another), else ELEVENLABS_VOICE_ID, else George.
+const voiceName = process.env.ELEVENLABS_VOICE_NAME ?? 'Jon';
+tts?.preferVoice(voiceName)
+  .then((v) => console.log(v ? `Reading voice: ${v.name} (the default)` : `No ElevenLabs voice named "${voiceName}"; the default stays ${tts.voiceId}.`))
+  .catch((e) => console.warn(`Could not list the ElevenLabs voices: ${e.message}${e.why ? ` (${e.why})` : ''}`));
+
 const talk = createTalk({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.CONTINUUM_TALK_MODEL || undefined });
 
 createApp(db, {

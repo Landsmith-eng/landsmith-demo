@@ -41,6 +41,15 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
       return voiceList;
     },
 
+    // Make the voice with this name on the account (e.g. "Jon") the default, if there is one. Returns it, or null.
+    async preferVoice(name) {
+      if (!name) return null;
+      const list = await this.voices(); const want = name.trim().toLowerCase();
+      const v = list.find((x) => x.name.trim().toLowerCase() === want) ?? list.find((x) => x.name.trim().toLowerCase().startsWith(`${want} `));
+      if (v) this.voiceId = v.id;
+      return v ?? null;
+    },
+
     // Speech to text with ElevenLabs Scribe (POST /v1/speech-to-text, checked against ElevenLabs' API reference on
     // 2026-10-29): a recording from the phone (webm, ogg, mp4 or wav) becomes text. Much
     // more exact than the phone's own recognition. Nothing is kept: the audio goes to ElevenLabs and the text comes

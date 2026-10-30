@@ -566,7 +566,7 @@ const VOICE_KEY = 'continuum.voice';
 // to pay for); the phone's voice speaks at that rate.
 const RATE_KEY = 'continuum.rate';
 const RATES = [['Slower', .8], ['Calm', .9], ['Normal', 1], ['Brisk', 1.15], ['Faster', 1.3]];
-const readRate = () => { const r = Number(store.get(RATE_KEY)); return RATES.some(([, v]) => v === r) ? r : 1; };
+const readRate = () => { const r = Number(store.get(RATE_KEY)); return RATES.some(([, v]) => v === r) ? r : .9; }; // Calm unless chosen
 async function voicePlan() {
   const choice = store.get(VOICE_KEY) ?? '';
   const el = await ttsEnabled();
