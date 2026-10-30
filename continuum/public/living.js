@@ -67,7 +67,7 @@ function frame(t) {
     if (p.m === 'bob') tf = `translate(${p.c(t) * 1.4 * k * p.px}px, ${p.a(t * 1.6) * 1.3 * k * p.px}px) rotate(${p.b(t * 1.3) * 1.5 * k}deg)`;
     else if (p.m === 'sway') tf = `rotate(${(p.a(t) * .7 + p.gust(t) * 1.1 * Math.sign(p.b(t) || 1)) * k}deg)`;
     else if (p.m === 'breathe') tf = `scale(${1 + .006 * k}, ${1 + (.012 + .004 * p.a(t)) * k * (0.5 + 0.5 * Math.sin(t / 620))})`;
-    else if (p.m === 'peck') tf = `rotate(${p.gust(t) * (p.slow ? 7 : 9) * k}deg)`;
+    else if (p.m === 'peck') { const g = p.gust(t); tf = p.slow ? `rotate(${g * 6 * k}deg)` : `translateY(${g * 1.4 * k * p.px}px) rotate(${g * 3 * k}deg)`; } // a small dip, not a tilt of the whole spot
     else if (p.m === 'spin') tf = `rotate(${(t / 1000) * 7}deg)`;
     else if (p.m === 'flicker') { tf = `scale(${1 + .015 * p.a(t * 6)}, ${1 + .03 * p.b(t * 7)})`; p.el.style.filter = `brightness(${1.04 + .1 * p.c(t * 9)})`; }
     p.el.style.transform = tf;

@@ -18,7 +18,8 @@
 // live: parts of the painting itself that move a little, at random: r [x0, y0, x1, y1]; m: bob (a boat on the water),
 //   sway (branches, laundry, flowers, reeds; p is the fixed point, as fractions of r), breathe (a sleeping or resting
 //   animal), peck (a bird's quick dip), flicker (a flame), spin (a whole wheel in view; p its hub); soft: gentler still.
-// canopy: trees whose leaves may fall; flowers: where bees and butterflies wander. All read from the paintings.
+// canopy: trees whose leaves may fall; flowers: where bees and butterflies wander; trunks: dark tree trunks an
+// inchworm may climb (x, and the height from y1 up to y0). All read from the paintings.
 export const SCENES = {
   // By day: bright plates
   'bright/balloons_dawn': { k: 'sky lake garden out', water: [.73, .88], shore: .86 },
@@ -27,13 +28,13 @@ export const SCENES = {
   'bright/blossom_picnic': { k: 'sky garden out', live: [{ r: [.1, -.02, .52, .17], m: 'sway', p: [0, 0] }], canopy: [.12, 0, .5, .14] },
   'bright/bubbles_square': { k: 'sky out' },
   'bright/coast_cyclist': { k: 'sky sea boats garden out', water: [.58, .74] },
-  'bright/garden_swing': { k: 'sky garden out', live: [{ r: [.12, -.02, .6, .12], m: 'sway', p: [.5, 0] }, { r: [.13, .84, .36, .96], m: 'peck' }], canopy: [.15, 0, .55, .1] },
+  'bright/garden_swing': { k: 'sky garden out', live: [{ r: [.12, -.02, .6, .12], m: 'sway', p: [.5, 0] }, { r: [.13, .84, .24, .94], m: 'peck' }, { r: [.64, .85, .73, .93], m: 'peck' }], canopy: [.15, 0, .55, .1] },
   'bright/happy_clouds': { k: 'sky garden out' },
   'bright/kites_park': { k: 'sky garden out' },
   'bright/meadow_morning': { k: 'sky lake garden out', water: [.68, .78], shore: .77 },
-  'bright/sail_bay_noon': { k: 'sky sea boats', water: [.66, 1], live: [{ r: [.12, .56, .29, .73], m: 'bob' }, { r: [.32, .57, .39, .67], m: 'bob' }, { r: [.53, .57, .64, .69], m: 'bob' }, { r: [.75, .57, .84, .67], m: 'bob' }] },
+  'bright/sail_bay_noon': { k: 'sky sea boats', water: [.57, 1], live: [{ r: [.12, .56, .29, .73], m: 'bob' }, { r: [.32, .57, .39, .67], m: 'bob' }, { r: [.53, .57, .64, .69], m: 'bob' }, { r: [.75, .57, .84, .67], m: 'bob' }] },
   'bright/sail_river_morning': { k: 'sky lake boats garden', water: [.62, .9], shore: .82, live: [{ r: [.16, .54, .36, .72], m: 'bob' }] },
-  'bright/sailing_regatta': { k: 'sky sea boats', water: [.67, 1], live: [{ r: [.12, .51, .36, .75], m: 'bob' }, { r: [.31, .56, .44, .71], m: 'bob' }, { r: [.67, .56, .84, .73], m: 'bob' }] },
+  'bright/sailing_regatta': { k: 'sky sea boats', water: [.57, 1], live: [{ r: [.12, .51, .36, .75], m: 'bob' }, { r: [.31, .56, .44, .71], m: 'bob' }, { r: [.67, .56, .84, .73], m: 'bob' }] },
   'bright/sunflowers_bees': { k: 'sky garden out', live: [{ r: [.63, .73, .88, .97], m: 'sway', p: [.5, 1] }, { r: [.12, .77, .4, .99], m: 'sway', p: [.5, 1] }], flowers: [.15, .72, .85, .95] },
   'bright/sunrise_beach_walk': { k: 'sky sea boats beach out', water: [.62, .74], shore: .76 },
   'bright/sunrise_hills': { k: 'sky lake boats garden', water: [.66, .86], shore: .86, live: [{ r: [.27, .72, .36, .8], m: 'bob' }] },
@@ -87,8 +88,8 @@ export const SCENES = {
   'spares/map_observatory': { k: 'in dark', chart: [.2, .06, .8, .36] },
   'spares/parthenon_fire_circle': { k: 'garden dark' },
   'spares/patience_web': { k: 'garden', live: [{ r: [.12, .62, .37, 1], m: 'sway', p: [.3, 1] }] },
-  'spares/problem_crossroads': { k: 'garden out dark', rays: { x: .68, y: 0, a: -12 }, live: [{ r: [.34, .54, .58, .73], m: 'breathe' }], canopy: [.12, 0, .88, .3] },
-  'spares/recall_fog_path': { k: 'garden out dark', rays: { x: .72, y: .06, a: -14 }, live: [{ r: [.34, .61, .55, .81], m: 'breathe' }], canopy: [.12, 0, .88, .3] },
+  'spares/problem_crossroads': { k: 'garden out dark', rays: { x: .68, y: 0, a: -12 }, live: [{ r: [.34, .54, .58, .73], m: 'breathe' }], canopy: [.12, 0, .88, .3], trunks: [{ x: .29, y0: .12, y1: .55 }] },
+  'spares/recall_fog_path': { k: 'garden out dark', rays: { x: .72, y: .06, a: -14 }, live: [{ r: [.34, .61, .55, .81], m: 'breathe' }], canopy: [.12, 0, .88, .3], trunks: [{ x: .28, y0: .1, y1: .5 }] },
   'spares/return_boat': { k: 'lake boats out', water: [.45, .82], shore: .82, live: [{ r: [.38, .69, .77, .86], m: 'bob', soft: true }] },
   'spares/stillness_owl': { k: 'garden dark', live: [{ r: [.74, .58, .88, .76], m: 'peck', slow: true }], canopy: [.12, 0, .88, .3] },
   'spares/talk_two_chairs': { k: 'garden out dark', rays: { x: .55, y: .05, a: 6 }, live: [{ r: [.1, -.02, .9, .3], m: 'sway', p: [.2, 0], soft: true }], canopy: [.12, 0, .88, .28] },
