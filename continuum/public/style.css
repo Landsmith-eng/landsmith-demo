@@ -897,14 +897,14 @@ html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0
 
 /* Following along: the letters of the word being read flare one after another and fade (no box around them), and
    motes of stardust drift off them and twinkle out. */
-.stage span.ch.lit { animation: letter-glow 1.9s ease-out both; }
+.stage span.ch.lit, .lyrics span.ch.lit { animation: letter-glow 1.9s ease-out both; }
 @keyframes letter-glow {
   0% { color: inherit; text-shadow: var(--text-shadow, none); }
   10% { color: #fff6d8; text-shadow: 0 0 3px #ffe7a6, 0 0 9px rgba(255, 205, 110, .85), 0 0 18px rgba(255, 180, 80, .5); }
   45% { color: #ffefc4; text-shadow: 0 0 4px rgba(255, 220, 140, .55), 0 0 12px rgba(255, 190, 90, .25); }
   100% { color: inherit; text-shadow: var(--text-shadow, none); } }
 #stardust { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
-#stardust .mote { position: absolute; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
+#stardust .mote, .lyric-dust .mote { position: absolute; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
   background: radial-gradient(circle, #fffdf2 0, #ffe1a0 45%, rgba(255, 200, 110, 0) 70%); box-shadow: 0 0 4px rgba(255, 220, 150, .9);
   animation: mote 1.4s ease-out forwards; }
 @keyframes mote {
@@ -913,3 +913,18 @@ html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0
   35% { opacity: .55; } 50% { opacity: .95; } 70% { opacity: .4; }
   100% { transform: translate(var(--dx, 0), var(--dy, -14px)) scale(.2); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #stardust { display: none; } .stage span.ch.lit { animation-duration: .9s; } }
+
+/* Contemplate: the passage over the painting, a short line at a time, fading in and out with the narrator. */
+html.can-speak.staged:has(#wallpaper.on) .contemplate { display: inline-flex; }
+html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; padding-left: 9px; padding-right: 9px; } /* icons are enough for these two here */
+.gaze .lyrics { position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.gaze .lyrics::before { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(4, 8, 6, 0) 38%, rgba(4, 8, 6, .3) 52%, rgba(4, 8, 6, .3) 68%, rgba(4, 8, 6, 0) 84%); }
+.gaze .lyric { position: absolute; left: 24px; right: 24px; top: 56%; text-align: center;
+  font-family: var(--display), serif; font-size: clamp(1.55rem, 6.4vw, 2.2rem); line-height: 1.32; color: #fbf7ec;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .6), 0 0 2px rgba(0, 0, 0, .45);
+  opacity: 0; transform: translateY(12px); filter: blur(2px); transition: opacity 1s ease, transform 1.3s ease, filter 1s ease; }
+.gaze .lyric.in { opacity: 1; transform: none; filter: none; }
+.gaze .lyric.out { opacity: 0; transform: translateY(-12px); filter: blur(3px); }
+.gaze .lyrics.paused .lyric.in { opacity: .6; }
+.gaze .lyric-dust { position: absolute; inset: 0; pointer-events: none; }

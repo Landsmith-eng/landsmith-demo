@@ -763,15 +763,15 @@ function lightWord(k, charAt) {
 // few motes of stardust that drift and twinkle out. No box around the word: only the letters glow.
 const stardust = h('div', { id: 'stardust', 'aria-hidden': 'true' }); document.body.append(stardust);
 const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-function mote(x, y) {
-  if (stardust.childElementCount > 70) return;
+function mote(x, y, into = stardust) {
+  if (into.childElementCount > 70) return;
   const m = h('i', { class: 'mote' });
   const a = Math.random() * Math.PI * 2; const d = 6 + Math.random() * 16;
   Object.assign(m.style, { left: `${x}px`, top: `${y}px`, animationDuration: `${900 + Math.random() * 900}ms` });
   m.style.setProperty('--dx', `${Math.cos(a) * d}px`); m.style.setProperty('--dy', `${Math.sin(a) * d - 10 - Math.random() * 10}px`); m.style.setProperty('--s', String(.6 + Math.random() * .9));
-  stardust.append(m); setTimeout(() => m.remove(), 1900);
+  into.append(m); setTimeout(() => m.remove(), 1900);
 }
-function glowWord(el) {
+function glowWord(el, into = stardust) {
   if (!el.dataset.split) { el.replaceChildren(...[...el.textContent].map((c) => h('span', { class: 'ch' }, c))); el.dataset.split = '1'; }
   const letters = [...el.children]; const step = Math.max(28, Math.min(75, 320 / letters.length));
   letters.forEach((c, i) => {
@@ -779,7 +779,7 @@ function glowWord(el) {
     if (stillMotion()) return;
     setTimeout(() => {
       const r = c.getBoundingClientRect(); if (!r.width) return;
-      for (let n = 0; n < 2; n++) mote(r.left + Math.random() * r.width, r.top + r.height * (.25 + Math.random() * .6));
+      for (let n = 0; n < 2; n++) mote(r.left + Math.random() * r.width, r.top + r.height * (.25 + Math.random() * .6), into);
     }, i * step);
   });
 }
@@ -1146,17 +1146,19 @@ ttsEnabled();
 // return. Left alone, the view drifts slowly across the picture, the way an eye rests on a painting.
 const lookBtn = document.getElementById('look');
 lookBtn.addEventListener('click', () => gaze(wallpaper.querySelector('img').getAttribute('src')));
-function gaze(src) {
-  if (!src || document.querySelector('.gaze')) return;
+// opts (for Contemplate): extra (elements laid over the picture), hint (its own words), onTap (instead of returning),
+// onLeave (when it closes). Returns { leave }.
+function gaze(src, { extra = [], hint: hintText = 'Drag to look around · pinch to look closer · tap to return', onTap = null, onLeave = null } = {}) {
+  if (!src || document.querySelector('.gaze')) return null;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const img = h('img', { src, alt: '', draggable: 'false' });
-  const hint = h('div', { class: 'gaze-hint' }, h('span', {}, 'Drag to look around · pinch to look closer · tap to return'));
+  const hint = h('div', { class: 'gaze-hint' }, h('span', {}, hintText));
   const close = h('button', { type: 'button', class: 'gaze-close' }, 'Return');
   // The painting stays alive here too: its moving parts (in the picture's own pixels, moving with it) and the
   // visitors (placed for the picture as it covers the screen, carried to where it is now).
   const live = h('div', { class: 'gaze-live', 'aria-hidden': 'true' });
   const shadows = h('div', { class: 'gaze-world', 'aria-hidden': 'true' }); const lights = h('div', { class: 'gaze-world light', 'aria-hidden': 'true' });
-  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, live, shadows, lights, hint, close);
+  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, live, shadows, lights, ...extra, hint, close);
   document.body.append(box);
   document.documentElement.classList.add('gazing');
   let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false, x0 = 0, y0 = 0;
@@ -1218,7 +1220,7 @@ function gaze(src) {
     if (pts.size < 2) pinch = null;
     if (!pts.size) {
       box.classList.remove('dragging');
-      if (e.type === 'pointerup' && moved < 8 && performance.now() - downAt < 400) leave();
+      if (e.type === 'pointerup' && moved < 8 && performance.now() - downAt < 400) (onTap ?? leave)();
     }
   };
   box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
@@ -1234,9 +1236,107 @@ function gaze(src) {
     box.classList.remove('in'); document.documentElement.classList.remove('gazing');
     liveOut(); creaturesInto(null);
     setTimeout(() => box.remove(), still ? 0 : 600);
-    lookBtn.focus();
+    lookBtn.focus(); onLeave?.();
   }
+  return { leave };
 }
+
+// ── Contemplate: the passage read slowly over the painting, one short line at a time, like lyrics ──
+// The picture fills the screen, alive and drifting as in Look. The narrator reads the idea's substance (the opening,
+// the plain words, the source, the reader's own answer), and the words appear a line at a time, fading in as they
+// are spoken and out as the next line comes, each word's letters glowing gold with stardust as it is said. A tap
+// pauses or goes on; Return ends it. Between passages, a longer silence to think.
+const LYRIC_SKIP = new Set(['note', 'related', 'end', 'question']);
+// A sentence as short lines: breaks after punctuation where possible, about six to ten words a line.
+function lyricLines(text) {
+  const words = [...text.matchAll(/\S+/g)].map((m) => ({ at: m.index, text: m[0] }));
+  const lines = []; let cur = [];
+  words.forEach((w, i) => {
+    cur.push(w);
+    const n = cur.length; const end = /[,;:.!?—)]$/.test(w.text); const left = words.length - i - 1;
+    if ((n >= 6 && end && left > 2) || n >= 10 && left > 2) { lines.push(cur); cur = []; }
+  });
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+async function contemplate() {
+  const panels = [...document.querySelectorAll('.stage .panel')].filter((p) => !LYRIC_SKIP.has(p.dataset.kind));
+  // The opening: only the idea's title and the thinker's name (not the cards for today beneath them).
+  const said = (p) => (p.dataset.kind === 'arrival'
+    ? [p.querySelector('h1')?.textContent, p.querySelector('.name-reveal')?.textContent.split('·')[0]].filter(Boolean).map((t) => t.trim().replace(/[^.!?]$/, '$&.')).join(' ')
+    : spokenText(p));
+  const items = panels.flatMap((p, n) => sentences(said(p)).map((text) => ({ p: n, text })));
+  const src = wallpaper.querySelector('img')?.getAttribute('src');
+  if (!items.length || !src) return;
+  stopReading();
+  const plan = await voicePlan();
+  const lyrics = h('div', { class: 'lyrics', 'aria-live': 'polite' });
+  const dust = h('div', { class: 'lyric-dust', 'aria-hidden': 'true' });
+  const cz = { k: 0, state: 'playing', run: null, line: null, lineIdx: -1, plan, ended: false };
+  const view = gaze(src, {
+    extra: [lyrics, dust], hint: 'Tap to pause · drag or pinch to look', onTap: () => toggle(),
+    onLeave: () => { cz.ended = true; haltCz(); },
+  });
+  if (!view) return;
+  const haltCz = () => { if (cz.run) { cz.run.stop = true; cz.run.wake?.(); } speech?.cancel(); audioEl.pause(); cancelAnimationFrame(cz.raf); };
+  const showLine = (words) => {
+    const old = cz.line; if (old) { old.classList.remove('in'); old.classList.add('out'); setTimeout(() => old.remove(), 1100); }
+    const line = h('div', { class: 'lyric' }, ...words.flatMap((w, i) => [i ? ' ' : '', h('span', { class: 'w' }, w.text)]));
+    lyrics.append(line); requestAnimationFrame(() => requestAnimationFrame(() => line.classList.add('in')));
+    cz.line = line; return [...line.querySelectorAll('span.w')];
+  };
+  // Follow the voice: which line, which word, from the letter being spoken.
+  const follow = (item, lines, charAt) => {
+    let li = 0; for (let j = 0; j < lines.length && lines[j][0].at <= charAt; j++) li = j;
+    if (li !== cz.lineIdx) { cz.lineIdx = li; cz.spans = showLine(lines[li]); cz.litIdx = -1; }
+    let wi = -1; lines[li].forEach((w, j) => { if (w.at <= charAt) wi = j; });
+    if (wi >= 0 && wi !== cz.litIdx) { cz.litIdx = wi; glowWord(cz.spans[wi], dust); }
+  };
+  const fade = (ms) => new Promise((r) => { const t = setTimeout(r, ms); cz.run.wake = () => { clearTimeout(t); r(); }; });
+  async function play() {
+    const run = cz.run = { stop: false, wake: null };
+    while (cz.k < items.length && !run.stop) {
+      const item = items[cz.k]; const lines = lyricLines(item.text); cz.lineIdx = -1;
+      follow(item, lines, 0);
+      if ('el' in cz.plan) {
+        try {
+          const clip = await fetchTimed(item.text, cz.plan.el);
+          if (cz.k + 1 < items.length) fetchTimed(items[cz.k + 1].text, cz.plan.el).catch(() => {});
+          if (run.stop) return;
+          const step = () => {
+            const t = audioEl.currentTime; let at = 0;
+            if (clip.starts?.length) { while (at + 1 < clip.starts.length && clip.starts[at + 1] <= t + .04) at++; } else if (audioEl.duration) at = Math.floor((t / audioEl.duration) * item.text.length);
+            follow(item, lines, at); cz.raf = requestAnimationFrame(step);
+          };
+          cz.raf = requestAnimationFrame(step);
+          await playClip(URL.createObjectURL(clip.blob), run);
+          cancelAnimationFrame(cz.raf);
+        } catch { cz.plan = { phone: null }; continue; }
+      } else await sayPhone(item.text, cz.plan.phone, run, (at) => follow(item, lines, at));
+      if (run.stop || cz.state === 'paused') return;
+      const next = items[cz.k + 1]; cz.k++;
+      await fade(next && next.p !== item.p ? 2600 : 700); // a longer silence between passages
+    }
+    if (!run.stop && !cz.ended) {
+      showLine([{ at: 0, text: 'Stay as long as you like.' }]);
+      setTimeout(() => cz.line?.classList.remove('in'), 4000);
+    }
+  }
+  function toggle() {
+    if (cz.ended) return;
+    if (cz.state === 'playing') {
+      cz.state = 'paused';
+      if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltCz();
+      lyrics.classList.add('paused');
+    } else {
+      cz.state = 'playing'; lyrics.classList.remove('paused');
+      if (cz.run && !cz.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
+      else play();
+    }
+  }
+  play();
+}
+document.getElementById('contemplate')?.addEventListener('click', () => contemplate());
 
 function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
   stopReading();
