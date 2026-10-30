@@ -1,6 +1,7 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
+import { startCreatures, summon } from '/creatures.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
 
@@ -1123,7 +1124,7 @@ function renderStage(node, panels, { links = [], startAt = 0, onSource = null, b
   stopReading();
   const wrap = h('div', { class: `stage field-${node.field}`, 'data-node': node.id }, panels);
   render(wrap);
-  document.documentElement.classList.add('staged');
+  document.documentElement.classList.add('staged'); wake();
   setWallpaper(background, backgroundMax);
   setMotif(motifFor(node), wrap);
   motifLevel(1);
@@ -2620,5 +2621,22 @@ function offerTour() {
 }
 
 intro();
+startCreatures();
+window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('cat' | 'bird' | 'dragonfly')
+if (params.get('visit')) setTimeout(() => summon(params.get('visit')), 1500);
+
+// Calm: while an idea is being read, the buttons (corner, menu, the card's links, the rail) fade away after a few
+// seconds untouched, leaving the words on the picture. Any touch, key or mouse movement brings them back.
+let calmTimer = 0;
+function wake() {
+  const d = document.documentElement; d.classList.remove('calm'); clearTimeout(calmTimer);
+  calmTimer = setTimeout(() => {
+    if (d.classList.contains('staged') && !d.classList.contains('map-full') && !document.querySelector('.tour, .voices, .gaze, .keep-bar.on')
+      && !document.activeElement?.closest?.('textarea, input, select')) d.classList.add('calm');
+  }, 3500);
+}
+for (const ev of ['pointerdown', 'keydown', 'mousemove']) addEventListener(ev, wake, { passive: true });
+document.addEventListener('scroll', () => { if (scrollY < 40) wake(); }, { passive: true }); // back at the top: show them again
+wake();
 if (store.get('continuum.join')) joinFromLink(store.get('continuum.join'));
 else arrive();

@@ -785,3 +785,38 @@ details.wt-part summary, details.diary-block summary { cursor: pointer; color: v
   background: rgba(10,16,14,.42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: inherit; font: inherit; cursor: pointer; }
 .think-door .t { font-family: var(--display); font-size: 1.18rem; }
 .think-door:active { transform: scale(.99); }
+
+/* Visitors on the pictures (creatures.js): shadows on the painting, behind the words, never in the way of a tap. */
+#creatures { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.creature { position: absolute; left: 0; top: 0; overflow: visible; will-change: transform;
+  filter: drop-shadow(0 0 1.2px rgba(255, 255, 255, .45)) drop-shadow(0 2px 3px rgba(0, 0, 0, .25)); }
+.creature > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
+/* The cat: legs in pairs, a slight bob, the tail always moving; standing still to look about. */
+.walker .leg { transform-box: fill-box; transform-origin: top center; animation: cat-step .62s ease-in-out infinite alternate; }
+.walker .leg.b { animation-delay: -.31s; }
+.walker .cat { animation: cat-bob .31s ease-in-out infinite alternate; }
+.walker .tail { transform-box: fill-box; transform-origin: 100% 100%; animation: cat-tail 2.4s ease-in-out infinite alternate; }
+.walker.still .leg, .walker.still .cat { animation-play-state: paused; }
+.walker.still .leg { animation: none; }
+.walker.still .head { transform-box: fill-box; transform-origin: center; animation: cat-look 3s ease-in-out infinite alternate; }
+@keyframes cat-step { from { transform: rotate(-17deg); } to { transform: rotate(17deg); } }
+@keyframes cat-bob { from { transform: scaleX(var(--flip, 1)) translateY(0); } to { transform: scaleX(var(--flip, 1)) translateY(1.2px); } }
+@keyframes cat-tail { from { transform: rotate(-8deg); } to { transform: rotate(14deg); } }
+@keyframes cat-look { from { transform: translate(0, 0); } to { transform: translate(1.5px, -1px); } }
+/* The bird: wings beating in flight; folded, with feet, when it lands; a peck and a hop. */
+.flier .wing { transform-box: fill-box; transform-origin: 30% 100%; animation: bird-flap .2s ease-in-out infinite alternate; }
+.flier .wing.far { animation-delay: -.03s; }
+.flier.perched .wing, .flier.flying .folded, .flier.flying .feet { display: none; }
+.flier .head { transform-box: fill-box; transform-origin: 20% 80%; transition: transform .12s ease; }
+.flier.peck .head { transform: rotate(38deg) translate(1px, 3px); }
+.flier .bird { transition: translate .16s ease; }
+.flier.hop .bird { translate: 0 -5px; }
+@keyframes bird-flap { from { transform: scaleY(1); } to { transform: scaleY(-.75); } }
+/* The dragonfly: wings a blur of light. */
+.darter .dw { animation: dragon-wing .07s linear infinite alternate; }
+@keyframes dragon-wing { from { opacity: .95; } to { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { #creatures { display: none; } }
+
+/* Calm: while an idea is read, the buttons fade to nothing after a few seconds untouched; a touch brings them back. */
+html .bar, html .corner, html .dock, html .rail { transition: opacity .8s ease; }
+html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0; pointer-events: none; }
