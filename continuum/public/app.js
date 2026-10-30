@@ -2922,8 +2922,8 @@ intro();
 startCreatures();
 startLiving();
 window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('sailboat'), or ?visit=sailboat (names in creatures.js)
-// A link with ?visit=fish (or sailboat, frog…): opens a painting where that visitor belongs, full screen, and brings it.
-// Forgiving: stray marks pasted with the link (a "**", a full stop) and plurals ("frogs") are ignored.
+// A link with ?visit=fish (or sailboat, bees…): opens a painting where that visitor belongs, full screen, and brings it.
+// Forgiving: stray marks pasted with the link (a "**", a full stop) and plurals ("bees" for "bee") are ignored.
 const visitName = (() => {
   const raw = (params.get('visit') ?? '').toLowerCase().replace(/[^a-z]/g, '');
   return raw && (sceneFor(raw) ? raw : sceneFor(raw.replace(/e?s$/, '')) ? raw.replace(/e?s$/, '') : raw);
