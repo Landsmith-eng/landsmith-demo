@@ -16,7 +16,7 @@
 // picture's width (a river to one side).
 // paper: a page or open book [x0, y0, x1, y1] where a few lines are written; board: a chalkboard for equations;
 // chart: a dark sky or dome where equations and orbits are chalked; rays: where light comes in (x, y) and its
-// direction in degrees from straight down (+ leans right).
+// direction in degrees from straight down (+ leans right); warm: from a flame (warm, flickering with it).
 // live: parts of the painting itself that move a little, at random: r [x0, y0, x1, y1]; m: bob (a boat on the water),
 //   sway (branches, laundry, flowers, reeds; p is the fixed point, as fractions of r), breathe (a sleeping or resting
 //   animal), peck (a bird's quick dip), flicker (a flame), spin (a whole wheel in view; p its hub); soft: gentler still.
@@ -54,7 +54,7 @@ export const SCENES = {
   'nodes/nietzsche_amor_fati': { k: 'sky garden out' },
   'nodes/nozick_experience_machine': { k: 'in', rays: { x: .88, y: .3, a: -58 } },
   'nodes/schopenhauer_will_source_of_suffering': { k: 'lake garden', water: [.8, 1] },
-  'nodes/seneca_evening_review': { k: 'in dark', paper: [.27, .795, .66, .86], rays: { x: .86, y: .62, a: -70 }, live: [{ r: [.71, .56, .84, .67], m: 'flicker' }] },
+  'nodes/seneca_evening_review': { k: 'in dark', paper: [.27, .795, .66, .86], rays: { x: .78, y: .69, a: -70, warm: true }, live: [{ r: [.73, .66, .83, .76], m: 'flicker' }] },
   'nodes/spinoza_freedom_understanding_necessity': { k: 'lake garden out', water: [.72, 1], shore: .74 },
   'nodes/zeno_live_according_to_nature': { k: 'sky out' },
   // The rooms
@@ -62,7 +62,7 @@ export const SCENES = {
   'rooms/americas': { k: 'lake garden', water: [.5, 1], shore: .9 },
   'rooms/art': { k: 'in' },
   'rooms/culture': { k: 'in' },
-  'rooms/early_modern': { k: 'in dark', live: [{ r: [.27, .5, .36, .61], m: 'flicker' }, { r: [.5, .68, .7, .86], m: 'breathe' }] },
+  'rooms/early_modern': { k: 'in dark', live: [{ r: [.2, .47, .29, .56], m: 'flicker' }, { r: [.5, .68, .7, .86], m: 'breathe' }] },
   'rooms/east_asia': { k: 'lake garden out', water: [.66, .9], shore: .88, live: [{ r: [.64, .57, .84, .83], m: 'breathe' }] },
   'rooms/greece_rome': { k: 'lake garden out', water: [.6, 1], shore: .8, live: [{ r: [.63, -.02, .88, .27], m: 'sway', p: [1, 0] }, { r: [.64, .54, .84, .81], m: 'breathe' }], canopy: [.65, 0, .87, .25] },
   'rooms/india': { k: 'lake boats garden', water: [.55, 1], shore: .78 },
@@ -100,7 +100,7 @@ export const SCENES = {
   // The tabs
   'tabs/gallery': { k: 'in', rays: { x: .2, y: .08, a: 28 } },
   'tabs/gallery_empty': { k: 'in', rays: { x: .2, y: .08, a: 28 } },
-  'tabs/journal': { k: 'in dark', live: [{ r: [.56, .58, .69, .76], m: 'flicker' }] },
+  'tabs/journal': { k: 'in dark', live: [{ r: [.81, .6, .9, .7], m: 'flicker' }] },
   'tabs/practice': { k: 'lake garden', water: [.45, 1], shore: .9, live: [{ r: [.12, .78, .32, 1], m: 'sway', p: [.5, 1] }] },
   'tabs/review': { k: 'lake dark', water: [0, 1] },
 };

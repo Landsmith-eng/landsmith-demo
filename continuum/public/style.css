@@ -921,3 +921,19 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 @keyframes htail { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
 .flutter .bw { animation-duration: var(--beat, .16s); }
 .creature.school { opacity: .3; }
+
+/* A distant bird: small, soft, crossing slowly; flapping, then gliding. */
+.creature.farbird { opacity: .28; filter: blur(.45px); }
+.farbird .w { transform-box: fill-box; transform-origin: center; animation: flock-flap .42s ease-in-out infinite alternate; }
+.farbird.gliding .w { animation-play-state: paused; }
+/* A flame's warm light (living.js), and rays from a flame. */
+.live-glow { position: absolute; border-radius: 50%; pointer-events: none; will-change: opacity, transform;
+  background: radial-gradient(circle, rgba(255, 196, 110, .34) 0, rgba(255, 150, 60, .18) 28%, rgba(240, 110, 40, .07) 50%, rgba(240, 110, 40, 0) 70%); }
+.creature.rays.warm .beam { background: linear-gradient(to bottom, rgba(255, 190, 110, .3), rgba(255, 150, 70, .14) 55%, rgba(255, 140, 60, 0)); }
+/* Above the words, for a butterfly or a bee settled on a letter. */
+#creatures-perch { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; mix-blend-mode: multiply; }
+#creatures-perch.dark { mix-blend-mode: screen; }
+#creatures-perch .creature { opacity: .55; }
+#creatures-perch.dark .creature { filter: invert(1); opacity: .4; }
+.bee.sitting .bw2 { animation: none; opacity: .7; }
+@media (prefers-reduced-motion: reduce) { #creatures-perch { display: none; } }

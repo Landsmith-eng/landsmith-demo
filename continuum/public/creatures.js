@@ -15,7 +15,8 @@ const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const busy = () => document.hidden || document.documentElement.matches('.map-full') || document.querySelector('.tour, .intro');
 
 // Two layers: shadows (blended into the painting) and light things (an egret, white sails) laid softly on top.
-let layer = null; let lightLayer = null; let timer = 0; let active = null; let lastTouch = performance.now();
+let layer = null; let lightLayer = null; let perch = null; // perch: above the words, for a butterfly or bee on a letter
+ let timer = 0; let active = null; let lastTouch = performance.now();
 function svg(viewBox, w, inner) {
   const s = document.createElementNS(NS, 'svg');
   s.setAttribute('viewBox', viewBox); s.setAttribute('width', w); s.setAttribute('aria-hidden', 'true');
@@ -59,65 +60,41 @@ function waterBand(sc, from = 0, to = 1) {
   return bottom > top + 8 ? [top, bottom] : null;
 }
 
-// ── A bird: flies in on a curve, lands on the top edge of the menu, pecks, hops, and flies off. ──
-async function bird(run, sc) {
-  if (!groundBelow(sc)) return flyOver(run); // water at the bottom of the picture: no landing there
-  const el = svg('0 0 60 40', 50, `
-    <g class="bird">
-      <path d="M19 23 L7 18.5 L8.5 27.5Z" fill="${INK}"/>
-      <ellipse cx="30" cy="24" rx="12.5" ry="6.6" fill="${INK}"/>
-      <g class="head"><circle cx="42" cy="19" r="5.2" fill="${INK}"/><path d="M46.5 17.6 L53 19.6 L46.5 21.4Z" fill="${INK}"/></g>
-      <path class="wing far" d="M27 20 C27 9 33 2 38 -3 C37 7 35 14 33 21Z" fill="rgba(40,46,42,.6)"/>
-      <path class="wing" d="M23 21 C25 4 35 -4 44 -7 C38 6 36 15 35 22Z" fill="${INK}"/>
-      <path class="folded" d="M21 22 C28 17.5 36 18.5 38.5 23 C32 26.5 26 26.5 21 22Z" fill="rgba(40,46,42,.9)"/>
-      <path class="feet" d="M28 30 L27 37 M33 30 L33.5 37" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/>
-    </g>`);
-  el.classList.add('creature', 'flier', 'flying');
-  const right = Math.random() < .5; // flying toward the right
-  if (!right) el.style.setProperty('--flip', '-1');
-  layer.append(el);
-  const W = innerWidth; const land = { x: rnd(W * .2, W * .75), y: dockTop() - 50 * 37 / 60 }; // feet on the menu's edge
-  const start = { x: right ? -60 : W + 20, y: rnd(innerHeight * .05, innerHeight * .3) };
-  const ctrl = { x: (start.x + land.x) / 2, y: Math.min(start.y, land.y) - rnd(0, 60) };
-  const place = (x, y, tilt = 0) => { el.style.transform = `translate(${x}px, ${y}px) rotate(${tilt}deg)`; };
-  const curve = (a, c, b, ms, ease) => frames(run, (t) => {
-    const k = Math.min(1, t / ms); const e = ease(k);
-    const x = (1 - e) ** 2 * a.x + 2 * (1 - e) * e * c.x + e * e * b.x;
-    const y = (1 - e) ** 2 * a.y + 2 * (1 - e) * e * c.y + e * e * b.y;
-    place(x, y, (1 - k) * (right ? 8 : -8)); return k < 1;
+// ── A bird far off: a small, soft shape crossing the sky slowly, now flapping, now gliding, rising and falling a
+// little. Far away in the painting, so no detail and no landing. ──
+async function bird(run) {
+  const W = innerWidth, H = innerHeight; const size = rnd(9, 13);
+  const el = svg('0 0 20 10', size, `<path class="w" d="M1 6 Q5 1.5 10 6 Q15 1.5 19 6" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linecap="round"/>`);
+  el.classList.add('creature', 'farbird'); layer.append(el);
+  const right = Math.random() < .5; const y0 = rnd(H * .08, H * .4); const speed = rnd(.012, .02); const span = W + 60; const drift = noise();
+  let glideUntil = 0;
+  await frames(run, (t) => {
+    if (t > glideUntil && Math.random() < .004) { glideUntil = t + rnd(1200, 2600); el.classList.add('gliding'); }
+    if (t > glideUntil) el.classList.remove('gliding');
+    const d = t * speed; const x = right ? -30 + d : W + 10 - d;
+    el.style.transform = `translate(${x}px, ${y0 + drift(t) * 14}px)`;
+    return d < span;
   });
-  await curve(start, ctrl, land, rnd(3800, 5200), (k) => 1 - (1 - k) ** 2.2); // slowing to land
-  el.classList.replace('flying', 'perched'); place(land.x, land.y);
-  // Bird things: pecking, looking about, a hop, a shake of the feathers.
-  for (let i = 0; i < 3 + Math.round(rnd(0, 3)); i++) {
-    await wait(rnd(600, 1500), run);
-    const what = Math.random();
-    if (what < .5) { el.classList.add('peck'); await wait(260, run); el.classList.remove('peck'); }
-    else if (what < .75) { el.classList.add('look'); await wait(rnd(700, 1400), run); el.classList.remove('look'); }
-    else if (what < .9) { land.x += right ? 12 : -12; el.classList.add('hop'); place(land.x, land.y); await wait(320, run); el.classList.remove('hop'); }
-    else { el.classList.add('ruffle'); await wait(500, run); el.classList.remove('ruffle'); }
-  }
-  await wait(rnd(900, 2000), run);
-  el.classList.replace('perched', 'flying');
-  const away = { x: right ? W + 60 : -80, y: rnd(-80, innerHeight * .15) };
-  await curve(land, { x: land.x + (right ? 60 : -60), y: land.y - 40 }, away, rnd(2600, 3400), (k) => k * k);
   el.remove();
 }
 
+// A letter of the page's words to land on (a range over one letter, in view and clear of the bars), or null.
+function letterSpot() {
+  const view = document.getElementById('view'); if (!view || document.querySelector('.gaze')) return null;
+  const walk = document.createTreeWalker(view, NodeFilter.SHOW_TEXT); const nodes = [];
+  while (walk.nextNode() && nodes.length < 400) { const n = walk.currentNode; if (/\p{L}{3}/u.test(n.textContent) && !n.parentElement.closest('button, a, input, textarea, select')) nodes.push(n); }
+  const top = 90, bottom = dockTop() - 30;
+  for (let i = 0; i < 25 && nodes.length; i++) {
+    const n = nodes[Math.floor(Math.random() * nodes.length)]; const at = [...n.textContent.matchAll(/\p{L}/gu)].map((m) => m.index);
+    const k = at[Math.floor(Math.random() * at.length)]; const range = document.createRange(); range.setStart(n, k); range.setEnd(n, k + 1);
+    const r = range.getBoundingClientRect(); if (r.width > 2 && r.top > top && r.bottom < bottom && r.left > 12 && r.right < innerWidth - 12) return range;
+  }
+  return null;
+}
+// Where a letter is now (the page may have scrolled): its top middle.
+const spotOf = (range) => { const r = range.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height * .3, ok: r.width > 0 && r.top > 60 && r.bottom < innerHeight - 40 }; };
 // Where the bottom of the picture (the top of the menu) is ground, not water: only there may anything walk or land.
 const groundBelow = (sc) => !(sc.water && sc.water[1] >= .9);
-// A bird crossing over the water without landing: in on one side, off the other, a gentle rise and fall.
-async function flyOver(run) {
-  const el = svg('0 0 60 40', 40, `<g class="bird"><path d="M19 23 L7 18.5 L8.5 27.5Z" fill="${INK}"/><ellipse cx="30" cy="24" rx="12.5" ry="6.6" fill="${INK}"/>
-    <g class="head"><circle cx="42" cy="19" r="5.2" fill="${INK}"/><path d="M46.5 17.6 L53 19.6 L46.5 21.4Z" fill="${INK}"/></g>
-    <path class="wing far" d="M27 20 C27 9 33 2 38 -3 C37 7 35 14 33 21Z" fill="rgba(40,46,42,.6)"/><path class="wing" d="M23 21 C25 4 35 -4 44 -7 C38 6 36 15 35 22Z" fill="${INK}"/></g>`);
-  el.classList.add('creature', 'flier', 'flying'); const right = Math.random() < .5; if (!right) el.style.setProperty('--flip', '-1');
-  layer.append(el);
-  const W = innerWidth, H = innerHeight; const y0 = rnd(H * .12, H * .5); const amp = rnd(15, 45); const span = W + 140; const speed = rnd(.06, .09);
-  await frames(run, (t) => { const d = t * speed; const x = right ? -70 + d : W + 70 - d; el.style.transform = `translate(${x}px, ${y0 + Math.sin(d / 120) * amp - d * .05}px)`; return d < span; });
-  el.remove();
-}
-
 // ── Birds passing over: a loose line of four to eight, high in the sky, wings beating out of step. ──
 async function flock(run) {
   const W = innerWidth, H = innerHeight; const n = Math.round(rnd(4, 8)); const right = Math.random() < .5;
@@ -438,39 +415,48 @@ async function leaves(run, sc) {
 
 // ── A butterfly: wanders over the flowers or the garden, never in a straight line, settles a moment, flutters off. ──
 async function butterfly(run, sc) {
-  // One to three, each its own colour; with two or more, one sometimes follows another in a rising spiral.
+  // One to three, each its own colour, well apart; slow and wandering. Now and then one settles on a letter of the
+  // page's words for a while, wings slowly opening and closing, then flies on.
   const W = innerWidth, H = innerHeight; const area = sc.flowers ? rectOf(sc.flowers, sc) : { x: W * .1, y: H * .35, w: W * .8, h: H * .4 };
   const COLOURS = ['rgba(196,112,28,.88)', 'rgba(170,140,40,.88)', 'rgba(60,90,150,.85)', 'rgba(140,60,40,.85)', 'rgba(90,70,30,.85)'];
-  const n = Math.random() < .45 ? 1 : Math.random() < .7 ? 2 : 3;
+  const n = Math.random() < .5 ? 1 : Math.random() < .75 ? 2 : 3;
   const flies = Array.from({ length: n }, (_, i) => {
-    const c = COLOURS[Math.floor(Math.random() * COLOURS.length)];
-    const el = svg('0 0 24 20', rnd(14, 21), `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="${c}"/>
+    const c = COLOURS[Math.floor(Math.random() * COLOURS.length)]; const size = rnd(14, 20);
+    const el = svg('0 0 24 20', size, `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="${c}"/>
       <path class="bw r" d="M12 10 C18 1 23 2 22 8 C22 12 17 13 12 10 C17 14 20 19 16 18 C14 17 13 14 12 10Z" fill="${c}"/>
       <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>`);
-    el.classList.add('creature', 'flutter'); el.style.setProperty('--beat', `${rnd(.13, .19)}s`); layer.append(el);
+    el.classList.add('creature', 'flutter'); el.style.setProperty('--beat', `${rnd(.16, .23)}s`); layer.append(el);
     const fromLeft = Math.random() < .5;
-    return { el, x: fromLeft ? -20 - i * 30 : W + 20 + i * 30, y: rnd(area.y, area.y + area.h), nx: noise(), ny: noise(), target: null, rest: 0, legs: Math.round(rnd(4, 8)), done: false, lead: i > 0 && Math.random() < .6 ? 0 : -1 };
+    return { el, size, x: fromLeft ? -20 : W + 20, y: rnd(H * .2, H * .7), nx: noise(), ny: noise(), target: null, rest: 0, legs: Math.round(rnd(4, 7)), done: false, delay: i * rnd(3000, 7000), perched: null, mayLand: Math.random() < .55 };
   });
-  const pick = () => ({ x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h) });
-  flies.forEach((f) => { f.target = pick(); });
+  // Each its own part of the flowers, so they keep apart.
+  const pick = (i) => { const w = area.w / n; return { x: rnd(area.x + w * i, area.x + w * (i + 1)), y: rnd(area.y, area.y + area.h) }; };
+  flies.forEach((f, i) => { f.target = pick(i); f.i = i; });
   await frames(run, (t) => {
     let flying = false;
     for (const f of flies) {
       if (f.done) continue; flying = true;
-      if (f.rest > 0) { if (--f.rest === 0) f.el.classList.remove('resting'); continue; }
-      // A follower chases the first, circling it.
-      const chase = f.lead >= 0 && !flies[f.lead].done && !flies[f.lead].rest;
-      const tx = chase ? flies[f.lead].x + Math.cos(t / 260) * 16 : f.target.x, ty = chase ? flies[f.lead].y + Math.sin(t / 260) * 12 : f.target.y;
-      const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
-      if (!chase && d < 8) {
-        if (--f.legs <= 0) { f.target = { x: Math.random() < .5 ? -50 : W + 50, y: rnd(0, H * .4) }; f.leaving = true; }
-        else { if (Math.random() < .35) { f.rest = Math.round(rnd(60, 160)); f.el.classList.add('resting'); } f.target = pick(); }
+      if (t < f.delay) continue;
+      if (f.rest > 0) {
+        f.rest--;
+        if (f.perched) { const p = spotOf(f.perched); if (!p.ok) f.rest = 0; else f.el.style.transform = `translate(${p.x - f.size / 2}px, ${p.y - f.size * .7}px)`; }
+        if (f.rest === 0) { f.el.classList.remove('resting'); if (f.perched) { f.perched = null; f.target = pick(f.i); setTimeout(() => layer.append(f.el), 1500); } }
+        continue;
       }
-      const sp = chase ? 1.5 : f.leaving ? 1.6 : 1.1;
-      f.x += (dx / (d || 1)) * sp + f.nx(t) * 1.4; f.y += (dy / (d || 1)) * sp + f.ny(t * 1.3) * 1.6 + Math.sin(t / 140) * .6;
+      const goal = f.landing ? spotOf(f.landing) : null;
+      const tx = goal ? goal.x - f.size / 2 : f.target.x, ty = goal ? goal.y - f.size * .7 : f.target.y;
+      const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
+      if (d < 6) {
+        if (f.landing) { f.perched = f.landing; f.landing = null; f.rest = Math.round(rnd(240, 480)); f.el.classList.add('resting'); continue; }
+        if (--f.legs <= 0) { f.target = { x: Math.random() < .5 ? -50 : W + 50, y: rnd(0, H * .4) }; f.leaving = true; }
+        else if (f.mayLand && (f.landing = letterSpot())) { f.mayLand = false; perch.append(f.el); }
+        else { if (Math.random() < .3) { f.rest = Math.round(rnd(90, 200)); f.el.classList.add('resting'); } f.target = pick(f.i); }
+      }
+      const sp = f.leaving ? .9 : f.landing ? .7 : .6; const wob = f.landing && d < 40 ? .3 : 1;
+      f.x += (dx / (d || 1)) * sp + f.nx(t) * .9 * wob; f.y += (dy / (d || 1)) * sp + (f.ny(t * 1.3) * 1.1 + Math.sin(t / 160) * .5) * wob;
       f.el.style.transform = `translate(${f.x}px, ${f.y}px)`;
-      if (f.leaving && (f.x < -40 || f.x > W + 40)) { f.done = true; f.el.remove(); flies.forEach((g) => { if (g.lead >= 0 && flies[g.lead] === f) g.lead = -1; }); }
-      if (t > 60000) { f.done = true; f.el.remove(); }
+      if (f.leaving && (f.x < -40 || f.x > W + 40)) { f.done = true; f.el.remove(); }
+      if (t > 90000) { f.done = true; f.el.remove(); }
     }
     return flying;
   });
@@ -484,19 +470,31 @@ async function bees(run, sc) {
   const all = Array.from({ length: n }, () => {
     const el = svg('0 0 14 10', rnd(8, 11), `<ellipse cx="7" cy="6" rx="4.4" ry="2.8" fill="rgba(60,45,10,.9)"/><path d="M5.5 3.6 L5.5 8.4 M8 3.4 L8 8.6" stroke="rgba(230,190,60,.9)" stroke-width="1"/><ellipse class="bw2" cx="6.5" cy="2.6" rx="2.6" ry="1.7" fill="rgba(240,245,255,.8)"/>`);
     el.classList.add('creature', 'bee'); layer.append(el);
-    return { el, x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h), tx: 0, ty: 0, hover: 0, nx: noise(), ny: noise() };
+    return { el, x: rnd(area.x, area.x + area.w), y: rnd(area.y, area.y + area.h), tx: 0, ty: 0, hover: 0, nx: noise(), ny: noise(), mayLand: Math.random() < .4, landing: null, perched: null, sit: 0 };
   });
   all.forEach((b) => { b.tx = b.x; b.ty = b.y; b.el.classList.add('gone'); });
   await wait(30, run); all.forEach((b) => { b.el.style.transition = 'opacity 1.2s'; b.el.classList.remove('gone'); });
   const until = rnd(14000, 22000);
   await frames(run, (t) => {
     for (const b of all) {
+      // On a letter: sits, wings still, crawling a hair now and then; then off to the flowers again.
+      if (b.perched) {
+        const p = spotOf(b.perched); if (!p.ok) b.sit = 0;
+        b.el.style.transform = `translate(${p.x - 5 + Math.sin(t / 900) * .8}px, ${p.y - 7}px)`;
+        if (--b.sit <= 0) { b.perched = null; b.el.classList.remove('sitting'); b.tx = rnd(area.x, area.x + area.w); b.ty = rnd(area.y, area.y + area.h); setTimeout(() => layer.append(b.el), 1200); }
+        continue;
+      }
+      if (b.landing) { const p = spotOf(b.landing); b.tx = p.x - 5; b.ty = p.y - 7; }
       if (b.hover > 0) b.hover--;
-      else if (Math.hypot(b.tx - b.x, b.ty - b.y) < 3) { b.hover = Math.round(rnd(20, 90)); b.tx = rnd(area.x, area.x + area.w); b.ty = rnd(area.y, area.y + area.h); }
-      else { const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy); b.x += dx / d * 2.4; b.y += dy / d * 2.4; }
+      else if (Math.hypot(b.tx - b.x, b.ty - b.y) < 3) {
+        if (b.landing) { b.perched = b.landing; b.landing = null; b.sit = Math.round(rnd(150, 300)); b.el.classList.add('sitting'); continue; }
+        b.hover = Math.round(rnd(20, 90));
+        if (b.mayLand && t > 3000 && (b.landing = letterSpot())) { b.mayLand = false; perch.append(b.el); }
+        else { b.tx = rnd(area.x, area.x + area.w); b.ty = rnd(area.y, area.y + area.h); }
+      } else { const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy); const sp = b.landing ? 1.6 : 2.4; b.x += dx / d * Math.min(sp, d); b.y += dy / d * Math.min(sp, d); }
       b.el.style.transform = `translate(${b.x + b.nx(t * 4) * 3}px, ${b.y + b.ny(t * 5) * 3}px)`;
     }
-    return t < until;
+    return t < until || all.some((b) => b.perched || b.landing);
   });
   for (const b of all) { b.el.style.transition = 'opacity 1.2s'; b.el.classList.add('gone'); }
   await wait(1300, run); all.forEach((b) => b.el.remove());
@@ -535,7 +533,8 @@ async function hummingbird(run, sc) {
 // ── Rays of light: through the painted window, doorway or trees, soft beams brighten, drift a little, and fade. ──
 async function rays(run, sc) {
   const r = sc.rays; const at = rectOf([r.x, r.y, r.x, r.y], sc); const H = innerHeight;
-  const box = document.createElement('div'); box.className = 'creature rays gone'; lightLayer.append(box);
+  const box = document.createElement('div'); box.className = `creature rays gone${r.warm ? ' warm' : ''}`; lightLayer.append(box);
+  const flame = candle();
   const beams = Array.from({ length: Math.round(rnd(3, 5)) }, (_, i, arr) => {
     const b = document.createElement('div'); b.className = 'beam';
     const width = rnd(28, 70); const len = H * rnd(.7, 1.1);
@@ -545,10 +544,24 @@ async function rays(run, sc) {
   const until = rnd(16000, 24000);
   await wait(30, run); box.style.transition = 'opacity 4s ease'; box.classList.remove('gone');
   await frames(run, (t) => {
-    for (const x of beams) { x.b.style.transform = `rotate(${x.base + x.n(t) * 2.2}deg)`; x.b.style.opacity = String(x.op * (.65 + .35 * x.n(t * 1.7 + 999))); }
+    for (const x of beams) {
+      x.b.style.transform = `rotate(${x.base + x.n(t) * (r.warm ? .8 : 2.2)}deg)`;
+      x.b.style.opacity = String(r.warm ? x.op * flame(t) : x.op * (.65 + .35 * x.n(t * 1.7 + 999))); // a flame's light breathes with it
+    }
     return t < until;
   });
   box.classList.add('gone'); await wait(4000, run); box.remove();
+}
+
+// A candle's light, 0..1 around .8: a quick, uneven flutter over a slow sway, and now and then a gutter (a dip that
+// shivers back), the way a flame moves in a still room.
+export function candle() {
+  const ph = [Math.random() * 6, Math.random() * 6, Math.random() * 6]; let gutter = -1e9; let next = rnd(4000, 9000);
+  return (t) => {
+    if (t > next) { gutter = t; next = t + rnd(5000, 12000); }
+    const g = t - gutter; const dip = g < 700 ? Math.sin(g / 700 * Math.PI) * (.28 + .06 * Math.sin(g / 23)) : 0;
+    return Math.max(.35, .8 + .07 * Math.sin(t * .0072 + ph[0]) + .05 * Math.sin(t * .0193 + ph[1]) + .035 * Math.sin(t * .041 + ph[2]) - dip);
+  };
 }
 
 // ── Ripples: on the water, a ring or two spreads and fades, as if a fish rose or a drop fell; one, then another. ──
@@ -598,7 +611,7 @@ const equations = (run, sc) => writing(run, sc, sc.board ? 'board' : 'chart');
 
 // Who may visit which picture, and how often (weights).
 const VISITORS = [
-  { name: 'bird', fn: bird, w: 1.5, ok: (s) => s.has('out') || s.has('garden') || s.has('sea') || s.has('lake') },
+  { name: 'bird', fn: bird, w: 1.5, ok: (s) => s.has('sky') },
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
   { name: 'dragonfly', fn: dragonfly, w: 1, ok: (s) => s.has('garden') || s.has('lake') },
   { name: 'sailboat', fn: sailboat, w: 2, ok: (s) => s.has('boats') && s.water && (s.live ?? []).some((x) => x.m === 'bob' && !x.soft) }, // only among painted boats
@@ -620,7 +633,7 @@ const VISITORS = [
 ];
 let last = null;
 async function go(v, sc) {
-  layer.classList.toggle('dark', sc.has('dark'));
+  layer.classList.toggle('dark', sc.has('dark')); perch.classList.toggle('dark', sc.has('dark'));
   const run = active = { stopped: false, raf: 0, cancel: [] };
   try { await v.fn(run, sc); } catch { /* a visitor never breaks the page */ }
   if (active === run) active = null;
@@ -645,7 +658,7 @@ function schedule(ms) {
 function shoo() {
   if (!active) return;
   active.stopped = true; cancelAnimationFrame(active.raf); active.cancel.forEach((f) => f());
-  layer.replaceChildren(); lightLayer.replaceChildren(); active = null;
+  layer.replaceChildren(); lightLayer.replaceChildren(); perch.replaceChildren(); active = null;
 }
 
 // Starts the visits, the first after about ten seconds. The page stays the same if this is never called.
@@ -654,6 +667,7 @@ export function startCreatures() {
   layer = document.createElement('div'); layer.id = 'creatures'; layer.setAttribute('aria-hidden', 'true');
   lightLayer = document.createElement('div'); lightLayer.id = 'creatures-light'; lightLayer.setAttribute('aria-hidden', 'true');
   const motif = document.getElementById('motif'); if (motif) motif.after(layer, lightLayer); else document.body.prepend(layer, lightLayer);
+  perch = document.createElement('div'); perch.id = 'creatures-perch'; perch.setAttribute('aria-hidden', 'true'); document.body.append(perch);
   document.addEventListener('visibilitychange', () => { if (document.hidden) shoo(); });
   addEventListener('resize', shoo);
   for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastTouch = performance.now(); }, { passive: true });

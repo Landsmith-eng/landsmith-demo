@@ -4,6 +4,7 @@
 // copy of that spot of the painting, laid exactly over it and moved by a pixel or two, so the painting seems to stir.
 // The parts are listed per painting in scenes.js (live). Nothing moves while the phone asks to reduce motion.
 import { SCENES } from '/scenes.js';
+import { candle } from '/creatures.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 let wall = null; let wrap = null; let parts = []; let gazeParts = []; let raf = 0; let shown = '';
@@ -54,8 +55,15 @@ function makeParts(box, src, sc, dw, dh, ox, oy, px = 1) {
       transformOrigin: `${o[0] * 100}% ${o[1] * 100}%`,
     });
     box.append(el);
+    // A flame also throws warm light around it, breathing with it.
+    let glow = null;
+    if (L.m === 'flicker') {
+      const R = Math.max(w, h) * 2.4; glow = document.createElement('div'); glow.className = 'live-glow';
+      Object.assign(glow.style, { left: `${left + w / 2 - R}px`, top: `${top + h * .3 - R}px`, width: `${R * 2}px`, height: `${R * 2}px` });
+      box.append(glow);
+    }
     const k = L.soft ? .55 : 1;
-    made.push({ el, m: L.m, k, px, slow: L.slow, a: noise(), b: noise(), c: noise(), gust: events(L.m === 'peck' ? 5000 : 14000, L.m === 'peck' ? (L.slow ? 2600 : 420) : 3200) });
+    made.push({ el, glow, flame: L.m === 'flicker' ? candle() : null, m: L.m, k, px, slow: L.slow, a: noise(), b: noise(), c: noise(), gust: events(L.m === 'peck' ? 5000 : 14000, L.m === 'peck' ? (L.slow ? 2600 : 420) : 3200) });
   }
   return made;
 }
@@ -69,7 +77,12 @@ function frame(t) {
     else if (p.m === 'breathe') tf = `scale(${1 + .006 * k}, ${1 + (.012 + .004 * p.a(t)) * k * (0.5 + 0.5 * Math.sin(t / 620))})`;
     else if (p.m === 'peck') { const g = p.gust(t); tf = p.slow ? `rotate(${g * 6 * k}deg)` : `translateY(${g * 1.4 * k * p.px}px) rotate(${g * 3 * k}deg)`; } // a small dip, not a tilt of the whole spot
     else if (p.m === 'spin') tf = `rotate(${(t / 1000) * 7}deg)`;
-    else if (p.m === 'flicker') { tf = `scale(${1 + .015 * p.a(t * 6)}, ${1 + .03 * p.b(t * 7)})`; p.el.style.filter = `brightness(${1.04 + .1 * p.c(t * 9)})`; }
+    else if (p.m === 'flicker') {
+      const v = p.flame(t); // a candle's rhythm: quick uneven flutter, slow sway, the odd gutter
+      tf = `scale(${1 + .012 * (v - .8) * 5}, ${1 + .03 * (v - .8) * 5}) translateX(${p.a(t * 3) * .6}px)`;
+      p.el.style.filter = `brightness(${.94 + (v - .8) * 1.1}) sepia(.18) saturate(1.25)`;
+      if (p.glow) { p.glow.style.opacity = String(Math.max(0, (v - .35) * 1.25)); p.glow.style.transform = `scale(${.94 + (v - .8) * .5})`; }
+    }
     p.el.style.transform = tf;
   }
   raf = requestAnimationFrame(frame);
@@ -84,7 +97,7 @@ export function liveIn(box, src, iw, ih, px = 1) {
   gazeParts = makeParts(box, src, sc, iw, ih, 0, 0, px);
   if (gazeParts.length && !raf) raf = requestAnimationFrame(frame);
 }
-export function liveOut() { gazeParts.forEach((p) => p.el.remove()); gazeParts = []; }
+export function liveOut() { gazeParts.forEach((p) => { p.el.remove(); p.glow?.remove(); }); gazeParts = []; }
 
 export function startLiving() {
   wall = document.getElementById('wallpaper'); if (!wall || wrap) return;
