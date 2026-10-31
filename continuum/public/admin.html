@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Continuum Retention</title>
+  <link rel="preload" href="/fonts/lora-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+    th { font-weight: 600; color: var(--muted); }
+    .dots { display: flex; gap: 3px; flex-wrap: wrap; }
+    .dots span { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
+    .dots span.open { background: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .dots span.wrote { background: var(--accent); }
+    .scroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Did they come back?</h1>
+    <p class="muted small">Each square is one day since the tester's first visit. Dark = wrote a response; light = opened only.</p>
+    <form id="f" class="row" style="justify-content:flex-start">
+      <input id="k" type="password" placeholder="Admin key" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
+      <button class="btn">Load</button>
+    </form>
+    <h2 style="margin-top:28px">Invite someone</h2>
+    <p class="muted small">Makes a personal link to Continuum. Send it to them; opening it signs them in on that phone.</p>
+    <form id="inv" class="row" style="justify-content:flex-start">
+      <input id="invname" type="text" placeholder="Their first name" maxlength="40" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
+      <button class="btn">Make a link</button>
+    </form>
+    <p id="invout" style="margin-top:10px;word-break:break-all"></p>
+    <p id="summary" style="margin-top:16px"></p>
+    <div class="scroll"><table id="t" hidden><thead><tr><th>Tester</th><th>Days</th><th>Came back</th><th>Walk steps</th><th>Last seen (UTC)</th></tr></thead><tbody></tbody></table></div>
+  </main>
+  <script type="module">
+    const DAYS = 14;
+    const $ = (s) => document.querySelector(s);
+    // The key in the box always wins; it is remembered for this visit only.
+    const key = () => ($('#k').value.trim() || sessionStorage.getItem('continuum.admin') || '').trim();
+
+    $('#inv').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      sessionStorage.setItem('continuum.admin', key());
+      const res = await fetch('/admin/api/invite', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#invname').value }) });
+      const j = await res.json().catch(() => ({}));
+      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}`
+        : res.status === 403 ? 'That admin key does not match. Copy CONTINUUM_ADMIN_KEY again from Render (Environment), paste it in the box above, and try again.'
+          : j.error === 'name_required' ? 'Type a name first.'
+            : `The server said no (${res.status}${j.error ? `: ${j.error}` : ''}). If Render is still deploying, wait a minute and try again.`;
+    });
+    async function load() {
+      const res = await fetch('/admin/api/stats', { headers: { 'x-admin-key': key() } });
+      if (!res.ok) { $('#summary').textContent = res.status === 403 ? 'Wrong key, or CONTINUUM_ADMIN_KEY is not set on the server.' : 'Failed to load.'; return; }
+      const { testers } = await res.json();
+      const body = $('#t tbody');
+      body.replaceChildren();
+      for (const t of testers) {
+        const start = t.open_days[0];
+        const open = new Set(t.open_days), wrote = new Set(t.response_days);
+        const dots = document.createElement('div');
+        dots.className = 'dots';
+        for (let i = 0; i < DAYS; i++) {
+          const s = document.createElement('span');
+          const d = start && new Date(Date.parse(start) + i * 86400000).toISOString().slice(0, 10);
+          if (d && wrote.has(d)) s.className = 'wrote'; else if (d && open.has(d)) s.className = 'open';
+          s.title = d ?? '';
+          dots.append(s);
+        }
+        const tr = document.createElement('tr');
+        const cells = [t.name, dots, t.came_back ? `Yes (${t.open_days.length} days)` : (start ? 'Not yet' : 'Never opened'), String(t.walk_steps), t.last_seen ?? 'n/a'];
+        for (const c of cells) { const td = document.createElement('td'); td.append(c); tr.append(td); }
+        body.append(tr);
+      }
+      const back = testers.filter((t) => t.came_back).length;
+      $('#summary').textContent = `${back} of ${testers.length} testers came back on a second day.`;
+      $('#t').hidden = false;
+    }
+
+    $('#f').addEventListener('submit', (e) => { e.preventDefault(); sessionStorage.setItem('continuum.admin', key()); load(); });
+    if (key()) load();
+  </script>
+</body>
+</html>

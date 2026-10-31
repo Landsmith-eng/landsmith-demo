@@ -1,0 +1,945 @@
+/* Cormorant Garamond and Manrope (SIL Open Font License 1.1, see public/fonts/OFL.txt), self-hosted so the app
+   makes no outside calls. Lora stays as a fallback for characters outside the Latin set. */
+@font-face {
+  font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url(/fonts/cormorant-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Cormorant Garamond'; font-style: italic; font-weight: 500 700; font-display: swap;
+  src: url(/fonts/cormorant-italic-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Manrope'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/fonts/manrope-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/fonts/lora-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/fonts/lora-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+:root {
+  /* Bright morning paper and clear emerald, with a warm amber for highlights. Fields: philosophy green, science
+     ochre, religion blue, practice berry, art terracotta, culture violet, law slate, now teal. */
+  --bg: #f7faf6;
+  --surface: #ffffff;
+  --ink: #12201a;
+  --muted: #4a5a52;
+  --line: #d9e5dc;
+  --accent: #127a52;
+  --accent-ink: #ffffff;
+  --warm: #c98a12;
+  --source-bg: #0f3a2a;
+  --source-ink: #eef6f0;
+  --f-philosophy: #127a52;
+  --f-science: #a1700a;
+  --f-religion: #2a64a8;
+  --f-practice: #a93d68;
+  --f-art: #b8502a;
+  --f-culture: #6a4fc4;
+  --f-law: #45596e;
+  --f-now: #0f7f8c;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --lora: "Lora", var(--serif);
+  /* The characterful face: brand, headings, questions, quotations, idea titles. Set to var(--lora) to undo. */
+  --display: "Cormorant Garamond", var(--lora);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121614;
+    --surface: #1a201c;
+    --ink: #f0f4ef;
+    --muted: #b1bbb4;
+    --line: #2e3832;
+    --accent: #7fe0a8;
+    --accent-ink: #0e1410;
+    --warm: #f0b648;
+    --source-bg: #dfe9dc;
+    --source-ink: #1b241e;
+    --f-philosophy: #93d3ac;
+    --f-science: #d6b25c;
+    --f-religion: #92b5dc;
+    --f-practice: #d996ad;
+    --f-art: #e39a7c;
+    --f-culture: #b4a6e6;
+    --f-law: #aab8c6;
+    --f-now: #78c4d0;
+  }
+}
+
+* { box-sizing: border-box; }
+/* Text size: pinching the page sets --text-scale; every size is in rem, so text grows and rewraps within the screen.
+   The browser's own zoom (which pushes text off the side) is turned off in favour of this. */
+html { -webkit-text-size-adjust: 100%; font-size: calc(100% * var(--text-scale, 1)); touch-action: pan-x pan-y; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 1.125rem/1.6 var(--sans);
+}
+:root { --dock: calc(62px + env(safe-area-inset-bottom)); --bar: 52px; }
+main { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 4px 16px calc(var(--dock) + 24px); }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.25; margin: 0 0 .4em; }
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.2rem; margin-top: 2rem; }
+p { margin: 0 0 1em; }
+.muted { color: var(--muted); }
+.center { text-align: center; }
+.small { font-size: .85rem; }
+
+.bar {
+  position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  max-width: 640px; height: var(--bar); margin: 0 auto; padding: 0 16px;
+}
+.brand { font-family: var(--display); font-weight: 600; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
+nav { display: flex; gap: 4px; }
+button { font: inherit; cursor: pointer; }
+.link { background: none; border: 0; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
+.link:hover, .link[aria-current="page"] { color: var(--ink); }
+.eyebrow { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: .5rem; }
+.progress { display: flex; gap: 4px; margin: 4px 0 20px; }
+.progress span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.progress span.on { background: var(--accent); }
+
+/* The card has two faces: plain (front) and source (back). */
+.card { perspective: 1400px; margin: 0 0 20px; }
+.card-inner { display: grid; transition: transform .6s cubic-bezier(.2,.7,.2,1); transform-style: preserve-3d; }
+.card.flipped .card-inner { transform: rotateY(180deg); }
+.face {
+  grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border-radius: 4px; padding: 22px 20px; border: 1px solid var(--line);
+}
+.face.plain { background: var(--surface); }
+.face.source { background: var(--source-bg); color: var(--source-ink); border-color: transparent; transform: rotateY(180deg); }
+.face .who { font-size: .9rem; opacity: .75; margin-bottom: .75rem; }
+.face.source blockquote { font-family: var(--display); font-size: 1.15rem; line-height: 1.6; margin: 0 0 1rem; }
+.face.source cite { display: block; font-style: normal; font-size: .8rem; opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .card-inner { transition: none; } }
+
+.prompt { font-family: var(--display); font-size: 1.15rem; line-height: 1.5; margin: 0 0 1.2rem; display: block; }
+textarea {
+  width: 100%; min-height: 160px; resize: vertical; padding: 14px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit;
+}
+textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; }
+.btn {
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
+  padding: 10px 20px; font-weight: 600;
+}
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+
+.yours { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 0 0 20px; white-space: pre-wrap; }
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px 16px; margin: 0 0 20px; }
+
+/* Field colours (concept doc): warm = secular and scientific lines, cool = belief traditions. */
+.field-philosophy { --field: var(--f-philosophy); }
+.field-science { --field: var(--f-science); }
+.field-religion { --field: var(--f-religion); }
+.field-practice { --field: var(--f-practice); }
+.field-art { --field: var(--f-art); }
+.field-culture { --field: var(--f-culture); }
+.field-law { --field: var(--f-law); }
+.field-now { --field: var(--f-now); }
+
+.card-closed {
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--field, var(--line));
+  border-radius: 4px; padding: 20px; margin: 0 0 20px;
+}
+/* First viewing: the day's picture sits faded behind the title. Faded on purpose: atmosphere, not a hint. */
+.card-closed.has-backdrop { position: relative; overflow: hidden; min-height: 210px; display: flex; flex-direction: column; justify-content: flex-end; }
+.card-closed .backdrop { position: absolute; inset: 0; z-index: 0; }
+.card-closed .backdrop img { width: 100%; height: 100%; object-fit: cover; opacity: .38; filter: blur(1.5px) saturate(.85); }
+.card-closed .backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 15%, var(--surface) 92%); }
+.card-closed.has-backdrop > :not(.backdrop) { position: relative; z-index: 1; }
+.card-closed .who, .face.plain .who { color: var(--field, var(--muted)); opacity: 1; font-weight: 600; font-size: .8rem; letter-spacing: .04em; }
+.face.plain { border-left: 4px solid var(--field, var(--line)); }
+.face.source blockquote p { margin: 0 0 .8em; white-space: pre-line; }
+.face.source .fulltext { display: inline-block; margin-top: .75rem; color: inherit; font-size: .85rem; }
+
+.lineage .group { margin: 0 0 18px; }
+.bubbles { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+/* Neighbours as catalogue entries: a plain row with the field's colour as a rule on the left and an arrow on the
+   right, like labels on a gallery wall, rather than rounded tinted bubbles. */
+.bubble {
+  position: relative; display: block; width: 100%; text-align: left; color: var(--ink); font: inherit;
+  background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  padding: 11px 32px 11px 14px; box-shadow: inset 3px 0 0 var(--field);
+}
+.bubble::after { content: '→'; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.bubble:hover { background: color-mix(in srgb, var(--field) 7%, transparent); }
+.bubble:hover::after { color: var(--field); }
+.b-who { display: block; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--field); }
+.b-title { display: block; font-family: var(--display); font-size: 1.05rem; line-height: 1.35; }
+.b-note { display: block; font-size: .85rem; color: var(--muted); margin-top: 3px; }
+.trail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0; font-size: .85rem; color: var(--muted); margin: 0 0 12px; }
+.trail > * { white-space: nowrap; }
+.trail > * + *::before { content: "›"; padding: 0 6px; color: var(--muted); }
+.trail .link { padding: 2px 0; font-size: inherit; }
+.trail [aria-current] { color: var(--ink); }
+
+.path { list-style: none; padding: 0; margin: 0; }
+.path li { border-top: 1px solid var(--line); padding: 14px 0; }
+.path .t { font-family: var(--display); font-size: 1.05rem; }
+.path p { white-space: pre-wrap; margin: .4rem 0 0; }
+.back { margin-bottom: 12px; }
+.card + .row { margin: -8px 0 24px; }
+.notice.testdate { border-style: dashed; font-size: .85rem; color: var(--muted); }
+.notice.testdate .link { padding: 2px 6px; font-size: inherit; }
+.node-image { margin: 14px 0 4px; }
+.node-image img { display: block; width: 100%; height: auto; max-height: 60vh; object-fit: cover; border-radius: 2px; background: var(--line); }
+.node-image.artefact img { object-fit: contain; }
+.node-image figcaption { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+.node-image figcaption a { color: inherit; }
+.misreading { font-size: .92rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 12px; }
+.srclinks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.keep { color: inherit; opacity: .8; padding: 8px 0 0; }
+.keep[aria-pressed="true"] { opacity: 1; font-weight: 600; }
+.reaction { margin: 0 0 20px; }
+.reaction .row { margin-top: 4px; }
+.reaction .bubbles { margin-top: 10px; }
+.kept { font-family: var(--display); font-size: 1.05rem; margin: 0 0 6px; padding-left: 12px; border-left: 3px solid var(--line); }
+
+/* Timeline: a vertical line with one dot per idea, grouped by era. Featured (daily) thinkers get a ring. */
+.tl-link-row { justify-content: flex-start; margin: -4px 0 8px; }
+.tl-link-row .link { font-size: .9rem; }
+.tl-era h2 { margin: 1.6rem 0 .5rem; }
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline::before { content: ''; position: absolute; left: 76px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tl-item {
+  display: grid; grid-template-columns: 64px 26px 1fr; align-items: start; width: 100%; text-align: left;
+  background: none; border: 0; padding: 8px 0; color: var(--ink); font: inherit; border-radius: 3px;
+}
+button.tl-item:hover .b-title { text-decoration: underline; text-underline-offset: 3px; }
+.tl-year { font-size: .8rem; color: var(--muted); text-align: right; padding: 3px 10px 0 0; font-variant-numeric: tabular-nums; }
+.tl-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--field); margin: 4px 0 0 7px; position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--bg); }
+.tl-row.featured .tl-dot { width: 16px; height: 16px; margin: 2px 0 0 5px; background: var(--bg); border: 4px solid var(--field); }
+.tl-row.state-unseen .tl-dot, .tl-row.state-upcoming .tl-dot { opacity: .55; }
+.tl-text { min-width: 0; }
+.tl-state { display: block; font-size: .78rem; color: var(--muted); margin-top: 2px; }
+.tl-row.state-written .tl-state::before { content: '✓ '; color: var(--field); }
+.tl-row.state-today .tl-state { color: var(--accent); font-weight: 600; }
+.tl-row.focus .tl-item { background: color-mix(in srgb, var(--field) 12%, transparent); }
+
+/* Gallery rooms: a wall of tiles per room. Featured (daily) tiles get a heavier frame; reached daily cards show their
+   picture faded behind the text. */
+.room-index { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+@media (max-width: 520px) {
+  /* One swipeable row on phones instead of a tall stack. */
+  .room-index { flex-wrap: nowrap; overflow-x: auto; margin: 4px -16px 8px; padding: 2px 16px 6px; scrollbar-width: none; }
+  .room-index .chip { flex: none; }
+}
+.chip { font: inherit; font-size: .82rem; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; }
+.chip:hover, .chip.on { color: var(--ink); border-color: var(--accent); }
+.room { scroll-margin-top: 12px; }
+.room h2 { margin: 2rem 0 .3rem; }
+.room-blurb { margin: 0 0 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile {
+  position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 4px; min-height: 132px;
+  text-align: left; font: inherit; color: var(--ink); padding: 12px 12px 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+  box-shadow: inset 0 3px 0 var(--field);
+}
+button.tile:hover { border-color: var(--field); }
+.tile.featured { box-shadow: inset 0 3px 0 var(--field), inset 0 0 0 2px color-mix(in srgb, var(--field) 45%, transparent); }
+.tile > :not(.tile-bg) { position: relative; z-index: 1; }
+.tile-bg { position: absolute; inset: 0; z-index: 0; }
+.tile-bg img { width: 100%; height: 100%; object-fit: cover; opacity: .3; filter: saturate(.85); }
+.tile-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 10%, var(--surface) 85%); }
+.tile-title { font-family: var(--display); font-size: 1rem; line-height: 1.3; }
+.tile-meta { margin-top: auto; font-size: .75rem; color: var(--muted); }
+.tile.state-written .tile-meta::before { content: '✓ '; color: var(--field); }
+.tile.state-today .tile-meta { color: var(--accent); font-weight: 600; }
+.tile.state-upcoming { background: transparent; border-style: dashed; }
+.tile.state-upcoming .b-who { opacity: .75; }
+.tile.focus { outline: 3px solid var(--field); outline-offset: 2px; }
+.search-row { display: flex; gap: 8px; align-items: stretch; margin: 4px 0 14px; }
+.search-row .search { margin: 0; flex: 1; min-width: 0; }
+.search-row .wander { flex: none; }
+.tl-link-row { gap: 4px 16px; flex-wrap: wrap; }
+
+/* Court cases: one block per opinion. Dissents get a dashed rule so the split reads at a glance. */
+.opinions { margin: 8px 0 24px; }
+.opinion { border-left: 3px solid var(--f-law); padding: 2px 0 2px 14px; margin: 0 0 22px; }
+.opinion.role-dissent { border-left-style: dashed; }
+.opinion blockquote { font-family: var(--display); font-size: 1.05rem; line-height: 1.55; margin: 8px 0 10px; padding: 0; }
+.opinion .bubble { border-top: 1px solid var(--line); }
+.theme-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+.theme-chips .eyebrow { margin: 0 4px 0 0; }
+
+/* Gallery search and the themes index. */
+.search { width: 100%; font: inherit; padding: 11px 14px; margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.search-results h2 { margin: 1.2rem 0 .4rem; }
+.theme { scroll-margin-top: 12px; margin: 0 0 8px; }
+.theme h2 { margin: 1.8rem 0 .2rem; }
+.theme .prompt { margin: 0 0 .6rem; }
+.theme.focus h2 { color: var(--accent); }
+.bubble.closed { opacity: .7; }
+.bubble.closed::after { content: ''; }
+
+/* ── The stage: one part of a concept per screen ─────────────────────────────────────────────────────────── */
+html.staged { scroll-snap-type: y proximity; }
+html.staged main { padding-bottom: 0; }
+.panel {
+  position: relative; min-height: 0;
+  display: flex; align-items: center; scroll-snap-align: start; scroll-margin-top: 12px; padding: 7svh 0;
+}
+html.staged:has(.dock-links:not(:empty)) { --links: 44px; }
+.panel-inner { width: 100%; padding-right: 14px; transition: opacity .6s ease, transform .6s ease; }
+.panel.past .panel-inner { opacity: .3; transform: scale(.965); }
+.rise { opacity: 0; transform: translateY(22px) scale(.965); filter: blur(5px);
+  transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1), filter .8s ease;
+  transition-delay: calc(var(--i, 0) * 110ms); }
+.panel.in .rise { opacity: 1; transform: none; filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .panel-inner { transition: none !important; transform: none !important; filter: none !important; }
+  .rise { opacity: 1; }
+  html.staged { scroll-snap-type: none; }
+}
+
+.panel.p-arrival { min-height: calc(100svh - var(--bar) - var(--dock) - var(--links, 0px)); }
+.p-arrival h1 { font-size: clamp(2.1rem, 8.5vw, 3.2rem); line-height: 1.12; margin: .2em 0 .5em; letter-spacing: -.01em; }
+.p-arrival .who, .p-arrival .eyebrow { color: var(--field, var(--muted)); font-weight: 600; letter-spacing: .06em; font-size: .82rem; text-transform: uppercase; }
+.p-arrival .progress { margin: 6px 0 22px; }
+.hint { margin-top: 28px; font-size: .82rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.hint::after { content: ' ↓'; display: inline-block; animation: nudge 2.4s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) { .hint::after { animation: none; } }
+
+.plain { font-size: 1.22rem; line-height: 1.68; }
+.panel .eyebrow { color: var(--field, var(--muted)); font-weight: 600; }
+.quote { font-family: var(--display); font-size: 1.32rem; line-height: 1.55; margin: 0 0 1rem; padding-left: 16px; border-left: 3px solid var(--field, var(--accent)); }
+.quote p { margin: 0 0 .8em; white-space: pre-line; }
+.quote.role-dissent { border-left-style: dashed; }
+.p-source cite { display: block; font-style: normal; font-size: .85rem; color: var(--muted); }
+.srclinks { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.srclinks a { color: var(--ink); font-size: .92rem; }
+.p-yours .yours { font-size: 1.15rem; }
+.p-related .bubble { margin-top: 10px; }
+.p-related .bubbles, .p-related .panel-inner > .bubble { border-top: 1px solid var(--line); }
+.end-links { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.end-links .btn { width: 100%; }
+
+/* Wallpaper: a picture full-bleed behind a part. Faded and blurred before writing; clearer after. */
+.wall { position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); overflow: hidden; }
+.wall img { width: 100%; height: 100%; object-fit: cover; }
+.wall::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 30%, transparent) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 55%, var(--bg) 88%); }
+.wall.faded img { opacity: .35; filter: blur(3px) saturate(.85); }
+.wall.clear img { opacity: .5; }
+.p-picture { padding: 0; }
+.stage-figure { margin: 0 calc(50% - 50vw); width: 100vw; }
+.stage-figure img { display: block; width: 100%; height: calc(100svh - var(--dock) - var(--links, 0px) - 80px); object-fit: cover; }
+.stage-figure.artefact img { object-fit: contain; }
+.stage-figure figcaption { font-size: .78rem; color: var(--muted); padding: 6px 16px; }
+@media (min-width: 700px) { .stage-figure { margin: 0; width: 100%; } .wall { width: 100vw; } }
+
+.p-question .prompt { font-size: 1.4rem; line-height: 1.45; }
+.p-question textarea { min-height: 34svh; font-size: 1.05rem; }
+
+/* The motif canvas sits behind everything; --level dims it on dense parts. */
+#motif { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .5s ease; }
+#motif.on { opacity: var(--level, 1); }
+
+/* Dot rail: where you are in this concept. */
+.rail { position: fixed; z-index: 3; right: 6px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+.rail .dot { width: 18px; height: 18px; padding: 0; border: 0; background: none; display: grid; place-items: center; }
+.rail .dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: transform .3s, background .3s; }
+.rail .dot.on::before { background: var(--accent); transform: scale(1.5); }
+
+/* The constant menu: the card's links above the four tabs, fixed to the bottom. */
+.dock {
+  position: fixed; z-index: 4; left: 0; right: 0; bottom: 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.dock-links { display: flex; gap: 6px; overflow-x: auto; max-width: 640px; margin: 0 auto; padding: 8px 16px 0; scrollbar-width: none; }
+.dock-links:empty { display: none; }
+.dock-links .chip { flex: none; }
+.tabs { display: flex; justify-content: space-around; max-width: 640px; margin: 0 auto; }
+.tab { flex: 1; background: none; border: 0; color: var(--muted); padding: 14px 4px 16px; font-size: .95rem; }
+.tab[aria-current="page"] { color: var(--ink); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+.dock-links .chip { color: var(--ink); }
+
+/* Concept-first: the thinker's name arrives a beat after the idea. */
+.name-reveal { display: flex; align-items: center; gap: 10px; font-size: 1rem; color: var(--muted); margin: -.2em 0 1em; }
+.name-reveal .rule { width: 26px; height: 1px; background: currentColor; }
+.panel .name-reveal.rise { transition-delay: calc(var(--i, 0) * 110ms + 700ms); }
+
+/* Compass: where to go next. */
+.compass { display: grid; gap: 18px; margin: 6px 0 22px; }
+.compass-item .muted { margin: 0 0 6px; }
+.compass .bubble { border-top: 1px solid var(--line); }
+.practice-nudge { width: 100%; }
+
+/* Practice */
+.size-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+.nudge { border-left: 3px solid var(--f-practice); padding: 4px 0 4px 12px; }
+.steps { padding-left: 1.2em; font-size: 1.15rem; line-height: 1.6; }
+.steps li { margin: 0 0 .7em; }
+.timer { display: flex; align-items: center; gap: 18px; margin-top: 18px; }
+.ring { --p: 0; width: 92px; height: 92px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: conic-gradient(var(--f-practice) calc(var(--p) * 360deg), var(--line) 0); position: relative; }
+.ring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--bg); }
+.ring.running::before { animation: breathe 8s ease-in-out infinite; }
+@keyframes breathe { 50% { inset: 14px; } }
+@media (prefers-reduced-motion: reduce) { .ring.running::before { animation: none; } }
+.ring-num { position: relative; font-variant-numeric: tabular-nums; font-size: 1.3rem; font-weight: 600; }
+.intention { width: 100%; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.tab { font-size: .9rem; }
+
+/* Background picture behind the stage: --focus runs 0 (a part centred, reading) to 1 (between parts). */
+#wallpaper { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
+#wallpaper.on { opacity: 1; }
+#wallpaper img { width: 100%; height: 100%; object-fit: cover;
+  opacity: calc(.44 + var(--focus, 0) * .5); filter: blur(calc((1 - var(--focus, 0)) * 8px)) saturate(calc(.8 + var(--focus, 0) * .2));
+  transform: scale(calc(1.06 - var(--focus, 0) * .06)); transition: opacity .25s linear, filter .25s linear, transform .25s linear; }
+#wallpaper::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) calc(48% - var(--focus, 0) * 40%), transparent); }
+/* Plain pages: a sharp copy of the picture shows through below the content (--clear-from = where the content ends). */
+#wallpaper img.clear { display: none; }
+#wallpaper.plain img.clear { display: block; position: absolute; inset: 0; opacity: .85; filter: none; transform: none; transition: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px));
+  mask-image: linear-gradient(to bottom, transparent calc(var(--clear-from, 100vh) + 16px), #000 calc(var(--clear-from, 100vh) + 220px)); }
+#wallpaper.plain::after { background: linear-gradient(to bottom,
+  color-mix(in srgb, var(--bg) 42%, transparent) calc(var(--clear-from, 100vh) + 16px),
+  color-mix(in srgb, var(--bg) 6%, transparent) calc(var(--clear-from, 100vh) + 220px)); }
+@media (prefers-reduced-motion: reduce) { #wallpaper img { transition: none; } }
+
+/* Look: a pause inside the picture. The button shows whenever there is a picture behind the page. */
+.corner { position: fixed; z-index: 5; top: calc(8px + env(safe-area-inset-top)); right: 12px; display: flex; gap: 8px; }
+.pill { display: none;
+  align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 80%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  color: var(--ink); font-size: .85rem; }
+.pill svg { width: 16px; height: 16px; }
+.listen[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+html.can-speak.staged .listen, html.can-speak.staged .voice { display: inline-flex; }
+.voices { position: fixed; inset: 0; z-index: 11; display: flex; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.35); }
+.voices-sheet { width: 100%; max-width: 640px; max-height: 75vh; overflow-y: auto; background: var(--surface, var(--bg)); color: var(--ink);
+  border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgba(0,0,0,.25); }
+.voices-sheet h2 { margin: 0 0 4px; }
+.voices-sheet .voice-row { display: flex; width: 100%; justify-content: space-between; gap: 12px; text-align: left; padding: 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--ink); margin-top: 8px; }
+.voices-sheet .voice-row[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.voices-sheet .voice-row small { color: var(--muted); }
+.toast { position: fixed; z-index: 12; left: 16px; right: 16px; top: calc(56px + env(safe-area-inset-top)); max-width: 600px; margin: 0 auto;
+  padding: 10px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: .9rem; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+html.gazing .corner { display: none; }
+html:has(#wallpaper.on:not(.nolook)) .look { display: inline-flex; }
+.gaze { position: fixed; inset: 0; z-index: 10; overflow: hidden; background: #0d100e; touch-action: none; cursor: grab;
+  opacity: 0; transition: opacity .6s ease; }
+.gaze.in { opacity: 1; }
+.gaze.dragging { cursor: grabbing; }
+.gaze img { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; user-select: none; -webkit-user-drag: none;
+  filter: blur(8px); transition: filter 1.2s ease; }
+.gaze.in img { filter: none; }
+.gaze .gaze-hint { position: absolute; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom)); text-align: center;
+  transition: opacity 1s ease; pointer-events: none; }
+.gaze .gaze-hint span { display: inline-block; padding: 7px 14px; border-radius: 999px; background: rgba(13,16,14,.55); color: #eef2ec; font-size: .85rem; }
+.gaze .gaze-hint.gone { opacity: 0; }
+.gaze .gaze-close { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.35); background: rgba(13,16,14,.45); color: #eef2ec; font-size: .85rem; }
+html.gazing { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .gaze, .gaze img { transition: none; } }
+
+/* The diary of discovery */
+.diary-block { margin-top: 8px; }
+.diary-block .compass-item { margin-top: 12px; }
+.thread { margin: 0 0 4px; line-height: 1.5; }
+.thread-link { color: var(--ink); font-family: var(--display); text-decoration: underline; text-decoration-color: var(--muted);
+  text-underline-offset: 3px; }
+.diary-date { margin: 6px 0 8px; }
+.p-note textarea { min-height: 22svh; }
+
+/* Talk */
+.talk-log { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+.talk-turn { max-width: 88%; padding: 12px 14px; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; }
+.talk-turn.from-map { align-self: flex-start; background: var(--surface, var(--bg)); border: 1px solid var(--line); font-family: var(--display); }
+.talk-turn.from-you { align-self: flex-end; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.talk-turn.thinking { color: var(--muted); font-style: italic; }
+.talk-ref { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.talk-compose { position: sticky; bottom: var(--dock); z-index: 2; background: var(--bg); padding: 10px 0 12px; border-top: 1px solid var(--line);
+  margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.talk-compose textarea { min-height: 3.2em; }
+.mic[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.tab { padding-left: 2px; padding-right: 2px; font-size: .82rem; }
+
+.talk-turn .say { cursor: pointer; border-radius: 4px; transition: background .2s; }
+.talk-turn .say.now { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.talk-controls { display: flex; gap: 6px; margin-top: 10px; font-family: var(--sans, inherit); }
+.talk-controls .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* The opening: an empty hallway; the cat walks in as the name comes into focus. Tap to skip. */
+.intro { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: #f3f0e6; cursor: pointer; transition: opacity .9s ease; }
+.intro.out { opacity: 0; pointer-events: none; }
+.intro img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.intro .hall { opacity: 0; filter: blur(6px); transform: scale(1.04); transition: opacity 1.2s ease, filter 2.4s ease, transform 4.5s ease; }
+.intro .cat { opacity: 0; transition: opacity 2.4s ease; }
+.intro.on .hall { opacity: 1; filter: none; transform: none; }
+.intro.walk .cat { opacity: 1; }
+.intro .title { position: absolute; left: 0; right: 0; top: 30%; text-align: center; color: #18261e; padding: 0 16px;
+  text-shadow: 0 0 18px rgba(255,255,255,.85), 0 0 4px rgba(255,255,255,.7); }
+.intro .title h1 { font-family: var(--display); font-weight: 600; font-size: clamp(2.6rem, 13vw, 4.4rem); margin: 0; letter-spacing: .02em;
+  opacity: 0; filter: blur(14px); transform: scale(1.06); transition: opacity 2s ease, filter 2.4s ease, transform 2.4s ease; }
+.intro .title p { margin: .6em 0 0; font-size: 1.02rem; letter-spacing: .04em; opacity: 0; transition: opacity 1.4s ease .9s; }
+.intro.walk .title h1 { opacity: 1; filter: none; transform: none; }
+.intro.walk .title p { opacity: .85; }
+@media (prefers-reduced-motion: reduce) { .intro, .intro * { transition: none !important; } }
+
+/* The app's controls keep their size when the reading text is enlarged (pinch), so menus never overflow. */
+.dock .tab { font-size: 13px; }
+.dock .chip, .dock-links .chip { font-size: 13px; }
+.corner .pill { font-size: 13.5px; }
+.rail { font-size: 16px; }
+
+/* The tour: a spotlight on what is being described, and a card with the narration and controls. */
+.tour { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
+.tour::before { content: ''; position: absolute; inset: 0; background: rgba(8,14,11,.5); transition: opacity .3s; }
+.tour:has(.tour-spot.on)::before { opacity: 0; }
+.tour-spot { position: fixed; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(8,14,11,.5); border: 2px solid var(--warm);
+  opacity: 0; transition: all .45s cubic-bezier(.2,.7,.2,1); animation: tour-pulse 1.8s ease-in-out infinite; }
+.tour-spot.on { opacity: 1; }
+@keyframes tour-pulse { 50% { border-color: color-mix(in srgb, var(--warm) 45%, transparent); } }
+.tour-card { position: fixed; left: 12px; right: 12px; top: 30%; max-width: 520px; margin: 0 auto; pointer-events: auto;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); font-size: 16px; }
+.tour.card-top .tour-card { top: 14%; }
+.tour-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-count { font-size: 12.5px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.tour-text { font-family: var(--display); font-size: 17px; line-height: 1.5; margin: 10px 0 14px; }
+.tour-bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.tour-bar span { display: block; height: 100%; width: 0; background: var(--warm); transition: width .4s ease; }
+.tour-buttons .chip { margin-right: 6px; font-size: 13px; }
+.tour-buttons .btn, .tour-card .link { font-size: 15px; }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; animation: none; } }
+
+/* The interview and the journey */
+.interview { padding: 6svh 0 4svh; }
+.interview h1.view { font-size: clamp(1.7rem, 7vw, 2.4rem); line-height: 1.2; margin: .3em 0 .6em; }
+.choices, .basis { display: flex; flex-direction: column; gap: 8px; }
+.basis { margin-top: 18px; }
+.choice { text-align: left; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 1rem; }
+.choice.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.journey .stop { border-top: 1px solid var(--line); padding: 14px 0; }
+.stop-view { font-family: var(--display); font-size: 1.1rem; margin: .2em 0 .5em; }
+.stop-line { margin: 8px 0; }
+.stop-line > .muted { display: block; margin-bottom: 4px; }
+
+.talk-modes { margin: 4px 0 8px; }
+.talk-sources { margin-top: 10px; font-family: var(--sans); font-size: .85rem; }
+.talk-sources ul { margin: 4px 0 0; padding-left: 1.1em; }
+.talk-sources a { color: var(--accent); word-break: break-word; }
+.weigh-btn { margin-top: 14px; }
+
+.camps { display: grid; gap: 10px; margin: 4px 0 14px; }
+.camp { border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; }
+.camp-b { border-left-color: var(--warm); }
+.camp p { margin: .2em 0 0; font-family: var(--display); font-size: 1.05rem; line-height: 1.5; }
+
+.bearings { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--warm); border-radius: 10px; background: var(--surface); }
+.choices.compact .choice { padding: 9px 12px; font-size: .95rem; }
+
+/* The reader's key: a clear play/pause in the middle of the screen. It shows as reading begins and fades away; a tap
+   on the page brings it back. While reading aloud the page scrolls freely (no snapping back to a panel). */
+html.reading-aloud { scroll-snap-type: none; }
+.reader-key { position: fixed; z-index: 9; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.92);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; background: none; border: 0; padding: 0;
+  color: #fff; opacity: 0; pointer-events: none; transition: opacity .5s ease, transform .5s ease; }
+.reader-key.on { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+.reader-key .rk-icon { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; font-size: 28px; letter-spacing: -2px;
+  background: rgba(255,255,255,.16); border: 1.5px solid rgba(255,255,255,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+.reader-key .rk-note:empty { display: none; }
+.reader-key .rk-note { font-size: 14px; padding: 5px 12px; border-radius: 999px; background: rgba(0,0,0,.32); text-shadow: none; }
+.panel.reading .panel-inner { box-shadow: -3px 0 0 var(--warm); }
+
+.lesson { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.lesson-text { font-family: var(--display); font-size: 1.08rem; line-height: 1.5; margin: .3em 0 .5em; }
+.lesson .yours { margin: 8px 0; }
+
+/* ── Plates ────────────────────────────────────────────────────────────────────────────────────────────
+   Every screen stands on one of the app's pictures, seen clearly. There are no boxes: the words sit on the
+   picture itself, in light lettering over a soft shade and a shadow, so any plate in any light stays legible.
+   The same light-on-picture palette serves both the light and dark settings. */
+:root, :root:is(*) {
+  --ink: #f6f8f4;
+  --muted: rgba(240, 246, 240, .8);
+  --line: rgba(255, 255, 255, .26);
+  --surface: transparent;
+  --accent: #8fe8b4;
+  --accent-ink: #0c1a12;
+  --warm: #f4c063;
+  --source-bg: transparent;
+  --source-ink: #f6f8f4;
+  --f-philosophy: #9fe0b8; --f-science: #e8c46c; --f-religion: #a6c6ec; --f-practice: #eeaac2;
+  --f-art: #f0ae8e; --f-culture: #c6b8f4; --f-law: #c2d0de; --f-now: #8ad8e4;
+  --bg: #0d120f;
+  --field-input: rgba(8, 14, 11, .38);
+  --sheet: rgba(14, 20, 17, .94);
+  --text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 0 14px rgba(0, 0, 0, .45);
+}
+body { background: #0d120f; color: var(--ink); }
+main, .bar, .corner, .rail { text-shadow: var(--text-shadow); }
+h1 { font-size: 2.3rem; font-weight: 600; letter-spacing: .005em; }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.25rem; }
+.prompt, .lesson-text, .stop-view, .camp p { font-size: 1.28em; }
+.quote { font-size: 1.5rem; }
+.face.source blockquote { font-size: 1.32rem; }
+.eyebrow, .who { font-family: var(--sans); }
+.brand { font-size: 1.55rem; letter-spacing: .02em; }
+main.glassy { padding-top: 14svh; }
+main.glassy > h1 { font-size: clamp(2.4rem, 11vw, 3.2rem); line-height: 1.05; margin: 0 0 .3em; }
+main.glassy > .lede { margin-bottom: 22px; }
+main.glassy > .notice.testdate { padding: 0; border: 0; font-size: .78rem; margin-bottom: 10px; }
+main > * > :first-child, .panel-inner > :first-child { margin-top: 0; }
+
+/* What were cards and boxes are now open sections, set off by a thin line or the field's colour at the left. */
+.card-closed, .face, .notice, .lesson, .bearings, .tile, .choice, .talk-turn.from-map, .voice-row {
+  background: transparent; box-shadow: none; border-color: var(--line);
+}
+.face { border-width: 0 0 0 3px; border-radius: 0; padding: 6px 0 6px 16px; }
+.card-closed { border-width: 0 0 0 3px; border-radius: 0; padding: 6px 0 6px 16px; }
+.card-closed .backdrop { display: none; }
+.lesson, .bearings { border-width: 0 0 0 3px; border-radius: 0; padding: 4px 0 4px 14px; }
+.notice { border-width: 0; padding: 0; }
+.choice { border-radius: 14px; background: var(--field-input); text-shadow: none; }
+.choice.on { background: color-mix(in srgb, var(--accent) 22%, var(--field-input)); }
+textarea, .intention, input[type="search"], input[type="text"] { background: var(--field-input); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; }
+textarea::placeholder, input::placeholder { color: var(--muted); }
+
+/* The picture: a light shade over it, deeper while something is being read, lifting between parts. */
+#wallpaper img { transform-origin: var(--wall-origin, 50% 50%); }
+#wallpaper.plain img { opacity: 1; filter: none; transform: scale(var(--wall-zoom, 1)); transition: transform .35s ease; }
+#wallpaper.plain img.clear { display: none; }
+#wallpaper.pinching img { transition: none !important; }
+#wallpaper.plain::after { background: linear-gradient(to bottom, rgba(6, 12, 9, .42) 0, rgba(6, 12, 9, .26) 35%, rgba(6, 12, 9, .34) 100%); }
+#wallpaper img { opacity: 1; filter: blur(calc((1 - var(--focus, 0)) * 1.5px)) saturate(calc(.95 + var(--focus, 0) * .1));
+  transform: scale(calc((1.02 - var(--focus, 0) * .02) * var(--wall-zoom, 1))); }
+#wallpaper::after { background: rgba(6, 12, 9, calc(.36 - var(--focus, 0) * .28)); }
+.panel.reading .panel-inner { box-shadow: -3px 0 0 var(--warm); }
+.wall::after { background: linear-gradient(to bottom, transparent 40%, rgba(6, 12, 9, .35)); }
+.wall.faded img { opacity: .8; filter: blur(3px); }
+.wall.clear img { opacity: 1; }
+
+/* Controls: rounded; the accent is kept for the one thing to do next. */
+.btn { border-radius: 999px; padding: 11px 22px; letter-spacing: .01em; text-shadow: none; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
+.btn.ghost { background: rgba(8, 14, 11, .3); color: var(--ink); border-color: rgba(255, 255, 255, .5); }
+.chip { border-radius: 999px; padding: 6px 12px; background: rgba(8, 14, 11, .3); color: var(--ink); border-color: rgba(255, 255, 255, .35); text-shadow: none; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.dock { background: linear-gradient(to bottom, rgba(8, 13, 10, .55), rgba(8, 13, 10, .8)); border-top: 0;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.tab { color: rgba(240, 246, 240, .72); }
+.tab[aria-current="page"] { box-shadow: none; color: var(--accent); }
+.tab[aria-current="page"]::before { content: ''; display: block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin: -9px auto 4px; }
+.pill { background: rgba(8, 14, 11, .35); border-color: rgba(255, 255, 255, .3); color: var(--ink); }
+/* Talk: your words and the map's are told apart by colour and side, not by boxes. */
+.talk-turn { padding: 4px 0; border-radius: 0; }
+.talk-turn.from-map { background: none; border: 0; }
+.talk-turn.from-you { background: none; border: 0; border-right: 3px solid var(--accent); padding-right: 12px; text-align: right; }
+.talk-compose { background: linear-gradient(to bottom, transparent, rgba(8, 13, 10, .7) 30%); border-top: 0; }
+/* Gallery tiles are small pictures: let the picture show. */
+.tile { background: rgba(8, 14, 11, .3); border-color: var(--line); }
+.tile-bg img { opacity: .62; filter: none; }
+.tile-bg::after { background: linear-gradient(to bottom, rgba(8, 14, 11, .1) 10%, rgba(8, 14, 11, .78) 88%); }
+/* Pop-up sheets still need a ground of their own. */
+.voices-sheet, .tour-card, .toast { background: var(--sheet); color: var(--ink); border-color: var(--line); text-shadow: none; }
+.voices-sheet { border-radius: 20px 20px 0 0; }
+.tour-card { border-radius: 20px; }
+
+/* Before writing, today's picture stays soft enough that it cannot give the idea away. */
+#wallpaper.nolook img { filter: blur(6px) saturate(.9); }
+
+/* The Map */
+.map { margin: 0 -16px; }
+.map-controls, .map .search, .map-legend, .map-info { margin-left: 16px; margin-right: 16px; }
+.map-controls .size-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.map-what { margin: 4px 0 10px; }
+.map .search { width: calc(100% - 32px); padding: 10px 14px; font: inherit; font-size: .95rem; }
+.map-canvas { display: block; width: 100%; height: 64svh; margin: 10px 0 8px; touch-action: none; cursor: grab;
+  background: radial-gradient(ellipse at center, rgba(4, 8, 10, .35), rgba(4, 8, 10, .62)); }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--muted); }
+.map-key { display: inline-flex; align-items: center; gap: 6px; }
+.map-key i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.map-key i.met { background: transparent; box-shadow: 0 0 0 1.5px #fff; }
+.map-key i.fuzzy { background: #f4c063; box-shadow: 0 0 8px 2px #f4c063; }
+.map-info { margin-top: 14px; min-height: 4em; }
+.map-info h3 { margin: .1em 0 .3em; }
+.map-links { display: flex; flex-direction: column; align-items: flex-start; margin-top: 8px; }
+.map-link { color: var(--ink); text-align: left; padding: 5px 0; text-decoration: underline; text-decoration-color: var(--line); }
+.map-fuzzy { color: var(--warm); }
+.lesson-plate { margin: 2px 0 10px; height: 132px; overflow: hidden; border-radius: 14px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent); mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+.lesson-plate img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 68%; display: block; }
+
+/* Homework */
+.hw-part { margin: 0 0 30px; }
+.hw-part h2 { margin: 0 0 .4em; }
+.hw-q { font-family: var(--display); font-size: 1.22rem; line-height: 1.45; margin: .4em 0 .6em; }
+.hw-part textarea { min-height: 0; margin-top: 4px; }
+.hw-reveal:disabled { opacity: .45; }
+.hw-model { margin: 10px 0 4px; padding-left: 14px; border-left: 3px solid var(--accent); }
+.hw-terms { display: flex; flex-direction: column; gap: 8px; }
+.hw-term { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); padding: 8px 0; font: inherit; }
+.hw-term-word { font-family: var(--display); font-size: 1.25rem; font-weight: 600; display: block; }
+.hw-term-meaning { display: block; color: var(--muted); margin-top: 4px; }
+.hw-term[aria-expanded="false"] .hw-term-word::after { content: '  · tap'; font-family: var(--sans); font-size: .75rem; font-weight: 400; color: var(--muted); }
+.hw-steps { padding-left: 1.3em; margin: 6px 0; }
+.hw-steps li { margin: 4px 0; }
+.hw-conclusion { list-style: none; margin-left: -1.3em; font-weight: 600; }
+.hw-courses { padding-left: 1.1em; }
+.hw-courses li { margin: 6px 0; }
+.hw-courses a { color: var(--accent); }
+.hw-term-meaning[hidden], .hw-model[hidden] { display: none; }
+/* A microphone that is listening breathes, so it is clear the app is waiting for you. */
+.mic.on { border-color: var(--accent); color: var(--accent); animation: mic-breathe 1.8s ease-in-out infinite; }
+@keyframes mic-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
+
+/* Ways in: doors to a conversation, from the first day */
+.doors { margin-top: 26px; }
+.door-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.door { font-size: .9rem; padding: 8px 14px; }
+/* Your views over time */
+.view-topic { margin: 0 0 22px; }
+.view-topic h3 { margin: 0 0 6px; text-transform: none; }
+.view-row { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 10px; }
+.view-row p { margin: .2em 0; }
+.view-drop { padding: 0; font-size: .8rem; }
+
+/* The Parthenon */
+.pt-group { margin: 0 0 30px; }
+.pt-group h2 { margin: 0 0 4px; }
+.pt-topics { list-style: none; padding: 0; margin: 10px 0 0; }
+.pt-topics li { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin: 0 0 10px; }
+.pt-topic { padding: 0; text-align: left; color: var(--ink); font-family: var(--display); font-size: 1.2rem; line-height: 1.35; }
+.pt-new, .pt-topic-new { margin: 10px 0; }
+.pt-new .row, .pt-topic-new .row { flex-wrap: nowrap; }
+.pt-new input, .pt-topic-new input { flex: 1; min-width: 0; padding: 10px 14px; font: inherit; font-size: .95rem; }
+.pt-log { display: flex; flex-direction: column; gap: 14px; margin: 10px 0; }
+.pt-post { max-width: 92%; }
+.pt-post .pt-body { white-space: pre-wrap; line-height: 1.55; }
+.pt-post.from-them { align-self: flex-start; border-left: 3px solid var(--warm); padding-left: 12px; }
+.pt-post.from-me { align-self: flex-end; border-right: 3px solid var(--accent); padding-right: 12px; text-align: right; }
+.pt-post.from-mod { align-self: stretch; max-width: none; border-left: 3px solid var(--f-culture); padding-left: 12px; font-family: var(--display); font-size: 1.08rem; }
+.pt-writing { min-height: 1.4em; font-style: italic; }
+.pt-compose textarea { min-height: 0; }
+[hidden]{display:none !important}
+
+/* The Map, full screen: it fills the phone, and the header, corner buttons and menu fade away. */
+.map-stage { position: relative; }
+.map-exit { display: none; position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 2; font-size: 18px; padding: 8px 14px; }
+html .bar, html .corner, html .dock { transition: opacity .5s ease; }
+html.map-full .bar, html.map-full .corner, html.map-full .dock { opacity: 0; pointer-events: none; }
+html.map-full { overflow: hidden; }
+.map.map-full { position: fixed; inset: 0; z-index: 7; margin: 0; background: radial-gradient(ellipse at center, rgba(4, 8, 10, .55), rgba(4, 8, 10, .88)); }
+.map.map-full .map-controls, .map.map-full .search, .map.map-full .map-legend { display: none; }
+.map.map-full .map-stage { height: 100svh; }
+.map.map-full .map-canvas { height: 100svh; margin: 0; background: none; }
+.map.map-full .map-exit { display: inline-flex; }
+.map.map-full .map-info { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; margin: 0; max-height: 44svh; overflow-y: auto;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to bottom, rgba(8, 13, 10, .55), rgba(8, 13, 10, .92) 24px);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border-radius: 18px 18px 0 0; font-size: 1.02rem; }
+.map.map-full .map-info:empty, .map.map-full .map-info:has(> p.muted:only-child) { max-height: 3.2em; }
+.map-journey { margin: 14px 0 6px; }
+.map-journey ol { margin: 6px 0 8px; padding-left: 1.3em; }
+.map-journey li { margin: 4px 0; }
+.map-links .eyebrow { margin-top: 12px; }
+html.map-full main > :not(.map) { visibility: hidden; }
+#wallpaper.plain.bright::after { background: linear-gradient(to bottom, rgba(6, 12, 9, .5) 0, rgba(6, 12, 9, .36) 35%, rgba(6, 12, 9, .44) 100%); }
+
+/* Keeping chosen words: a button above the menu while words on a page are selected. */
+.keep-bar { position: fixed; z-index: 7; left: 0; right: 0; bottom: calc(var(--dock) + var(--links, 0px) + 10px); display: none; justify-content: center; pointer-events: none; }
+.keep-bar.on { display: flex; }
+.keep-bar .chip { pointer-events: auto; font-size: 15px; padding: 10px 16px; border-radius: 999px; background: var(--warm); color: #1b1404; border: 0; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.stage .panel-inner { -webkit-user-select: text; user-select: text; }
+.ask-back:not(:empty) { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ask-q { font-family: var(--display); font-size: 1.12rem; line-height: 1.5; margin: .3em 0 .7em; }
+.path li > p { white-space: pre-line; }
+
+/* Working through a problem */
+.wt-part { margin: 22px 0; }
+.wt-part h2 { margin-bottom: .3em; }
+.wt-route li { margin: .5em 0; }
+.wt-route .muted { margin: .15em 0 0; }
+.pitfalls { list-style: none; padding: 0; margin: 0; }
+.pitfalls li { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--warm); background: rgba(0,0,0,.18); border-radius: 0 10px 10px 0; }
+.pitfalls li p { margin: .2em 0; }
+.wt-q { font-family: var(--display); font-size: 1.08rem; }
+.help-line { padding: 10px 12px; border-radius: 10px; background: rgba(240, 120, 90, .22); border: 1px solid rgba(240, 120, 90, .55); }
+details.wt-part summary, details.diary-block summary { cursor: pointer; color: var(--muted); }
+
+/* Think, and arriving: a column of large doors */
+.think-doors { display: grid; gap: 10px; margin: 16px 0; }
+.think-door { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,.22);
+  background: rgba(10,16,14,.42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: inherit; font: inherit; cursor: pointer; }
+.think-door .t { font-family: var(--display); font-size: 1.18rem; }
+.think-door:active { transform: scale(.99); }
+
+/* Visitors on the pictures (creatures.js): faint, see-through shapes blended into the painting, behind the words. */
+#creatures { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+#creatures { mix-blend-mode: multiply; }
+#creatures-light { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+#creatures-light .creature { opacity: .45; }
+.creature { position: absolute; left: 0; top: 0; overflow: visible; will-change: transform; opacity: .24; }
+.creature.gone { opacity: 0 !important; }
+/* On a dark painting the visitors lighten it instead, like a reflection. */
+#creatures.dark { mix-blend-mode: screen; }
+#creatures.dark .creature { opacity: .26; filter: invert(1); }
+.creature.webber { opacity: .6; }
+/* The small ones (a caterpillar, an inchworm, a fish) need a little more to be seen at all. */
+.creature.crawler { opacity: .5; }
+#creatures.dark .creature.crawler, #creatures.dark .creature.webber { opacity: .42; }
+.creature.flock { inset: 0; }
+.creature.flock svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.creature.flock .w { transform-box: fill-box; transform-origin: center; animation: flock-flap .32s ease-in-out infinite alternate; animation-delay: var(--d, 0s); }
+@keyframes flock-flap { from { transform: scaleY(1); } to { transform: scaleY(-.5); } }
+.flier.look .head { transform: rotate(-14deg); }
+.flier.ruffle .bird { animation: ruffle .5s ease; }
+@keyframes ruffle { 30% { transform: scaleX(var(--flip, 1)) scale(1.06, .94); } 60% { transform: scaleX(var(--flip, 1)) scale(.96, 1.04); } }
+.paddler .duck { transform-box: fill-box; transform-origin: 50% 90%; animation: bob 2.2s ease-in-out infinite alternate; animation-delay: var(--d, 0s); }
+@keyframes bob { from { translate: 0 0; rotate: -1.5deg; } to { translate: 0 1.2px; rotate: 1.5deg; } }
+.paddler.dip .duck { animation: dip 1.6s ease-in-out; }
+@keyframes dip { 0%, 100% { rotate: 0deg; translate: 0 0; } 30%, 70% { rotate: 62deg; translate: 2px 4px; } }
+.wader .neck { transform-box: fill-box; transform-origin: 0% 100%; transition: transform .22s ease-in; }
+.wader.strike .neck { transform: rotate(48deg) translate(2px, 3px); }
+.piper-el.running .legs { animation: legs .09s linear infinite alternate; }
+@keyframes legs { from { transform: skewX(-25deg); } to { transform: skewX(25deg); } }
+.piper-el .piper { transition: rotate .15s ease; }
+.piper-el.peck .piper { rotate: 22deg; }
+.creature > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
+/* The cat: legs in pairs, a slight bob, the tail always moving; standing still to look about. */
+/* The bird: wings beating in flight; folded, with feet, when it lands; a peck and a hop. */
+.flier .wing { transform-box: fill-box; transform-origin: 30% 100%; animation: bird-flap .2s ease-in-out infinite alternate; }
+.flier .wing.far { animation-delay: -.03s; }
+.flier.perched .wing, .flier.flying .folded, .flier.flying .feet { display: none; }
+.flier .head { transform-box: fill-box; transform-origin: 20% 80%; transition: transform .12s ease; }
+.flier.peck .head { transform: rotate(38deg) translate(1px, 3px); }
+.flier .bird { transition: translate .16s ease; }
+.flier.hop .bird { translate: 0 -5px; }
+@keyframes bird-flap { from { transform: scaleY(1); } to { transform: scaleY(-.75); } }
+/* The dragonfly: wings a blur of light. */
+.darter .dw { animation: dragon-wing .07s linear infinite alternate; }
+@keyframes dragon-wing { from { opacity: .95; } to { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { #creatures { display: none; } }
+
+/* Calm: while an idea is read, the buttons fade to nothing after a few seconds untouched; a touch brings them back. */
+html .bar, html .corner, html .dock, html .rail { transition: opacity .8s ease; }
+html.calm .bar, html.calm .corner, html.calm .dock, html.calm .rail { opacity: 0; pointer-events: none; }
+
+/* The living painting (living.js): soft-edged copies of spots of the picture, laid over it and moved a pixel or two.
+   The layer takes the picture's own blur, zoom and fade, so the copies sit exactly on it. */
+#living { position: absolute; inset: 0; pointer-events: none; transform-origin: var(--wall-origin, 50% 50%);
+  filter: blur(calc((1 - var(--focus, 0)) * 1.5px)) saturate(calc(.95 + var(--focus, 0) * .1));
+  transform: scale(calc((1.02 - var(--focus, 0) * .02) * var(--wall-zoom, 1))); transition: filter .25s linear, transform .25s linear; }
+#wallpaper.plain #living { filter: none; transform: scale(var(--wall-zoom, 1)); transition: transform .35s ease; }
+#wallpaper.nolook #living { filter: blur(6px) saturate(.9); }
+#wallpaper.pinching #living { transition: none !important; }
+.live-part { position: absolute; background-repeat: no-repeat; will-change: transform;
+  -webkit-mask-image: radial-gradient(closest-side, #000 58%, transparent 100%); mask-image: radial-gradient(closest-side, #000 58%, transparent 100%); }
+.live-part.live-spin { -webkit-mask-image: radial-gradient(closest-side, #000 86%, transparent 100%); mask-image: radial-gradient(closest-side, #000 86%, transparent 100%); }
+@media (prefers-reduced-motion: reduce) { #living { display: none; } }
+
+/* Visitors from the paintings: leaves, a butterfly, bees, rays of light, ripples, writing. */
+.creature.leaf { opacity: .5; }
+.flutter .bw { transform-box: fill-box; animation: bwing .16s ease-in-out infinite alternate; }
+.flutter .bw.l { transform-origin: 100% 50%; } .flutter .bw.r { transform-origin: 0% 50%; }
+.flutter.resting .bw { animation-duration: 1.4s; }
+@keyframes bwing { from { transform: scaleX(1); } to { transform: scaleX(.25); } }
+.creature.flutter { opacity: .5; }
+.creature.bee { opacity: .55; }
+.bee .bw2 { animation: dragon-wing .05s linear infinite alternate; }
+.creature.rays { inset: 0; opacity: 1; mix-blend-mode: normal; }
+.creature.rays .beam { position: absolute; transform-origin: 50% 0; filter: blur(9px);
+  background: linear-gradient(to bottom, rgba(255, 246, 214, .26), rgba(255, 246, 214, .12) 55%, rgba(255, 246, 214, 0));
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); }
+.creature.ripple { opacity: .5; }
+.ripple .ring { transform-box: fill-box; transform-origin: center; opacity: 0; animation: ring 3.6s ease-out forwards; }
+@keyframes ring { 0% { transform: scale(.08); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+.creature.writing { overflow: visible; display: flex; flex-direction: column; justify-content: flex-start; transform-origin: 50% 50%; line-height: 1.25; white-space: nowrap; }
+.writing.ink { opacity: .62; color: rgba(34, 26, 18, .95); font-family: "Cormorant Garamond", var(--display), serif; font-style: italic; }
+.writing.chalk { opacity: .55; color: rgba(244, 242, 228, .95); font-family: var(--display), serif; font-style: italic; letter-spacing: .02em; text-shadow: 0 0 1px rgba(255,255,255,.5); }
+.writing .wline { clip-path: inset(0 100% 0 0); }
+.writing .orbit-svg { display: block; margin: 0 auto 4px; overflow: visible; }
+@media (prefers-reduced-motion: reduce) { #creatures-light { display: none; } }
+
+/* Look: the painting's moving parts and the visitors, in boxes that move and zoom with the picture. */
+.gaze .gaze-live { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
+.gaze .gaze-world { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; transform-origin: 0 0; pointer-events: none; mix-blend-mode: multiply; }
+.gaze .gaze-world:has(> #creatures.dark) { mix-blend-mode: screen; }
+.gaze .gaze-world.light { mix-blend-mode: normal; }
+#creatures.in-gaze, #creatures-light.in-gaze { position: absolute; inset: 0; mix-blend-mode: normal; }
+
+/* Following along: the letters of the word being read flare one after another and fade (no box around them), and
+   motes of stardust drift off them and twinkle out. */
+.stage span.ch.lit, .lyrics span.ch.lit { animation: letter-glow 1.9s ease-out both; }
+@keyframes letter-glow {
+  0% { color: inherit; text-shadow: var(--text-shadow, none); }
+  10% { color: #fff6d8; text-shadow: 0 0 3px #ffe7a6, 0 0 9px rgba(255, 205, 110, .85), 0 0 18px rgba(255, 180, 80, .5); }
+  45% { color: #ffefc4; text-shadow: 0 0 4px rgba(255, 220, 140, .55), 0 0 12px rgba(255, 190, 90, .25); }
+  100% { color: inherit; text-shadow: var(--text-shadow, none); } }
+#stardust { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+#stardust .mote, .lyric-dust .mote { position: absolute; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
+  background: radial-gradient(circle, #fffdf2 0, #ffe1a0 45%, rgba(255, 200, 110, 0) 70%); box-shadow: 0 0 4px rgba(255, 220, 150, .9);
+  animation: mote 1.4s ease-out forwards; }
+@keyframes mote {
+  0% { transform: translate(0, 0) scale(var(--s, 1)); opacity: 0; }
+  12% { opacity: 1; }
+  35% { opacity: .55; } 50% { opacity: .95; } 70% { opacity: .4; }
+  100% { transform: translate(var(--dx, 0), var(--dy, -14px)) scale(.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #stardust { display: none; } .stage span.ch.lit { animation-duration: .9s; } }
+
+/* Contemplate: the passage over the painting, a short line at a time, fading in and out with the narrator. */
+html.can-speak.staged:has(#wallpaper.on) .contemplate { display: inline-flex; }
+html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; padding-left: 9px; padding-right: 9px; } /* icons are enough for these two here */
+.gaze .lyrics { position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.gaze .lyrics::before { content: ''; position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(4, 8, 6, 0) 38%, rgba(4, 8, 6, .3) 52%, rgba(4, 8, 6, .3) 68%, rgba(4, 8, 6, 0) 84%); }
+.gaze .lyric { position: absolute; left: 24px; right: 24px; top: 56%; text-align: center;
+  font-family: var(--display), serif; font-size: clamp(1.55rem, 6.4vw, 2.2rem); line-height: 1.32; color: #fbf7ec;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .6), 0 0 2px rgba(0, 0, 0, .45);
+  opacity: 0; transform: translateY(12px); filter: blur(2px); transition: opacity 1s ease, transform 1.3s ease, filter 1s ease; }
+.gaze .lyric.in { opacity: 1; transform: none; filter: none; }
+.gaze .lyric.out { opacity: 0; transform: translateY(-12px); filter: blur(3px); }
+.gaze .lyrics.paused .lyric.in { opacity: .6; }
+.gaze .lyric-dust { position: absolute; inset: 0; pointer-events: none; }
+.think-door.pick-up { border-color: rgba(244, 192, 99, .55); background: rgba(40, 30, 10, .42); }
+.creature.hummer { opacity: .55; }
+.hummer .hw { animation: dragon-wing .035s linear infinite alternate; }
+.hummer .hw.b { animation-delay: -.017s; }
+.hummer .htail { transform-box: fill-box; transform-origin: 100% 0; animation: htail 1.1s ease-in-out infinite alternate; }
+@keyframes htail { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
+.flutter .bw { animation-duration: var(--beat, .16s); }
+.creature.school { opacity: .3; }
+
+/* A distant bird: small, soft, crossing slowly; flapping, then gliding. */
+.creature.farbird { opacity: .28; filter: blur(.45px); }
+.farbird .w { transform-box: fill-box; transform-origin: center; animation: flock-flap .42s ease-in-out infinite alternate; }
+.farbird.gliding .w { animation-play-state: paused; }
+/* A flame's warm light (living.js), and rays from a flame. */
+.live-glow { position: absolute; border-radius: 50%; pointer-events: none; will-change: opacity, transform;
+  background: radial-gradient(circle, rgba(255, 196, 110, .34) 0, rgba(255, 150, 60, .18) 28%, rgba(240, 110, 40, .07) 50%, rgba(240, 110, 40, 0) 70%); }
+.creature.rays.warm .beam { background: linear-gradient(to bottom, rgba(255, 190, 110, .3), rgba(255, 150, 70, .14) 55%, rgba(255, 140, 60, 0)); }
+/* Above the words, for a butterfly or a bee settled on a letter. */
+#creatures-perch { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; mix-blend-mode: multiply; }
+#creatures-perch.dark { mix-blend-mode: screen; }
+#creatures-perch .creature { opacity: .55; }
+#creatures-perch.dark .creature { filter: invert(1); opacity: .4; }
+.bee.sitting .bw2 { animation: none; opacity: .7; }
+@media (prefers-reduced-motion: reduce) { #creatures-perch { display: none; } }
+/* A butterfly settled (on a flower or a letter): wings folded upright together, opening a little now and then. */
+.flutter .folded { display: none; }
+.flutter.resting .open { display: none; }
+.flutter.resting .folded { display: inline; }
+.flutter .fw { transform-box: fill-box; transform-origin: 50% 100%; animation: fold-breathe 3.4s ease-in-out infinite; }
+@keyframes fold-breathe { 0%, 55%, 100% { transform: scaleX(1); } 70% { transform: scaleX(1.55) skewX(-4deg); } 82% { transform: scaleX(1.1); } }
