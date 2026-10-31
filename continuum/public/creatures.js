@@ -422,9 +422,15 @@ async function butterfly(run, sc) {
   const n = Math.random() < .5 ? 1 : Math.random() < .75 ? 2 : 3;
   const flies = Array.from({ length: n }, (_, i) => {
     const c = COLOURS[Math.floor(Math.random() * COLOURS.length)]; const size = rnd(14, 20);
-    const el = svg('0 0 24 20', size, `<g class="bfly"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="${c}"/>
+    // Two shapes: wings open in flight; folded upright together when it settles (seen from the side, opening a
+    // little now and then).
+    const el = svg('0 0 24 20', size, `<g class="bfly"><g class="open"><path class="bw l" d="M12 10 C6 1 1 2 2 8 C2 12 7 13 12 10 C7 14 4 19 8 18 C10 17 11 14 12 10Z" fill="${c}"/>
       <path class="bw r" d="M12 10 C18 1 23 2 22 8 C22 12 17 13 12 10 C17 14 20 19 16 18 C14 17 13 14 12 10Z" fill="${c}"/>
-      <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>`);
+      <path d="M12 6 L12 15" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/></g>
+      <g class="folded"><g class="fw"><path d="M12.5 15 C9 9 8.5 2.5 12 1.5 C16.5 1 18.5 6 13.5 15Z" fill="${c}"/><path d="M12.5 16 C9.5 13.5 8.5 10.5 10.5 9.5 C13 9 14 12 13 16Z" fill="${c}" opacity=".85"/></g>
+      <path d="M9 16.5 C11 15.6 14 15.6 16 16.5" stroke="${INK}" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <path d="M15.6 16 L18 12.8 M16 16.2 L19 14" stroke="${INK}" stroke-width=".6"/>
+      <path d="M8.8 17.3 L8 19.5 M11 17.6 L10.6 19.6 M13.6 17.6 L14 19.6" stroke="${INK}" stroke-width=".5"/></g></g>`);
     el.classList.add('creature', 'flutter'); el.style.setProperty('--beat', `${rnd(.16, .23)}s`); layer.append(el);
     const fromLeft = Math.random() < .5;
     return { el, size, x: fromLeft ? -20 : W + 20, y: rnd(H * .2, H * .7), nx: noise(), ny: noise(), target: null, rest: 0, legs: Math.round(rnd(4, 7)), done: false, delay: i * rnd(3000, 7000), perched: null, mayLand: Math.random() < .55 };
