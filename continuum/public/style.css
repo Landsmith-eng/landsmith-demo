@@ -954,3 +954,4 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .survey-options.numbers .btn { text-align: center; justify-content: center; padding-left: 0; padding-right: 0; }
 .survey-options .btn.on { border-color: var(--accent); }
 .think-door .small { color: inherit; opacity: .9; }
+.lenses .eyebrow { color: var(--accent); }

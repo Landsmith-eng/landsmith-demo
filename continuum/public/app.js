@@ -2591,6 +2591,11 @@ function showMind() {
       h('p', { class: 'muted small' }, 'These surveys are screenings and reflections, not diagnoses, and Continuum is not a therapist. If you are struggling, a doctor or counsellor can help. ', HELP_LINE));
   });
 }
+// A school by its id (from a plan's lens).
+async function openSchool(id) {
+  const sch = await api(`/api/schools?date=${today()}`).catch(() => null);
+  const x = sch?.schools.find((y) => y.id === id); if (x) showSchool(x, sch.refs);
+}
 // One school: how it sees a problem, what it does, the question it would ask you, its ideas and practices.
 function showSchool(x, refs) {
   setNav('');
@@ -2841,6 +2846,16 @@ function renderCase(c) {
     h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
     h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
     p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
+    // The same problem seen through several schools of psychology, each with something to do.
+    p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
+      h('p', { class: 'muted small' }, 'Each school sees a problem in its own way. Try the one that rings truest, or more than one.'),
+      h('ul', { class: 'pitfalls lenses' }, p.lenses.map((l) => h('li', {},
+        h('button', { type: 'button', class: 'link eyebrow', style: 'padding:0', onclick: () => openSchool(l.school) }, l.name),
+        h('p', {}, l.sees), h('p', {}, h('strong', {}, 'Try: '), l.method),
+        l.practice && refs[l.practice] && h('p', { class: 'muted small' }, 'A practice for it: ', ideaLink(l.practice, refs)))))),
+    p.survey && surveyById(p.survey) && h('section', { class: 'wt-part' }, h('h2', {}, 'A survey that may help'),
+      h('p', { class: 'small' }, surveyById(p.survey).about),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(p.survey) }, `Take "${surveyById(p.survey).name}" (${surveyById(p.survey).time})`)),
     c.route.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'A route through it'),
       h('ol', { class: 'wt-route' }, c.route.map((r) => h('li', {}, ideaLink(r.id, refs), h('p', { class: 'muted small' }, r.why)))),
       c.status === 'open' && h('div', { class: 'row', style: 'justify-content:flex-start' }, start),

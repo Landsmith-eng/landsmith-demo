@@ -70,7 +70,17 @@ const R = {
     'james_attention_is_will', 'adler_feeling_of_inferiority', 'lewin_person_and_situation', 'festinger_cognitive_dissonance',
     'ellis_abc_model', 'bowlby_ainsworth_attachment', 'mischel_delay_of_gratification', 'bandura_self_efficacy',
     'kahneman_tversky_loss_aversion', 'prochaska_stages_of_change', 'pennebaker_expressive_writing', 'csikszentmihalyi_flow',
-    'linehan_radical_acceptance', 'gollwitzer_implementation_intentions', 'dweck_mindsets'],
+    'linehan_radical_acceptance', 'gollwitzer_implementation_intentions', 'dweck_mindsets',
+    // psychology2.js: the schools of psychology
+    'freud_ego_not_master', 'anna_freud_defence_mechanisms', 'winnicott_good_enough_mother', 'horney_tyranny_of_the_should',
+    'erikson_eight_stages', 'thorndike_law_of_effect', 'watson_behaviorist_manifesto', 'wolpe_systematic_desensitisation',
+    'lewinsohn_behavioural_activation', 'piaget_stages_of_thinking', 'vygotsky_zone_of_proximal_development',
+    'burns_cognitive_distortions', 'kahneman_two_systems', 'perls_gestalt_here_and_now', 'yalom_four_givens',
+    'hayes_acceptance_and_commitment', 'neff_self_compassion', 'segal_williams_teasdale_mbct', 'bowen_family_systems',
+    'gottman_four_horsemen', 'de_shazer_berg_miracle_question', 'white_epston_narrative_therapy',
+    'miller_rollnick_motivational_interviewing', 'seligman_perma', 'deci_ryan_self_determination', 'duckworth_grit',
+    'fredrickson_broaden_and_build', 'asch_conformity', 'zimbardo_stanford_prison', 'tajfel_social_identity',
+    'cannon_fight_or_flight', 'selye_stress'],
 };
 
 export const roomOf = {};

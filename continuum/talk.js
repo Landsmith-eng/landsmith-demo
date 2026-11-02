@@ -301,10 +301,12 @@ export const PLAN_SCHEMA = {
     pitfalls: { type: 'array', items: PITFALL },
     route: { type: 'array', items: STOP },
     practice: { type: 'string' },
+    lenses: { type: 'array', items: { type: 'object', properties: { school: { type: 'string' }, sees: { type: 'string' }, method: { type: 'string' }, practice: { type: 'string' } }, required: ['school', 'sees', 'method', 'practice'], additionalProperties: false } },
+    survey: { type: 'string' },
     first_step: { type: 'string' },
     check_in: { type: 'string' },
   },
-  required: ['concern', 'title', 'heard', 'going_on', 'pitfalls', 'route', 'practice', 'first_step', 'check_in'],
+  required: ['concern', 'title', 'heard', 'going_on', 'pitfalls', 'route', 'practice', 'lenses', 'survey', 'first_step', 'check_in'],
   additionalProperties: false,
 };
 const PLAN_RULES = `You are Continuum, a daily practice app that holds the collective wisdom of philosophy, the world's religious traditions, psychology, the sciences and the law. Be a voice of reason for a hard problem: warm, clear, honest, and practical. Plain words, no jargon, no formatting inside the strings. Speak to the user as "you".
@@ -314,10 +316,12 @@ const PLAN_RULES = `You are Continuum, a daily practice app that holds the colle
 - pitfalls: one to four things that may be keeping them stuck, each found in what they actually said: an untested assumption, a slip of logic (all-or-nothing, mind reading, a hasty generalisation, a false choice, a sunk cost…), a habit, a feeling steering the decision, or a clash of values. name: its plain name. how: how it shows up in their own words, briefly, and why it matters. idea: the id of the idea on the map that best tests or answers it, exactly as listed, or "" if none fits. Be kind and exact; if there is no real pitfall, list none rather than invent one.
 - route: three to five ideas from the map, in a sensible order, that would help them see the problem differently, challenge the pitfalls and make a new decision; each with why, one sentence on what it offers them. Mix fields where it helps. Use only ids exactly as listed.
 - practice: the id of one practice from the map that fits (ids starting practice_), or "".
+- lenses: two to four schools of psychology (from the list of schools, ids exactly as listed) that see THIS problem most clearly, the most fitting first; mix kinds where it helps (e.g. one about thoughts, one about behaviour, one about relationships or meaning). For each: sees: how that school would understand this person's problem, specifically, in one or two sentences; method: what that school would have them do, concrete and small enough to start this week; practice: the id of one of that school's practices as listed, or "". Never present a lens as a diagnosis or as therapy.
+- survey: the id of one survey from the list that would make the picture clearer (for example mood if they describe low mood, worry if anxiety, problem_map if it is hard to say where the problem lives), or "" if none would help or they have taken it recently.
 - first_step: one small, concrete thing to do this week, specific to their situation.
 - check_in: the one question to ask them in a few days, to see how it is going.
 ${SAFETY} When concern is true, keep the rest brief and gentle.`;
-export async function writePlan(talk, { problem, turns, catalogue, views = '', diary = '' }) {
+export async function writePlan(talk, { problem, turns, catalogue, views = '', diary = '', schools = '', surveys = '', checks = '' }) {
   const asked = turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join('\n\n');
   const msg = await talk.client.beta.messages.create({
     model: talk.model,
@@ -327,9 +331,9 @@ export async function writePlan(talk, { problem, turns, catalogue, views = '', d
     output_config: { effort: 'high', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
     system: [
       { type: 'text', text: PLAN_RULES },
-      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}${schools ? `\n\nThe schools of psychology (id | name | how it sees a problem | its methods | its practices):\n${schools}` : ''}${surveys ? `\n\nThe surveys in the psychology room (id | name):\n${surveys}` : ''}`, cache_control: { type: 'ephemeral' } },
     ],
-    messages: [{ role: 'user', content: `${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}${diary ? `From their diary (recent):\n${diary}\n\n` : ''}The problem, in their words:\n${problem}\n\nThe interview:\n${asked || '(They asked to go straight to a route.)'}` }],
+    messages: [{ role: 'user', content: `${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}${checks ? `Surveys they have taken (latest; screenings, not diagnoses):\n${checks}\n\n` : ''}${diary ? `From their diary (recent):\n${diary}\n\n` : ''}The problem, in their words:\n${problem}\n\nThe interview:\n${asked || '(They asked to go straight to a route.)'}` }],
   });
   if (msg.stop_reason !== 'end_turn') return null;
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
@@ -349,7 +353,7 @@ export const CHECKIN_SCHEMA = {
   required: ['concern', 'reply', 'progress', 'noticed', 'route', 'next_step', 'check_in'],
   additionalProperties: false,
 };
-export async function checkIn(talk, { title, problem, plan, history, answer, recent, catalogue }) {
+export async function checkIn(talk, { title, problem, plan, history, answer, recent, catalogue, checks = '' }) {
   const msg = await talk.client.beta.messages.create({
     model: talk.model,
     max_tokens: 16000,
@@ -367,7 +371,7 @@ export async function checkIn(talk, { title, problem, plan, history, answer, rec
 ${SAFETY}` },
       { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
     ],
-    messages: [{ role: 'user', content: `The problem: ${title}\nIn their words: ${problem}\n\nThe plan so far:\n${JSON.stringify(plan)}\n\nEarlier check-ins:\n${history || '(none)'}\n\nTheir recent writing and talk (dated):\n${recent || '(nothing yet)'}\n\nWhat they say now:\n${answer}` }],
+    messages: [{ role: 'user', content: `The problem: ${title}\nIn their words: ${problem}\n\nThe plan so far:\n${JSON.stringify(plan)}\n\nEarlier check-ins:\n${history || '(none)'}\n\nTheir recent writing and talk (dated):\n${recent || '(nothing yet)'}${checks ? `\n\nSurveys they have taken (latest; screenings, not diagnoses; compare with earlier if they retook one):\n${checks}` : ''}\n\nWhat they say now:\n${answer}` }],
   });
   if (msg.stop_reason !== 'end_turn') return null;
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }

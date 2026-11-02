@@ -21,7 +21,8 @@ before(async () => {
       if (props.going_on) return json({ concern: false, title: 'Putting off the job search', heard: 'h', going_on: 'g',
         pitfalls: [{ kind: 'logic', name: 'All-or-nothing thinking', how: 'You said it is pointless unless perfect.', idea: 'ellis_abc_model' }, { kind: 'habit', name: 'x', how: 'y', idea: 'not_real' }],
         route: [{ id: 'ellis_abc_model', why: 'a' }, { id: 'not_real', why: 'b' }, { id: 'gollwitzer_implementation_intentions', why: 'c' }, { id: 'practice_if_then_plan', why: 'not a stop' }],
-        practice: 'practice_if_then_plan', first_step: 'Send one email.', check_in: 'Did you send it?' });
+        practice: 'practice_if_then_plan', first_step: 'Send one email.', check_in: 'Did you send it?',
+        lenses: [{ school: 'cbt', sees: 's', method: 'm', practice: 'practice_thought_record' }, { school: 'not_a_school', sees: 'x', method: 'y', practice: '' }, { school: 'motivational', sees: 's2', method: 'm2', practice: 'not_real' }], survey: 'mood' });
       if (props.progress) return json({ concern: false, reply: 'Good.', progress: 'better', noticed: [{ kind: 'assumption', name: 'Mind reading', how: 'z', idea: '' }],
         route: [{ id: 'bandura_self_efficacy', why: 'next' }, { id: 'dweck_mindsets', why: 'then' }], next_step: 'Two emails.', check_in: 'And now?' });
       return json({});
@@ -50,8 +51,15 @@ test('an interview, then a plan from the map that keeps only real ideas', async 
   assert.equal(c.plan.practice, 'practice_if_then_plan');
   assert.ok(c.refs.ellis_abc_model && c.refs.practice_if_then_plan);
   assert.equal(c.question, 'Did you send it?');
-  // The plan saw the interview.
-  assert.match(seen.find((r) => r.output_config.format.schema.properties.going_on).messages[0].content, /A2: I tell myself it is pointless/);
+  // Seen through the schools: only real schools and practices are kept; a survey is suggested.
+  assert.deepEqual(c.plan.lenses.map((l) => [l.school, l.practice]), [['cbt', 'practice_thought_record'], ['motivational', '']]);
+  assert.match(c.plan.lenses[0].name, /cognitive-behavioural/i);
+  assert.equal(c.plan.survey, 'mood');
+  assert.ok(c.refs.practice_thought_record);
+  // The plan saw the interview, and the schools.
+  const planReq = seen.find((r) => r.output_config.format.schema.properties.going_on);
+  assert.match(planReq.messages[0].content, /A2: I tell myself it is pointless/);
+  assert.match(planReq.system[1].text, /third_wave \| The third wave/);
 });
 
 test('as a course, it leads the daily idea; check-ins come due, can change the course, and Talk sees the pitfalls', async () => {

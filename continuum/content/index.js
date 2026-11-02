@@ -49,7 +49,20 @@ for (const [id, room] of Object.entries(roomOf)) {
   n.room = room;
 }
 
+// Schools of psychology: each lists ideas and practices on the map. Unknown ids fail loudly.
+const { SCHOOLS } = await import('./schools.js');
+{
+  const seen = new Set();
+  for (const s of SCHOOLS) {
+    if (seen.has(s.id)) throw new Error(`schools.js: duplicate school ${s.id}`);
+    seen.add(s.id);
+    for (const id of s.ideas) if (!byId.has(id) || byId.get(id).type === 'practice') throw new Error(`schools.js: ${s.id} lists unknown idea ${id}`);
+    for (const id of s.practices) if (byId.get(id)?.type !== 'practice') throw new Error(`schools.js: ${s.id} lists unknown practice ${id}`);
+  }
+}
+
 export const nodes = [...byId.values()];
 export { rooms };
+export { SCHOOLS } from './schools.js';
 export { imageIssues };
 export { edges, branchFiles };

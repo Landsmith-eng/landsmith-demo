@@ -11,6 +11,7 @@ import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_ste
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
+import { SCHOOLS } from './content/schools.js';
 import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
@@ -1452,7 +1453,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   const lastQuestion = (c) => JSON.parse(c.checkins).at(-1)?.check_in ?? JSON.parse(c.plan ?? '{}').check_in ?? 'How is it going?';
   function caseOut(c, states) {
     const turns = JSON.parse(c.turns); const plan = c.plan ? JSON.parse(c.plan) : null; const route = JSON.parse(c.route);
-    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice,
+    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice),
       ...JSON.parse(c.checkins).flatMap((x) => (x.noticed ?? []).map((p) => p.idea))].filter(Boolean);
     return {
       id: c.id, title: c.title, problem: c.problem, status: c.status, started: Boolean(c.started), date: c.local_date, touched: c.touched_date,
@@ -1466,7 +1467,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const route = (plan.route ?? []).filter((r) => ok(r.id) && q.node.get(r.id).type !== 'practice')
       .filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i).slice(0, 6);
     const pit = (p) => ({ ...p, idea: ok(p.idea) ? p.idea : '' });
-    return { ...plan, route, pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
+    const lenses = (plan.lenses ?? []).map((l) => { const sc = SCHOOLS.find((x) => x.id === l.school); return sc && { school: sc.id, name: sc.name, sees: l.sees, method: l.method, practice: ok(l.practice) && q.node.get(l.practice).type === 'practice' ? l.practice : '' }; }).filter(Boolean).slice(0, 4);
+    return { ...plan, route, lenses, survey: surveyById(plan.survey) ? plan.survey : '', pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
       practice: ok(plan.practice) && q.node.get(plan.practice).type === 'practice' ? plan.practice : '' };
   }
   // For Talk: the problems they are working through, with the pitfalls named so far.
@@ -1498,7 +1500,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   const failed = (res, e, what) => { console.warn(`${what}: ${e.status ?? ''} ${e.message}`); res.status(502).json({ error: 'claude_failed' }); };
   async function makePlan(uid, date, c, states) {
-    const plan = await writePlan(talk, { problem: c.problem, turns: JSON.parse(c.turns).filter((t) => t.a), catalogue: catalogueFor(states), views: viewsText(uid), diary: talkDiary(uid, states) });
+    const plan = await writePlan(talk, { problem: c.problem, turns: JSON.parse(c.turns).filter((t) => t.a), catalogue: catalogueFor(states), views: viewsText(uid), diary: talkDiary(uid, states), schools: schoolsText, surveys: surveysList, checks: surveysText(uid, date) });
     if (!plan) return null;
     const clean = cleanPlan(plan, states);
     kq.plan.run(JSON.stringify(clean), clip(clean.title, 80) || 'A problem to work through', JSON.stringify(clean.route), date, c.id);
@@ -1584,7 +1586,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const r = await checkIn(talk, {
         title: c.title, problem: c.problem, plan: { ...JSON.parse(c.plan), route: JSON.parse(c.route) },
         history: history.map((x) => `${x.date} (${x.progress}): they said "${clip(x.answer, 300)}"`).join('\n'),
-        answer, recent: recentLines(uid, history.at(-1)?.date ?? c.local_date), catalogue: catalogueFor(states),
+        answer, recent: recentLines(uid, history.at(-1)?.date ?? c.local_date), catalogue: catalogueFor(states), checks: surveysText(uid, date),
       });
       if (!r) return res.status(502).json({ error: 'claude_failed' });
       const clean = cleanPlan({ ...r, pitfalls: [] }, states);
@@ -1624,6 +1626,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     res.json({ result: { id, survey: survey.id, date, ...result }, refs: talkRefs(talkStates(req.user.id, date), [...(result.practices ?? []), ...(result.ideas ?? [])]) });
   });
   app.delete('/api/surveys/results/:id', auth, (req, res) => { svq.drop.run(Number(req.params.id), req.user.id); res.json({ ok: true }); });
+  // The schools of psychology, with the titles of their ideas and practices for linking.
+  app.get('/api/schools', auth, (req, res) => {
+    const states = talkStates(req.user.id, localDate(req.query.date));
+    res.json({ schools: SCHOOLS, refs: talkRefs(states, [...new Set(SCHOOLS.flatMap((x) => [...x.ideas, ...x.practices]))]) });
+  });
+  const schoolsText = SCHOOLS.map((x) => `${x.id} | ${x.name} | ${x.sees} | ${x.methods.join('; ')} | ${x.practices.join(', ') || '-'}`).join('\n');
+  const surveysList = SURVEYS.map((x) => `${x.id} | ${x.name}${x.kind === 'screen' ? ` (${x.short})` : ' (reflection)'}`).join('\n');
   // The latest of each survey in the last two months, one line each, for Talk and for working through a problem.
   function surveysText(uid, date = localDate()) {
     const seen = new Set();

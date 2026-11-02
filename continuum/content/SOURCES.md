@@ -396,3 +396,63 @@ Ubuntu and the Harvard Study ↔ Bowlby, Buddha and Brickman ↔ loss aversion, 
 the Gita and Marx ↔ flow, Shantideva ↔ Linehan, Wang Yangming ↔ Gollwitzer, Xunzi ↔ Dweck.
 
 Two themes added in `themes.js`: "Changing a habit" and "Working out a problem".
+
+## Batch 12: psychology2.js (the schools of psychology), 2026-11-02
+
+32 idea nodes and 10 practices for "Psychology and the mind", filling the gaps between the schools so a reader can look
+at one problem through each school's eyes; plus `content/schools.js` (18 schools, each listing its ideas and practices;
+`content/index.js` checks every id and exports `SCHOOLS`), and three themes in `themes.js` ("Fear, worry and stress",
+"The pull of the group", "The schools of psychology"). Public-domain texts were downloaded and matched with
+`scripts/verify-quotes.js` (all four quoted nodes: OK); everything else is a labelled summary with no invented
+quotations or page numbers.
+
+| Node | Source | Status |
+|---|---|---|
+| freud_ego_not_master | A General Introduction to Psychoanalysis, trans. G. Stanley Hall (1920), Eighteenth Lecture; The Ego and the Id, trans. Joan Riviere (1927), ch. II | Verified (Gutenberg 38219 and 79682). Hall's wording is "master in its own home", hence the title; Riviere's 1927 translation is US public domain since 2023 |
+| thorndike_law_of_effect | Animal Intelligence (New York: Macmillan, 1911), ch. II and ch. VI | Verified (Gutenberg 69904); Thorndike's italics not reproduced |
+| watson_behaviorist_manifesto | "Psychology as the Behaviorist Views It", Psychological Review 20 (1913), p. 158 | Verified (archive.org `sim_psychological-review_1913-03_20_2`, OCR text; line-end hyphens rejoined by the verifier). Page number from the running heads (p. 159 follows) |
+| cannon_fight_or_flight | Bodily Changes in Pain, Hunger, Fear and Rage (New York: Appleton, 1915), ch. XI and a footnote in ch. XIV | Verified (Gutenberg 73932). Cannon writes "fighting or flight"; the title says so |
+| anna_freud_defence_mechanisms, winnicott_good_enough_mother, horney_tyranny_of_the_should, erikson_eight_stages, wolpe_systematic_desensitisation, lewinsohn_behavioural_activation, piaget_stages_of_thinking, vygotsky_zone_of_proximal_development, burns_cognitive_distortions, kahneman_two_systems, perls_gestalt_here_and_now, yalom_four_givens, hayes_acceptance_and_commitment, neff_self_compassion, segal_williams_teasdale_mbct, bowen_family_systems, gottman_four_horsemen, de_shazer_berg_miracle_question, white_epston_narrative_therapy, miller_rollnick_motivational_interviewing, seligman_perma, deci_ryan_self_determination, duckworth_grit, fredrickson_broaden_and_build, asch_conformity, zimbardo_stanford_prison, tajfel_social_identity, selye_stress | | **Summaries** (in copyright) |
+| practice_thought_record, practice_behavioural_activation, practice_exposure_ladder, practice_values_compass, practice_defusion, practice_self_compassion_break, practice_miracle_question, practice_externalise_problem, practice_decisional_balance, practice_three_good_things | our words, from Beck/Burns/Ellis; Lewinsohn/Jacobson; Wolpe/Bandura; Hayes/Deci and Ryan; Hayes/MBCT; Neff; de Shazer and Berg; White and Epston; Prochaska and Miller–Rollnick (with Miller and Rose 2015); Seligman/Fredrickson | Exercises in `practice_steps.js`; each says or implies it is an everyday exercise, not treatment (the fear ladder and behavioural activation name when to see a professional) |
+
+Caveats stated in the plain faces: the Stanford prison experiment's coaching of guards, lack of controls and the
+Haslam–Reicher BBC study (Le Texier 2019); grit's weak prediction and overlap with conscientiousness (Credé et al. 2017);
+the withdrawn positivity ratio (Brown, Sokal and Friedman 2013); Kahneman's retraction of confidence in priming studies
+(2017); Gottman's post hoc divorce predictions (Heyman and Slep 2001); Little Albert as one child, unreplicated and
+unethical; Piaget's stages less tidy and children more capable earlier; Selye's response less uniform (Mason 1971);
+ACT equal to, not better than, CBT (A-Tjak et al. 2015); MBCT's benefit mainly with three or more past episodes
+(Teasdale et al. 2000; Kuyken et al. 2016); thin trial evidence for existential, Bowenian, narrative and classic
+Gestalt therapy; self-compassion evidence largely correlational; small or fading effects of PERMA school programmes.
+
+Claims resting on memory (check these): all journal volumes and years in the summary citations; Anna Freud's list of
+ten defences plus identification with the aggressor and altruistic surrender, and Vaillant's rating of defences in the
+Harvard Study (Adaptation to Life, 1977); Erikson analysed by Anna Freud, and Vaillant's use of his stages; Horney's
+ch. 3 title "The Tyranny of the Should" and Ellis acknowledging her; Winnicott's 1953 paper as the source of "good
+enough mother"; Mary Cover Jones (1924) advised by Watson; Watson's 1915 APA address on the conditioned reflex; Skinner
+turned to behaviourism by reading Watson; Wolpe's cat experiments and Jacobson's relaxation; Jacobson et al. (1996),
+Dimidjian et al. (2006), Richards et al. (2016); Donaldson (1978); Wood, Bruner and Ross (1976) for "scaffolding";
+Vygotsky's critique of Piaget's 1923 book; Burns training with Beck and crediting Ellis, and the Scogin bibliotherapy
+trials; Kahneman's System 1/2 terms from Stanovich and West; Perls–Hefferline–Goodman (1951) and Greenberg's chair-work
+studies; Yalom's sources (Kierkegaard, Heidegger, Sartre, Camus, May, Frankl); Hayes as a behaviour analyst, the six
+ACT processes; Neff's three components, Breines and Chen (2012), Neff and Germer (2013); Bowen's NIMH family project
+and eight concepts; Gottman's horsemen and antidotes; the Milwaukee Brief Family Therapy Center (1978) and de Shazer's
+use of Wittgenstein (1994); "the person is not the problem; the problem is the problem" as a slogan of narrative
+therapy, not cited from the 1990 book; White's use of Foucault; Miller (1983) and Miller and Rose (2015); Maslow's
+1954 chapter "Toward a Positive Psychology"; Csikszentmihalyi and Seligman's 2000 article; Goodman et al. (2018) on
+PERMA; Deci (1971) and the Cameron–Pierce / Deci–Koestner–Ryan exchange; Duckworth as Seligman's student, the West
+Point and spelling-bee findings, and her work with Gollwitzer and Oettingen; Fredrickson and Losada (2005) and the
+formal withdrawal of the model; Asch's figures (about a third of critical answers, a quarter never conforming), Bond
+and Smith (1996), Milgram as Asch's assistant; Zimbardo and Milgram as Bronx schoolmates; Tajfel's minimal-group
+studies (Klee and Kandinsky, Bristol schoolboys) and his survival as a French prisoner of war; Selye (1936),
+Lazarus (1966), McEwen (1998); Cannon coining "homeostasis" (1926). **Ours, not cited:** Hume ↔ Freud, Freud ↔
+Kahneman, Festinger ↔ Anna Freud, Adler ↔ Horney, Horney ↔ Neff, Rogers ↔ Neff, Locke ↔ Watson, Aristotle ↔ Wolpe,
+Aristotle ↔ Gottman, Aristotle ↔ PERMA, Ubuntu ↔ Vygotsky, Vygotsky ↔ Bandura, Marcus ↔ Burns, Marcus ↔ Cannon,
+Merleau-Ponty ↔ Perls, Camus ↔ Yalom, Epictetus ↔ ACT, Buddha ↔ ACT (Hayes did not derive ACT from Buddhism),
+Lewin ↔ Bowen, Aristotle, Harvard Study and Bowlby ↔ Gottman, Socrates ↔ motivational interviewing, Spinoza ↔
+Fredrickson, Dweck ↔ Duckworth, Tocqueville ↔ Asch, Arendt ↔ Zimbardo, Ibn Khaldun and Du Bois ↔ Tajfel,
+Seligman ↔ Lewinsohn, Pennebaker ↔ White and Epston, Winnicott ↔ Bowlby, Thorndike ↔ Pavlov.
+
+Not added, by judgement: Melanie Klein and Paul Gilbert (named as founders in `schools.js`, no node yet); Minuchin
+and Rollo May likewise; Porges's polyvagal theory and van der Kolk (contested); ego depletion and power posing (not
+needed by any new idea); learned optimism and Beck's automatic thoughts (already in seligman_learned_helplessness and
+beck_cognitive_therapy_stoicism_tested).
