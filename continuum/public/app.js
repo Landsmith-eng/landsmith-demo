@@ -1,6 +1,7 @@
 // Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
+import { SURVEYS, surveyById, optionsFor } from '/surveys.js';
 import { startCreatures, summon, creaturesInto, sceneFor } from '/creatures.js';
 import { startLiving, liveIn, liveOut } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
@@ -1616,7 +1617,7 @@ function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false
     render(h('h1', {}, 'Explore'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
     setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
     if (search) box.focus();
-    const el = (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
+    const el = (focus?.startsWith('room-') && document.getElementById(focus)) || (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
     if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
   });
 }
@@ -1664,7 +1665,7 @@ function galleryRooms(nodes, rooms, focus) {
   return [index, ...rooms.filter((r) => byRoom.get(r.id).length).map((r) => h('section', { class: 'room', id: `room-${r.id}` },
     h('h2', {}, r.name),
     h('p', { class: 'muted small room-blurb' }, r.blurb),
-    r.id === 'mind' && h('button', { type: 'button', class: 'btn ghost', style: 'margin:4px 0 12px', onclick: () => showWorkThrough() }, 'Work through a problem →'),
+    r.id === 'mind' && h('button', { type: 'button', class: 'btn ghost', style: 'margin:4px 0 12px', onclick: () => showMind() }, 'Open the psychology room: surveys, schools, methods →'),
     h('div', { class: 'tiles' }, byRoom.get(r.id).map(tile))))];
 }
 
@@ -2556,6 +2557,106 @@ function keepOnPhone() {
     h('p', { class: 'muted small' }, 'Your personal link signs you in. Keep it private.'));
 }
 
+// ── The psychology room: surveys (where are you now?), the schools of psychology, and working through a problem ──
+function showMind() {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const [mine, sch] = await Promise.all([api('/api/surveys').catch(() => ({ results: [] })), api(`/api/schools?date=${today()}`).catch(() => null)]);
+    const latest = new Map(); for (const r of mine.results) if (!latest.has(r.survey)) latest.set(r.survey, r);
+    const card = (sv) => {
+      const last = latest.get(sv.id);
+      return h('button', { type: 'button', class: 'think-door', onclick: () => showSurvey(sv.id) },
+        h('span', { class: 't' }, sv.name), h('span', { class: 'muted small' }, `${sv.short} · ${sv.time}`),
+        h('span', { class: 'small' }, sv.about),
+        last && h('span', { class: 'muted small' }, `Last: ${last.date} · ${last.summary}`));
+    };
+    const schools = sch?.schools?.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'The schools of psychology'),
+      h('p', { class: 'muted small' }, 'Each school sees a problem in its own way and has its own methods. Tap one to see how it would look at yours.'),
+      h('div', { class: 'think-doors' }, sch.schools.map((x) => h('button', { type: 'button', class: 'think-door', onclick: () => showSchool(x, sch.refs) },
+        h('span', { class: 't' }, x.name), h('span', { class: 'muted small' }, `${x.years} · ${x.founders}`), h('span', { class: 'small' }, x.sees)))));
+    render(
+      h('h1', {}, 'Psychology and the mind'),
+      h('p', {}, 'How minds work and how people change. Bring a problem and look at it through the schools of psychology, check where you are with a short survey, or explore the ideas and their methods.'),
+      h('div', { class: 'think-doors' },
+        h('button', { type: 'button', class: 'think-door pick-up', onclick: () => showWorkThrough() }, h('span', { class: 't' }, 'Work through a problem'), h('span', { class: 'muted small' }, 'A few questions, then your problem seen through several schools, a route, and check-ins.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showGallery('rooms', { focus: 'room-mind' }) }, h('span', { class: 't' }, 'The ideas in this room'), h('span', { class: 'muted small' }, 'Every thinker and finding, from Freud and Pavlov to the present.'))),
+      h('section', { class: 'diary-block' }, h('h2', {}, 'Where are you now?'),
+        h('p', { class: 'muted small' }, 'Short surveys. The first ones are questionnaires doctors and researchers use; the last are Continuum\'s own reflections. Your answers stay with you and help Continuum meet you where you are.'),
+        h('div', { class: 'think-doors' }, SURVEYS.filter((x) => x.kind === 'screen').map(card)),
+        h('h3', { class: 'eyebrow', style: 'margin-top:14px' }, 'Reflections'),
+        h('div', { class: 'think-doors' }, SURVEYS.filter((x) => x.kind === 'reflect').map(card))),
+      schools,
+      h('p', { class: 'muted small' }, 'These surveys are screenings and reflections, not diagnoses, and Continuum is not a therapist. If you are struggling, a doctor or counsellor can help. ', HELP_LINE));
+  });
+}
+// One school: how it sees a problem, what it does, the question it would ask you, its ideas and practices.
+function showSchool(x, refs) {
+  setNav('');
+  pageBg = PAGE_BG.problem;
+  const links = (ids) => ids.map((id) => ideaLink(id, refs)).filter(Boolean);
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
+    h('div', { class: 'eyebrow' }, `${x.years} · ${x.founders}`), h('h1', {}, x.name),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'How it sees a problem'), h('p', {}, x.sees)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What it does'), h('p', {}, x.helps), x.methods?.length && h('p', { class: 'muted small' }, `Methods: ${x.methods.join(' · ')}`)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'The question it would ask you'), h('p', { class: 'ask-q' }, x.asks),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `${x.asks} `, draft: true }) }, 'Answer it in Talk')),
+    links(x.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices'), h('ul', { class: 'path' }, links(x.practices).map((l) => h('li', {}, l)))),
+    links(x.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Its ideas'), h('ul', { class: 'path' }, links(x.ideas).map((l) => h('li', {}, l)))),
+    x.evidence && h('p', { class: 'muted small' }, `How well supported: ${x.evidence}`));
+}
+// A survey, one question at a time: tap an answer and the next one comes.
+function showSurvey(id) {
+  const sv = surveyById(id); if (!sv) return showMind();
+  setNav(''); pageBg = PAGE_BG.problem;
+  const answers = {}; let k = 0;
+  const step = () => {
+    const item = sv.items[k];
+    const opts = optionsFor(sv, item);
+    const choose = (v) => { answers[item[0]] = v; if (++k < sv.items.length) step(); else finish(); };
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => (k ? (k--, step()) : showMind()) }, k ? '← Back' : '← Psychology and the mind'),
+      h('div', { class: 'eyebrow' }, `${sv.name} · ${k + 1} of ${sv.items.length}`),
+      h('div', { class: 'survey-bar' }, h('i', { style: `width:${(k / sv.items.length) * 100}%` })),
+      h('p', { class: 'muted' }, sv.lead), h('h2', { class: 'survey-q' }, item[1]),
+      h('div', { class: `survey-options${opts.length > 7 ? ' numbers' : ''}` }, opts.map(([label, v]) => h('button', {
+        type: 'button', class: `btn ghost${answers[item[0]] === v ? ' on' : ''}`, onclick: () => choose(v),
+      }, label))));
+  };
+  async function finish() {
+    render(h('p', { class: 'muted' }, 'Scoring…'));
+    try {
+      const r = await api(`/api/surveys/${sv.id}`, { method: 'POST', body: { answers, date: today() } });
+      showSurveyResult(sv, r.result, r.refs);
+    } catch { render(h('p', {}, 'Could not save your answers. Check the connection and try again.'), h('button', { type: 'button', class: 'btn', onclick: () => showSurvey(id) }, 'Try again')); }
+  }
+  step();
+}
+async function showSurveyResult(sv, r, refs = {}) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const mine = await api('/api/surveys').catch(() => ({ results: [] }));
+  const before = mine.results.filter((x) => x.survey === sv.id && x.id !== r.id).slice(0, 6);
+  const sch = await api(`/api/schools?date=${today()}`).catch(() => null);
+  const named = (r.schools ?? []).map((id) => sch?.schools?.find((x) => x.id === id)).filter(Boolean);
+  const links = (ids) => (ids ?? []).map((id) => ideaLink(id, refs)).filter(Boolean);
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
+    h('div', { class: 'eyebrow' }, `${sv.name} · ${r.date}`), h('h1', {}, r.summary),
+    r.crisis && h('p', { class: 'help-line' }, 'You said you have had thoughts of being better off dead or of hurting yourself. Please talk to someone today: a friend, your doctor, or a crisis line. ', HELP_LINE),
+    ...(r.details ?? []).map((d) => h('p', {}, d)),
+    named.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Schools that see this most clearly'),
+      h('div', { class: 'think-doors' }, named.map((x) => h('button', { type: 'button', class: 'think-door', onclick: () => showSchool(x, sch.refs) }, h('span', { class: 't' }, x.name), h('span', { class: 'small' }, x.helps))))),
+    links(r.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices to try'), h('ul', { class: 'path' }, links(r.practices).map((l) => h('li', {}, l)))),
+    links(r.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Ideas behind this'), h('ul', { class: 'path' }, links(r.ideas).map((l) => h('li', {}, l)))),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough() }, 'Work through a problem'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id) }, 'Take it again')),
+    before.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'Before'), h('ul', { class: 'path' }, before.map((x) => h('li', {}, h('div', { class: 'eyebrow diary-date' }, x.date), h('p', {}, x.summary))))),
+    h('p', { class: 'muted small' }, sv.kind === 'screen' ? `${sv.source} A screening, not a diagnosis.` : sv.source));
+}
+
 // ── Think: everything for thinking something through, in one place ──
 function showThink() {
   setNav('think');
@@ -2568,6 +2669,7 @@ function showThink() {
       h('p', {}, 'Bring what is on your mind. Continuum answers from the ideas on the map and from what you have written, and pushes back when you are very sure.'),
       h('div', { class: 'think-doors' },
         big('Work through a problem', 'A few questions, then a route through it, and check-ins as you go.', () => showWorkThrough()),
+        big('The psychology room', 'Surveys on where you are now, the schools of psychology and their methods.', () => showMind()),
         big('Talk', 'Argue a point, test a belief, ask for a practice or a reading path.', () => showTalk()),
         big('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
         big('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),

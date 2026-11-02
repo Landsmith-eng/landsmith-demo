@@ -10,6 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
+import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
@@ -1419,7 +1420,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     let reply = '';
     try {
       const states = talkStates(uid, date);
-      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid) });
+      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date) });
       const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
       if (keep) {
         tq.save.run(JSON.stringify(messages), t.id);
@@ -1602,6 +1603,36 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     kq.status.run(to, c.id);
     res.json({ ok: true });
   });
+
+  // ── Surveys (the psychology room): answers scored with the published scoring, kept, and the latest of each lent to
+  // Talk and to working through a problem, so they can meet the user where they are. ──
+  const svq = {
+    add: db.prepare('INSERT INTO survey_results (user_id, survey_id, answers, result, local_date) VALUES (?, ?, ?, ?, ?)'),
+    all: db.prepare('SELECT id, survey_id, result, local_date, created_at FROM survey_results WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 200'),
+    since: db.prepare('SELECT survey_id, result, local_date FROM survey_results WHERE user_id = ? AND local_date >= ? ORDER BY created_at DESC, id DESC'),
+    drop: db.prepare('DELETE FROM survey_results WHERE id = ? AND user_id = ?'),
+  };
+  const resultOut = (r) => ({ id: r.id, survey: r.survey_id, date: r.local_date, ...JSON.parse(r.result) });
+  app.get('/api/surveys', auth, (req, res) => {
+    res.json({ results: svq.all.all(req.user.id).map(resultOut) });
+  });
+  app.post('/api/surveys/:id', auth, (req, res) => {
+    const survey = surveyById(req.params.id); if (!survey) return res.status(404).json({ error: 'not_found' });
+    const answers = checkAnswers(survey, req.body?.answers); if (!answers) return res.status(400).json({ error: 'incomplete' });
+    const result = survey.score(answers); const date = localDate(req.body?.date);
+    const id = Number(svq.add.run(req.user.id, survey.id, JSON.stringify(answers), JSON.stringify(result), date).lastInsertRowid);
+    res.json({ result: { id, survey: survey.id, date, ...result }, refs: talkRefs(talkStates(req.user.id, date), [...(result.practices ?? []), ...(result.ideas ?? [])]) });
+  });
+  app.delete('/api/surveys/results/:id', auth, (req, res) => { svq.drop.run(Number(req.params.id), req.user.id); res.json({ ok: true }); });
+  // The latest of each survey in the last two months, one line each, for Talk and for working through a problem.
+  function surveysText(uid, date = localDate()) {
+    const seen = new Set();
+    return svq.since.all(uid, shiftDay(date, -60)).filter((r) => !seen.has(r.survey_id) && seen.add(r.survey_id)).map((r) => {
+      const s = surveyById(r.survey_id); const x = JSON.parse(r.result);
+      return `${r.local_date} ${s?.name ?? r.survey_id}${s?.kind === 'screen' ? ` (${s.short}, a screening, not a diagnosis)` : ' (a reflection)'}: ${x.summary}${x.crisis ? ' They marked thoughts of being better off dead or of self-harm.' : ''}`;
+    }).join('\n');
+  }
+  void SURVEYS;
 
   // ElevenLabs problems show in the server window, so they can be fixed (the phone falls back to its own voice).
   const ttsWarn = (what, e) => console.warn(`ElevenLabs refused ${what}: ${e.message}${e.why ? ` (${e.why})` : ''}`);

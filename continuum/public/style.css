@@ -943,3 +943,14 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .flutter.resting .folded { display: inline; }
 .flutter .fw { transform-box: fill-box; transform-origin: 50% 100%; animation: fold-breathe 3.4s ease-in-out infinite; }
 @keyframes fold-breathe { 0%, 55%, 100% { transform: scaleX(1); } 70% { transform: scaleX(1.55) skewX(-4deg); } 82% { transform: scaleX(1.1); } }
+
+/* Surveys */
+.survey-bar { height: 3px; border-radius: 3px; background: rgba(255,255,255,.18); margin: 8px 0 14px; overflow: hidden; }
+.survey-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
+.survey-q { font-family: var(--display); font-size: 1.4rem; line-height: 1.35; margin: .3em 0 .8em; }
+.survey-options { display: grid; gap: 8px; }
+.survey-options.numbers { grid-template-columns: repeat(6, 1fr); }
+.survey-options .btn { text-align: left; justify-content: flex-start; }
+.survey-options.numbers .btn { text-align: center; justify-content: center; padding-left: 0; padding-right: 0; }
+.survey-options .btn.on { border-color: var(--accent); }
+.think-door .small { color: inherit; opacity: .9; }

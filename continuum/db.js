@@ -229,6 +229,18 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 CREATE INDEX IF NOT EXISTS cases_user ON cases(user_id, status);
 
+-- Surveys from the psychology room (public/surveys.js): the answers and the score, as JSON, one row each time.
+CREATE TABLE IF NOT EXISTS survey_results (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  survey_id TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  result TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS survey_results_user ON survey_results(user_id, survey_id, created_at);
+
 -- Highlights: any words the user chose on a page and kept, found again in the Diary.
 CREATE TABLE IF NOT EXISTS highlights (
   id INTEGER PRIMARY KEY,

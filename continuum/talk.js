@@ -90,11 +90,11 @@ End with one question the user could ask their friend next time, to understand t
 
 // The catalogue the model works from: one line per idea the user may see (never upcoming daily cards, never today's
 // unwritten card). The diary follows it, outside the cached part, since it changes as the user writes.
-export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '' }) {
+export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '' }) {
   return [
     { type: 'text', text: RULES },
     { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}` },
+    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}` },
   ];
 }
 
