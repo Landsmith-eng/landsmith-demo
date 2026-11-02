@@ -1836,7 +1836,7 @@ function showJournal() {
       h('button', { type: 'button', class: 'chip on', 'aria-pressed': 'true' }, 'Diary'),
       h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
       h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again, keepOnPhone());
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again, keepOnPhone(), yourDetails());
   });
 }
 
@@ -2526,6 +2526,23 @@ async function shareInvite(g) {
   try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
   catch { notice(url); }
 }
+// ── Your details: the only personal detail Continuum keeps is your name; correct it here. ──
+function yourDetails() {
+  const input = h('input', { type: 'text', class: 'search', maxlength: '40', autocomplete: 'name', 'aria-label': 'Your name' });
+  const save = h('button', { type: 'button', class: 'btn ghost' }, 'Save');
+  const out = h('p', { class: 'muted small', role: 'status' });
+  api('/api/me').then((me) => { input.value = me.name; input.dataset.was = me.name; }).catch(() => {});
+  save.addEventListener('click', async () => {
+    const name = input.value.trim(); if (!name) { out.textContent = 'Type your name first.'; return; }
+    if (name === input.dataset.was) { out.textContent = 'That is already your name.'; return; }
+    try { const r = await api('/api/me', { method: 'POST', body: { name } }); input.value = input.dataset.was = r.name; out.textContent = 'Saved. Continuum and your Parthenon groups now use this name.'; }
+    catch { out.textContent = 'Could not save just now. Try again.'; }
+  });
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'Your name'),
+    h('p', { class: 'muted small' }, 'Continuum keeps only your name: it greets you with it, and your Parthenon groups see it. Correct the spelling or change it here.'),
+    h('div', { class: 'row' }, input, save), out);
+}
+
 // ── Keeping Continuum on the phone ──
 // Chrome offers to install a site like this as an app; the offer is kept so a button can make it. Once installed,
 // links to Continuum open the app itself (no browser page, so no browser menu), and its icon is in the app list.

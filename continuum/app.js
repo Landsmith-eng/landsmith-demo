@@ -359,6 +359,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     res.json({ ok: true });
   });
 
+  // The user's own details: only their name is kept. They can correct it here (it shows in greetings and the Parthenon).
+  app.get('/api/me', auth, (req, res) => res.json({ name: req.user.name, since: req.user.created_at.slice(0, 10) }));
+  app.post('/api/me', auth, (req, res) => {
+    const name = personName(req.body?.name); if (!name) return res.status(400).json({ error: 'name_required' });
+    renameUser.run(name, req.user.id);
+    res.json({ name });
+  });
+
   app.get('/api/journal', auth, (req, res) => {
     res.json({ journal: q.journal.all(req.user.id), favorites: q.favorites.all(req.user.id) });
   });
@@ -952,8 +960,18 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   // Retention view for Jack. Disabled unless CONTINUUM_ADMIN_KEY is set.
   // A personal link for someone new, made from the admin page (the same as `npm run invite`, for a hosted server).
+  // A person's name as it may be kept: no control characters, single spaces, at most 40 characters.
+  const personName = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40) : '');
+  const renameUser = db.prepare('UPDATE users SET name = ? WHERE id = ?');
+  // Correcting a tester's name (a misspelling at invite): it changes everywhere it shows.
+  app.post('/admin/api/users/:id', admin, (req, res) => {
+    const name = personName(req.body?.name); if (!name) return res.status(400).json({ error: 'name_required' });
+    const r = renameUser.run(name, Number(req.params.id));
+    if (!r.changes) return res.status(404).json({ error: 'not_found' });
+    res.json({ name });
+  });
   app.post('/admin/api/invite', admin, (req, res) => {
-    const name = typeof req.body?.name === 'string' ? req.body.name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const name = personName(req.body?.name);
     if (!name) return res.status(400).json({ error: 'name_required' });
     const token = randomBytes(12).toString('base64url');
     db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run(token, name);
@@ -969,7 +987,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       testers: users.map((u) => {
         const openDays = days.all(u.id).map((r) => r.local_date);
         return {
-          name: u.name,
+          id: u.id, name: u.name,
           invited_at: u.created_at,
           open_days: openDays,
           response_days: wrote.all(u.id).map((r) => r.local_date),

@@ -70,7 +70,16 @@
           dots.append(s);
         }
         const tr = document.createElement('tr');
-        const cells = [t.name, dots, t.came_back ? `Yes (${t.open_days.length} days)` : (start ? 'Not yet' : 'Never opened'), String(t.walk_steps), t.last_seen ?? 'n/a'];
+        // The name, with a pencil to correct a misspelling (it changes everywhere it shows).
+        const who = document.createElement('span'); who.textContent = `${t.name} `;
+        const fix = document.createElement('button'); fix.type = 'button'; fix.className = 'link'; fix.textContent = '✎'; fix.title = 'Correct the name';
+        fix.addEventListener('click', async () => {
+          const name = prompt('The correct name:', t.name); if (!name || name.trim() === t.name) return;
+          const res = await fetch(`/admin/api/users/${t.id}`, { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+          if (res.ok) load(); else alert('Could not change the name.');
+        });
+        const nameCell = document.createElement('span'); nameCell.append(who, fix);
+        const cells = [nameCell, dots, t.came_back ? `Yes (${t.open_days.length} days)` : (start ? 'Not yet' : 'Never opened'), String(t.walk_steps), t.last_seen ?? 'n/a'];
         for (const c of cells) { const td = document.createElement('td'); td.append(c); tr.append(td); }
         body.append(tr);
       }
