@@ -61,8 +61,28 @@ const { SCHOOLS } = await import('./schools.js');
   }
 }
 
+// Therapies: each names a school, practices and ideas, and the problem tags it fits. Unknown ids fail loudly.
+const { THERAPIES, PROBLEMS } = await import('./therapies.js');
+{
+  const seen = new Set();
+  const schoolIds = new Set(SCHOOLS.map((s) => s.id));
+  const isPractice = (id) => byId.get(id)?.type === 'practice';
+  for (const t of THERAPIES) {
+    if (seen.has(t.id)) throw new Error(`therapies.js: duplicate therapy ${t.id}`);
+    seen.add(t.id);
+    if (!schoolIds.has(t.school)) throw new Error(`therapies.js: ${t.id} names unknown school ${t.school}`);
+    if (!['yes', 'partly', 'professional'].includes(t.self_help)) throw new Error(`therapies.js: ${t.id} has bad self_help ${t.self_help}`);
+    for (const tag of t.for) if (!Object.hasOwn(PROBLEMS, tag)) throw new Error(`therapies.js: ${t.id} lists unknown problem ${tag}`);
+    for (const id of t.ideas) if (!byId.has(id) || isPractice(id)) throw new Error(`therapies.js: ${t.id} lists unknown idea ${id}`);
+    for (const id of t.practices) if (!isPractice(id)) throw new Error(`therapies.js: ${t.id} lists unknown practice ${id}`);
+    if (t.sessions.length < 5 || t.sessions.length > 8) throw new Error(`therapies.js: ${t.id} has ${t.sessions.length} sessions (5 to 8)`);
+    for (const s of t.sessions) if (s.practice && !isPractice(s.practice)) throw new Error(`therapies.js: ${t.id} session "${s.title}" names unknown practice ${s.practice}`);
+  }
+}
+
 export const nodes = [...byId.values()];
 export { rooms };
 export { SCHOOLS } from './schools.js';
+export { THERAPIES, PROBLEMS } from './therapies.js';
 export { imageIssues };
 export { edges, branchFiles };

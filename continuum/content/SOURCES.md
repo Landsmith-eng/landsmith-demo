@@ -456,3 +456,57 @@ Not added, by judgement: Melanie Klein and Paul Gilbert (named as founders in `s
 and Rollo May likewise; Porges's polyvagal theory and van der Kolk (contested); ego depletion and power posing (not
 needed by any new idea); learned optimism and Beck's automatic thoughts (already in seligman_learned_helplessness and
 beck_cognitive_therapy_stoicism_tested).
+
+## Batch 13: therapies.js (therapies for problems), 2026-11-02
+
+29 therapies in `content/therapies.js`, each tied to a school in `schools.js`, with a fixed vocabulary of 28 problem
+tags (`PROBLEMS`), an honest evidence line, a self-help rating (`yes`, `partly`, `professional`), when a professional is
+needed, and 5 to 8 generic self-guided sessions. `content/index.js` checks at load time that every school, practice,
+idea and problem tag exists and exports `THERAPIES` and `PROBLEMS`. Everything is our own summary: **no quotations**,
+no page numbers. Founders and key texts are named in a comment above each entry. Sessions are everyday exercises, never
+treatment; for `professional` therapies (schema, trauma-focused) they are preparation, stabilisation and finding help
+only, and the trauma entry contains no trauma processing.
+
+| Therapy | Evidence statement rests on | Status |
+|---|---|---|
+| cbt | NICE CG90/NG222 (depression), CG113 (GAD, panic), CG159 (social anxiety), CG31 (OCD), NG69 (eating disorders: guided self-help for binge eating), NG193 (chronic pain); APA Division 12 "strong" ratings; Cuijpers et al. meta-analyses on CBT's small edge | From memory |
+| behavioural_activation | NICE NG222 (BA among first-line treatments for depression); Richards et al. (2016) COBRA trial, Lancet; Dimidjian et al. (2006); Ekers et al. meta-analyses | From memory |
+| exposure | APA Division 12 (specific phobia, panic, social anxiety); NICE CG31 (ERP for OCD), CG159; Öst (1989) one-session treatment; Wolitzky-Taylor et al. (2008) meta-analysis | From memory |
+| problem_solving | Bell and D'Zurilla (2009) and Cuijpers et al. (2007, 2018) meta-analyses on depression; APA Division 12 lists PST for depression | From memory |
+| cbt_insomnia | Qaseem et al. (2016) American College of Physicians guideline; Riemann et al. (2017) European insomnia guideline; NICE MTG70 (2022) on a digital CBT-I programme; sleep-restriction cautions (bipolar disorder, epilepsy, sleep apnoea, driving) from those guidelines and from Kyle et al. on daytime sleepiness | From memory; the six-hour self-help floor is our own conservative choice |
+| act | NICE NG193 (2021) on chronic primary pain; APA Division 12 (chronic pain "strong"); A-Tjak et al. (2015) meta-analysis (ACT about equal to CBT); French et al. (2017) on ACT self-help | From memory |
+| dbt_skills | Storebø et al. (2020) Cochrane review on borderline personality disorder; Linehan et al. (2015) dismantling trial (skills components active); APA Division 12 | From memory |
+| mbct | NICE NG222 (2022) on relapse prevention; Kuyken et al. (2016) individual-patient meta-analysis; Teasdale et al. (2000) and Ma and Teasdale (2004) on three or more episodes; Khoury et al. (2015) on MBSR | From memory |
+| compassion_focused | Kirby, Tellegen and Steindl (2017) meta-analysis of compassion-based interventions; Neff and Germer (2013) MSC trial; Leaviss and Uttley (2015) review of CFT (few trials) | From memory |
+| ipt | NICE NG222 (IPT for depression); Cuijpers et al. (2011, 2016) meta-analyses; APA Division 12 | From memory; "self-guided IPT little studied" is our judgement |
+| psychodynamic | Abbass et al. (2014) Cochrane review of short-term psychodynamic therapy; Driessen et al. (2015) meta-analysis; Leichsenring et al. (2015); NICE NG222 lists it as an option | From memory |
+| schema | Giesen-Bloo et al. (2006) and later trials in borderline personality disorder; Jacob and Arntz (2013) review | From memory |
+| person_centred | NICE NG222 (counselling as an option for depression); Barkham et al. (2021) PRaCTICED trial, Lancet Psychiatry (Counselling for Depression non-inferior to CBT); Elliott et al. meta-analyses; Norcross and Lambert on empathy and alliance | From memory |
+| emotion_focused | Goldman, Greenberg and Angus (2006) and Watson et al. (2003) trials in depression; Greenberg and Webster (1982) on two-chair work for decisional conflict; Shahar et al. (2012) on self-criticism | From memory |
+| eft_couples | Johnson et al. (1999) meta-analysis; Wiebe and Johnson (2016) review; note on small, developer-run trials is ours | From memory |
+| gottman | Gottman's observational research (1994 onward); Heyman and Slep (2001) on post hoc divorce predictions; few controlled trials of the therapy itself | From memory |
+| systemic | NICE NG69 (2017) on family therapy for anorexia in young people; Carr (2019) reviews of systemic therapy; Stanton and Shadish (1997) on family therapy for substance use | From memory |
+| parent_training | NICE CG158 (2013) on conduct problems; Furlong et al. (2012) Cochrane review; Sanders et al. on self-directed Triple P | From memory |
+| solution_focused | Kim (2008) meta-analysis; Gingerich and Peterson (2013) review | From memory |
+| narrative | Few and small studies; no NICE or Division 12 listing | From memory |
+| motivational_interviewing | Lundahl et al. (2010) and Smedslund et al. (2011, Cochrane) on substance use; West (2005) on the stages model | From memory |
+| relapse_prevention | Irvin et al. (1999) meta-analysis; NICE CG115 (2011) on harmful drinking and mild dependence; alcohol-withdrawal safety from NICE CG100 (2010) | From memory |
+| existential | Vos, Craig and Cooper (2015) meta-analysis; Breitbart et al. (2010, 2015) meaning-centred psychotherapy trials | From memory |
+| gestalt | Little trial evidence in classic form; chair-work studies within emotion-focused therapy | From memory |
+| positive_psychology | Sin and Lyubomirsky (2009); Bolier et al. (2013); White, Uttl and Holder (2019) reanalysis (smaller effects) | From memory |
+| habit_change | Gollwitzer and Sheeran (2006) meta-analysis; Piacentini et al. (2010) CBIT trial (JAMA); Bloch et al. (2007) on trichotillomania; Lally et al. (2010) on time to form a habit | From memory |
+| trauma_focused | NICE NG116 (2018: trauma-focused CBT and EMDR for PTSD; do not offer psychological debriefing); APA (2017) PTSD guideline (strong for CBT, CPT, CT, PE; conditional for EMDR); Davidson and Parker (2001) dismantling meta-analysis on eye movements; Herman (1992) on stabilisation first | From memory |
+| grief | Currier, Neimeyer and Berman (2008) meta-analysis (little benefit of grief counselling for all); Shear et al. (2005, JAMA; 2014, JAMA Psychiatry); ICD-11 (2019) and DSM-5-TR (2022) prolonged grief disorder; Stroebe and Schut (1999); Bonanno (2004); Stroebe et al. (2017) on the stages model | From memory |
+| anger_management | Beck and Fernandez (1998) and Del Vecchio and O'Leary (2004) meta-analyses; mixed evidence for perpetrator programmes (Babcock et al. 2004) | From memory |
+
+Claims resting on memory (check these): every guideline number and year above (NICE CG90 was replaced by NG222 in
+2022; CG113, CG159, CG31, CG158, CG115, CG100, NG69, NG116, NG193 and MTG70 as cited); the APA Division 12 ratings;
+all author names, journal years and trial names (COBRA, PRaCTICED, CBIT); that NICE recommends guided self-help as a
+first step for binge eating disorder; that NICE NG222 lists counselling and short-term psychodynamic therapy as
+options; that EMDR has a conditional, not strong, APA recommendation; the median habit-formation time (Lally et al.);
+the founder attributions (Bootzin for stimulus control, Spielman for sleep restriction, Azrin and Nunn for habit
+reversal, Novaco and Deffenbacher for anger). **Ours, not cited:** the PROBLEMS vocabulary and tag ordering; the
+self-help ratings; every session's wording; the six-hour floor for self-help sleep restriction; the choice to fold
+cognitive therapy for social anxiety (Clark and Wells) and health anxiety into `cbt`, Mindful Self-Compassion into
+`compassion_focused`, MBSR into `mbct`, and CPT, PE, CT-PTSD and EMDR into one `trauma_focused` entry; placing IPT
+and grief work under the attachment school (IPT's founders credit Bowlby among others) and schema therapy under CBT.

@@ -6,7 +6,7 @@ import { createTalk } from '../talk.js';
 import * as content from '../content/index.js';
 
 // Working through a problem: interview (two questions), plan from the map, course, check-in that changes the course.
-let server, base; let asked = 0; const seen = [];
+let server, base; let asked = 0; const seen = []; const sessionNext = ['go_on', 'repeat'];
 before(async () => {
   const db = openDb(':memory:');
   seedContent(db, content);
@@ -22,7 +22,14 @@ before(async () => {
         pitfalls: [{ kind: 'logic', name: 'All-or-nothing thinking', how: 'You said it is pointless unless perfect.', idea: 'ellis_abc_model' }, { kind: 'habit', name: 'x', how: 'y', idea: 'not_real' }],
         route: [{ id: 'ellis_abc_model', why: 'a' }, { id: 'not_real', why: 'b' }, { id: 'gollwitzer_implementation_intentions', why: 'c' }, { id: 'practice_if_then_plan', why: 'not a stop' }],
         practice: 'practice_if_then_plan', first_step: 'Send one email.', check_in: 'Did you send it?',
-        lenses: [{ school: 'cbt', sees: 's', method: 'm', practice: 'practice_thought_record' }, { school: 'not_a_school', sees: 'x', method: 'y', practice: '' }, { school: 'motivational', sees: 's2', method: 'm2', practice: 'not_real' }], survey: 'mood' });
+        lenses: [{ school: 'cbt', sees: 's', method: 'm', practice: 'practice_thought_record' }, { school: 'not_a_school', sees: 'x', method: 'y', practice: '' }, { school: 'motivational', sees: 's2', method: 'm2', practice: 'not_real' }], survey: 'mood',
+        wisdom: [{ tradition: 'The Stoics', idea: 'epictetus_up_to_us', counsel: 'c', question: 'What here is up to you?' }, { tradition: 'Nobody', idea: 'not_real', counsel: 'c2', question: 'q2' }],
+        problems: ['procrastination', 'not_a_tag'],
+        approach: { therapy: 'behavioural_activation', why: 'w', tailored: 't', professional: false, professional_note: '' },
+        alternatives: [{ therapy: 'act', why: 'a' }, { therapy: 'nope', why: 'b' }],
+        program: [{ title: 'S1', aim: 'a1', exercise: 'e1', practice: 'practice_behavioural_activation' }, { title: 'S2', aim: 'a2', exercise: 'e2', practice: 'not_real' }, { title: 'S3', aim: 'a3', exercise: 'e3', practice: '' }] });
+      if (props.next && props.tip) return json({ concern: false, reply: 'Well done.', next: sessionNext.shift() ?? 'go_on', tip: 'Keep it small.' });
+      if (props.tailored && props.program) return json({ why: 'ACT fits', tailored: 'tt', professional: false, professional_note: '', program: [{ title: 'A1', aim: 'x', exercise: 'y', practice: 'practice_values_compass' }, { title: 'A2', aim: 'x', exercise: 'y', practice: '' }, { title: 'A3', aim: 'x', exercise: 'y', practice: '' }, { title: 'A4', aim: 'x', exercise: 'y', practice: '' }] });
       if (props.progress) return json({ concern: false, reply: 'Good.', progress: 'better', noticed: [{ kind: 'assumption', name: 'Mind reading', how: 'z', idea: '' }],
         route: [{ id: 'bandura_self_efficacy', why: 'next' }, { id: 'dweck_mindsets', why: 'then' }], next_step: 'Two emails.', check_in: 'And now?' });
       return json({});
@@ -55,6 +62,12 @@ test('an interview, then a plan from the map that keeps only real ideas', async 
   assert.deepEqual(c.plan.lenses.map((l) => [l.school, l.practice]), [['cbt', 'practice_thought_record'], ['motivational', '']]);
   assert.match(c.plan.lenses[0].name, /cognitive-behavioural/i);
   assert.equal(c.plan.survey, 'mood');
+  assert.deepEqual(c.plan.wisdom.map((w) => w.idea), ['epictetus_up_to_us', '']);
+  assert.deepEqual(c.plan.problems, ['procrastination']);
+  assert.equal(c.program.therapy, 'behavioural_activation');
+  assert.deepEqual(c.program.sessions.map((x) => x.practice), ['practice_behavioural_activation', '', '']);
+  assert.deepEqual(c.program.alternatives.map((x) => x.therapy), ['act']);
+  assert.equal(c.program.current, 0);
   assert.ok(c.refs.practice_thought_record);
   // The plan saw the interview, and the schools.
   const planReq = seen.find((r) => r.output_config.format.schema.properties.going_on);
@@ -89,4 +102,23 @@ test('"show me a route now" skips the rest of the interview', async () => {
   assert.equal(c.status, 'open');
   assert.equal(c.turns.filter((x) => x.q).length, 0); // the unanswered question was dropped
   assert.equal((await call(`/api/cases/${c0.id}/answer`, { method: 'POST', body: { answer: 'x', date: D } })).status, 404);
+});
+
+test('a programme: a session a day, a repeat keeps the same one, and another approach can be chosen', async () => {
+  const c0 = (await call('/api/cases', { method: 'POST', body: { problem: 'I put things off.', date: D } })).json.case;
+  await call(`/api/cases/${c0.id}/answer`, { method: 'POST', body: { enough: true, date: D } });
+  let c = (await call(`/api/cases/${c0.id}/session`, { method: 'POST', body: { reflection: 'I did the walk.', date: '2026-11-03' } })).json.case;
+  assert.equal(c.program.current, 1);
+  assert.equal(c.program.sessions[0].done[0].reply, 'Well done.\n\nKeep it small.');
+  assert.equal(c.program.opens, '2026-11-04');
+  assert.equal((await call(`/api/cases/${c0.id}/session`, { method: 'POST', body: { reflection: 'again', date: '2026-11-03' } })).status, 409);
+  const t = (await call('/api/today?date=2026-11-04')).json;
+  assert.equal(t.session.n, 2);
+  c = (await call(`/api/cases/${c0.id}/session`, { method: 'POST', body: { reflection: 'Could not do it.', date: '2026-11-04' } })).json.case;
+  assert.equal(c.program.current, 1); // repeat
+  c = (await call(`/api/cases/${c0.id}/approach`, { method: 'POST', body: { therapy: 'act', date: '2026-11-05' } })).json.case;
+  assert.equal(c.program.therapy, 'act'); assert.equal(c.program.current, 0); assert.equal(c.program.sessions.length, 4);
+  assert.ok(c.program.alternatives.some((x) => x.therapy === 'behavioural_activation'));
+  const g = (await call('/api/therapies')).json;
+  assert.ok(g.therapies.length >= 25 && g.problems.low_mood);
 });
