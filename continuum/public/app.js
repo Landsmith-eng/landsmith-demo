@@ -2581,6 +2581,7 @@ function showMind() {
       h('p', {}, 'How minds work and how people change. Bring a problem and look at it through the schools of psychology, check where you are with a short survey, or explore the ideas and their methods.'),
       h('div', { class: 'think-doors' },
         h('button', { type: 'button', class: 'think-door pick-up', onclick: () => showWorkThrough() }, h('span', { class: 't' }, 'Work through a problem'), h('span', { class: 'muted small' }, 'A few questions, then your problem seen through several schools, a route, and check-ins.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showTherapies() }, h('span', { class: 't' }, 'The psychotherapies'), h('span', { class: 'muted small' }, 'CBT to ACT, interpersonal to family therapy: what each is good for, and how it works.')),
         h('button', { type: 'button', class: 'think-door', onclick: () => showGallery('rooms', { focus: 'room-mind' }) }, h('span', { class: 't' }, 'The ideas in this room'), h('span', { class: 'muted small' }, 'Every thinker and finding, from Freud and Pavlov to the present.'))),
       h('section', { class: 'diary-block' }, h('h2', {}, 'Where are you now?'),
         h('p', { class: 'muted small' }, 'Short surveys. The first ones are questionnaires doctors and researchers use; the last are Continuum\'s own reflections. Your answers stay with you and help Continuum meet you where you are.'),
@@ -2591,6 +2592,90 @@ function showMind() {
       h('p', { class: 'muted small' }, 'These surveys are screenings and reflections, not diagnoses, and Continuum is not a therapist. If you are struggling, a doctor or counsellor can help. ', HELP_LINE));
   });
 }
+// The programme on a problem's page: the therapy chosen for it and why, a professional's note when needed, and its
+// sessions, tailored; the next one with what to do and a place to say how it went.
+function programSection(c, refs) {
+  const p = c.program; if (!p || c.status !== 'open') return null;
+  const SH = { yes: 'can be done on your own with a guide', partly: 'partly done on your own; the full therapy is with a therapist', professional: 'done with a trained therapist; this programme prepares and supports you' };
+  const cur = p.sessions[p.current];
+  const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'What did you do, and what did you notice?', 'aria-label': 'How the session went' });
+  const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Done: how it went');
+  const status = h('p', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = 'Reading what you wrote…';
+    try { const r = await api(`/api/cases/${c.id}/session`, { method: 'POST', body: { reflection: ta.value, date: today() } }); renderCase(r.case); requestAnimationFrame(() => document.querySelector('.program')?.scrollIntoView({ block: 'start' })); }
+    catch (e) { send.disabled = false; status.textContent = e.message === 'tomorrow' ? 'One session a day: the next opens tomorrow.' : e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again.'; }
+  });
+  const item = (x, i) => h('li', { class: i === p.current ? 'now' : i < p.current ? 'past' : '' },
+    h('div', { class: 'eyebrow' }, `Session ${i + 1}${i < p.current ? ' · done' : i === p.current && !p.finished ? ' · next' : ''}`),
+    h('p', {}, h('strong', {}, x.title), ` — ${x.aim}`),
+    ...x.done.map((d) => h('div', { class: 'talk-turn from-map' }, d.reply)));
+  const change = h('div', { class: 'program-change' },
+    p.alternatives.length > 0 && h('p', { class: 'muted small' }, 'Would another way suit you better?'),
+    ...p.alternatives.map((a) => h('button', { type: 'button', class: 'think-door', onclick: async (e) => {
+      e.currentTarget.disabled = true; status.textContent = `Tailoring ${a.name} to your situation… about half a minute.`;
+      try { renderCase((await api(`/api/cases/${c.id}/approach`, { method: 'POST', body: { therapy: a.therapy, date: today() } })).case); } catch { status.textContent = 'Could not change the approach just now.'; }
+    } }, h('span', { class: 't' }, a.name), h('span', { class: 'small' }, a.why))),
+    h('button', { type: 'button', class: 'link small', onclick: () => showTherapies({ forCase: c.id }) }, 'See all the psychotherapies'));
+  return h('section', { class: 'wt-part program' },
+    h('h2', {}, `Your programme: ${p.name}${p.short ? ` (${p.short})` : ''}`),
+    h('p', {}, p.why), p.tailored && h('p', { class: 'muted small' }, p.tailored),
+    p.professional && h('p', { class: 'help-line' }, p.professional_note),
+    h('p', { class: 'muted small' }, `This approach ${SH[p.self_help] ?? ''}. One session a day at most; most people take a few days between them.`),
+    !p.finished && cur && h('div', { class: 'program-now' },
+      h('div', { class: 'eyebrow' }, `Session ${p.current + 1} of ${p.sessions.length}`), h('h3', {}, cur.title), h('p', { class: 'muted' }, cur.aim),
+      h('p', {}, cur.exercise), cur.practice && refs[cur.practice] && h('p', { class: 'muted small' }, 'The practice for it: ', ideaLink(cur.practice, refs)),
+      p.opens ? h('p', { class: 'muted small' }, `Done for today. The next session opens ${p.opens === today() ? 'today' : 'tomorrow'}.`)
+        : h('div', {}, ta, h('div', { class: 'row' }, dictation(ta)?.button, send), status)),
+    p.finished && h('p', {}, 'You have finished the programme. Keep the practices that helped; check in below, or choose another approach to go further.'),
+    h('ol', { class: 'program-list' }, p.sessions.map(item)),
+    change);
+}
+// The psychotherapies: what each is good for and how strong the evidence is, which can be done alone, its sessions.
+// From a problem's page (forCase), any one can be chosen as that problem's approach.
+function showTherapies({ forCase = null, problem = null } = {}) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const d = await api(`/api/therapies?date=${today()}`);
+    const tags = [...new Set(d.therapies.flatMap((t) => t.for))];
+    const list = problem ? d.therapies.filter((t) => t.for.includes(problem)) : d.therapies;
+    const SH = { yes: 'on your own, with a guide', partly: 'partly on your own', professional: 'with a therapist' };
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => (forCase ? showWorkThrough(forCase) : showMind()) }, forCase ? '← Your problem' : '← Psychology and the mind'),
+      h('h1', {}, 'The psychotherapies'),
+      h('p', {}, 'The main talking therapies, what each is best for, and how strong the evidence is. Continuum uses this guide to choose and tailor an approach when you work through a problem.'),
+      h('div', { class: 'size-chips' }, h('button', { type: 'button', class: `chip ${problem ? '' : 'on'}`, onclick: () => showTherapies({ forCase }) }, 'All'),
+        tags.map((x) => h('button', { type: 'button', class: `chip ${problem === x ? 'on' : ''}`, onclick: () => showTherapies({ forCase, problem: x }) }, d.problems[x] ?? x))),
+      h('div', { class: 'think-doors' }, list.map((t) => h('button', { type: 'button', class: 'think-door', onclick: () => showTherapy(t, d, forCase) },
+        h('span', { class: 't' }, `${t.name}${t.short ? ` (${t.short})` : ''}`),
+        h('span', { class: 'muted small' }, `${t.for.slice(0, 4).map((x) => d.problems[x] ?? x).join(' · ')} · ${SH[t.self_help] ?? ''}`), h('span', { class: 'small' }, t.how)))),
+      h('p', { class: 'muted small' }, 'A guide, not a treatment. For anything serious, these are therapies to ask a doctor or therapist about. ', HELP_LINE));
+  });
+}
+function showTherapy(t, d, forCase = null) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const links = (ids) => ids.map((id) => ideaLink(id, d.refs)).filter(Boolean);
+  const SH = { yes: 'Its core can be done on your own with a good guide.', partly: 'Parts of it can be done on your own; the full therapy is with a therapist.', professional: 'It is done with a trained therapist; on your own, only preparation and support.' };
+  const use = h('button', { type: 'button', class: 'btn', onclick: async (e) => {
+    if (!forCase) { store.set('continuum.prefer', t.id); return showWorkThrough(); }
+    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Tailoring it to your problem…';
+    try { renderCase((await api(`/api/cases/${forCase}/approach`, { method: 'POST', body: { therapy: t.id, date: today() } })).case); } catch { e.currentTarget.textContent = 'Could not change it just now'; }
+  } }, forCase ? 'Use this approach for my problem' : 'Work on a problem with this approach');
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => showTherapies({ forCase }) }, '← The psychotherapies'),
+    h('div', { class: 'eyebrow' }, `${t.years} · ${t.founders}`), h('h1', {}, `${t.name}${t.short ? ` (${t.short})` : ''}`),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'How it works'), h('p', {}, t.how)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Good for'), h('p', {}, t.for.map((x) => d.problems[x] ?? x).join(' · ')), h('p', { class: 'muted small' }, t.evidence)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'It suits'), h('p', {}, t.suits)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'On your own?'), h('p', {}, SH[t.self_help] ?? ''), h('p', { class: t.self_help === 'professional' ? 'help-line' : 'muted small' }, `See a professional: ${t.needs_professional}`)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Its sessions'), h('ol', { class: 'program-list' }, t.sessions.map((x) => h('li', {}, h('p', {}, h('strong', {}, x.title), ` — ${x.aim}`))))),
+    links(t.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices'), h('ul', { class: 'path' }, links(t.practices).map((l) => h('li', {}, l)))),
+    links(t.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'The ideas behind it'), h('ul', { class: 'path' }, links(t.ideas).map((l) => h('li', {}, l)))),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, use));
+}
+
 // A school by its id (from a plan's lens).
 async function openSchool(id) {
   const sch = await api(`/api/schools?date=${today()}`).catch(() => null);
@@ -2725,13 +2810,14 @@ function arrive() {
       ? choice('Today\'s idea', t.node?.why ?? 'A new question is waiting. Write first, then read.', showToday, 'learn')
       : t.state === 'done_today' ? choice('Back to today\'s idea', `"${t.node.title}": walk on from where you were.`, showToday, 'learn') : null;
     const checkin = t.checkin && choice(`Check in: ${t.checkin.title}`, t.checkin.question, () => showWorkThrough(t.checkin.id), 'think');
+    const session = t.session && choice(`Session ${t.session.n} of ${t.session.of}: ${t.session.name}`, `${t.session.therapy}, for "${t.session.title}"`, () => showWorkThrough(t.session.id), 'think');
     const think = choice('Think something through', 'Talk, a problem, a debate, the news.', showThink, 'think');
     const habit = choice('Today\'s practice', 'Ideas into habits, from ten seconds a day.', showPractice, 'habit');
     const order = { learn: [idea, think, habit], think: [think, idea, habit], habit: [habit, idea, think] }[store.get(WHY_KEY)] ?? [idea, think, habit];
     render(
       h('h1', {}, first ? `Glad to see you back, ${first}` : 'Glad to see you back'),
       h('p', {}, 'Where would you like to go today?'),
-      h('div', { class: 'think-doors' }, pickUp, checkin, ...order,
+      h('div', { class: 'think-doors' }, pickUp, session, checkin, ...order,
         choice('Explore the map', 'Every idea, and how they connect.', showMap, null),
         choice('Your diary', 'What you have written, and how your views have moved.', showJournal, null)));
   });
@@ -2759,7 +2845,8 @@ function showWorkThrough(id = null) {
     go.addEventListener('click', async () => {
       go.disabled = true; status.textContent = 'Listening…';
       try {
-        const r = await api('/api/cases', { method: 'POST', body: { problem: ta.value, date: today() } });
+        const prefer = store.get('continuum.prefer'); store.del('continuum.prefer');
+        const r = await api('/api/cases', { method: 'POST', body: { problem: ta.value, date: today(), ...(prefer ? { prefer } : {}) } });
         renderCase(r.case);
       } catch (e) { go.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again in a moment.'; }
     });
@@ -2846,6 +2933,7 @@ function renderCase(c) {
     h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
     h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
     p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
+    programSection(c, refs),
     // The same problem seen through several schools of psychology, each with something to do.
     p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
       h('p', { class: 'muted small' }, 'Each school sees a problem in its own way. Try the one that rings truest, or more than one.'),
@@ -2853,6 +2941,14 @@ function renderCase(c) {
         h('button', { type: 'button', class: 'link eyebrow', style: 'padding:0', onclick: () => openSchool(l.school) }, l.name),
         h('p', {}, l.sees), h('p', {}, h('strong', {}, 'Try: '), l.method),
         l.practice && refs[l.practice] && h('p', { class: 'muted small' }, 'A practice for it: ', ideaLink(l.practice, refs)))))),
+    // Long before psychology: what the wisdom traditions would counsel, and the question each would ask.
+    p.wisdom?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'What the wisdom traditions would say'),
+      h('p', { class: 'muted small' }, 'Philosophers, prophets and poets counselled people through problems like this long before psychology.'),
+      h('ul', { class: 'pitfalls lenses' }, p.wisdom.map((w) => h('li', {},
+        h('div', { class: 'eyebrow' }, w.tradition), h('p', {}, w.counsel),
+        w.idea && refs[w.idea] && h('p', { class: 'muted small' }, 'From: ', ideaLink(w.idea, refs)),
+        h('p', { class: 'ask-q' }, w.question),
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showTalk({ mode: 'workout', seed: `${w.tradition} asks me: "${w.question}" My answer: `, draft: true }) }, 'Answer it in Talk →'))))),
     p.survey && surveyById(p.survey) && h('section', { class: 'wt-part' }, h('h2', {}, 'A survey that may help'),
       h('p', { class: 'small' }, surveyById(p.survey).about),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(p.survey) }, `Take "${surveyById(p.survey).name}" (${surveyById(p.survey).time})`)),

@@ -272,7 +272,7 @@ export async function interviewStep(talk, { problem, turns, views = '', experien
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: INTERVIEW_SCHEMA } },
-    system: `You are Continuum, a daily philosophy app, opening a conversation about a problem in the user's life, the way a good counsellor opens a first session: curious, warm, unhurried, never judging. Your aim is to understand the problem well enough to point to a route through it. Ask ONE question at a time, short and plain, that the user can answer in a sentence or two (by voice or typing). Across the interview, find out what you need, in whatever order follows naturally from their answers: what is actually happening (a recent example), how long and how often, what they feel and what they tell themselves about it, what they have tried, what matters most to them here, who else is involved, and what "better" would look like. Do not ask what they have already told you. reflect: one sentence that shows you heard their last answer (or the problem itself, at the start), in their own terms, without praise or advice. Set done to true (and question to "") once you understand enough to help, usually after three to five questions, never more than six. Never diagnose, label them, or give advice yet. ${SAFETY}`,
+    system: `You are Continuum, a daily philosophy app, opening a conversation about a problem in the user's life, the way a good counsellor opens a first session: curious, warm, unhurried, never judging. Your aim is to understand the problem well enough to point to a route through it. Ask ONE question at a time, short and plain, that the user can answer in a sentence or two (by voice or typing). Across the interview, find out what you need, in whatever order follows naturally from their answers: what is actually happening (a recent example), how long and how often, what they feel and what they tell themselves about it, what they have tried, what matters most to them here, who else is involved, and what "better" would look like; and, if it has not come up, what kind of help suits them (practical tools and exercises, understanding where it comes from, someone to talk it through with, or not sure). Do not ask what they have already told you. reflect: one sentence that shows you heard their last answer (or the problem itself, at the start), in their own terms, without praise or advice. Set done to true (and question to "") once you understand enough to help, usually after three to five questions, never more than six. Never diagnose, label them, or give advice yet. ${SAFETY}`,
     messages: [{ role: 'user', content: `${experience ? `Their experience with Continuum: ${experience}\n` : ''}${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}The problem, in their words:\n${problem}${asked ? `\n\nThe interview so far:\n${asked}` : ''}` }],
   });
   if (msg.stop_reason !== 'end_turn') return null;
@@ -290,6 +290,7 @@ const PITFALL = {
   required: ['kind', 'name', 'how', 'idea'],
   additionalProperties: false,
 };
+const PROGRAM_SESSION = { type: 'object', properties: { title: { type: 'string' }, aim: { type: 'string' }, exercise: { type: 'string' }, practice: { type: 'string' } }, required: ['title', 'aim', 'exercise', 'practice'], additionalProperties: false };
 const STOP = { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false };
 export const PLAN_SCHEMA = {
   type: 'object',
@@ -303,10 +304,15 @@ export const PLAN_SCHEMA = {
     practice: { type: 'string' },
     lenses: { type: 'array', items: { type: 'object', properties: { school: { type: 'string' }, sees: { type: 'string' }, method: { type: 'string' }, practice: { type: 'string' } }, required: ['school', 'sees', 'method', 'practice'], additionalProperties: false } },
     survey: { type: 'string' },
+    wisdom: { type: 'array', items: { type: 'object', properties: { tradition: { type: 'string' }, idea: { type: 'string' }, counsel: { type: 'string' }, question: { type: 'string' } }, required: ['tradition', 'idea', 'counsel', 'question'], additionalProperties: false } },
+    problems: { type: 'array', items: { type: 'string' } },
+    approach: { type: 'object', properties: { therapy: { type: 'string' }, why: { type: 'string' }, tailored: { type: 'string' }, professional: { type: 'boolean' }, professional_note: { type: 'string' } }, required: ['therapy', 'why', 'tailored', 'professional', 'professional_note'], additionalProperties: false },
+    alternatives: { type: 'array', items: { type: 'object', properties: { therapy: { type: 'string' }, why: { type: 'string' } }, required: ['therapy', 'why'], additionalProperties: false } },
+    program: { type: 'array', items: PROGRAM_SESSION },
     first_step: { type: 'string' },
     check_in: { type: 'string' },
   },
-  required: ['concern', 'title', 'heard', 'going_on', 'pitfalls', 'route', 'practice', 'lenses', 'survey', 'first_step', 'check_in'],
+  required: ['concern', 'title', 'heard', 'going_on', 'pitfalls', 'route', 'practice', 'lenses', 'survey', 'wisdom', 'problems', 'approach', 'alternatives', 'program', 'first_step', 'check_in'],
   additionalProperties: false,
 };
 const PLAN_RULES = `You are Continuum, a daily practice app that holds the collective wisdom of philosophy, the world's religious traditions, psychology, the sciences and the law. Be a voice of reason for a hard problem: warm, clear, honest, and practical. Plain words, no jargon, no formatting inside the strings. Speak to the user as "you".
@@ -317,11 +323,15 @@ const PLAN_RULES = `You are Continuum, a daily practice app that holds the colle
 - route: three to five ideas from the map, in a sensible order, that would help them see the problem differently, challenge the pitfalls and make a new decision; each with why, one sentence on what it offers them. Mix fields where it helps. Use only ids exactly as listed.
 - practice: the id of one practice from the map that fits (ids starting practice_), or "".
 - lenses: two to four schools of psychology (from the list of schools, ids exactly as listed) that see THIS problem most clearly, the most fitting first; mix kinds where it helps (e.g. one about thoughts, one about behaviour, one about relationships or meaning). For each: sees: how that school would understand this person's problem, specifically, in one or two sentences; method: what that school would have them do, concrete and small enough to start this week; practice: the id of one of that school's practices as listed, or "". Never present a lens as a diagnosis or as therapy.
+- wisdom: long before psychology, the world's traditions counselled people through problems like this one (Freud himself credited the poets and philosophers). Choose two to four traditions from the map that speak most to THIS situation, beyond psychology: philosophy (Stoic, Epicurean, Aristotelian, Confucian, Daoist, existentialist and others), the religious traditions (Buddhist, Hindu, Jewish, Christian, Islamic, Indigenous and others) and the literature and law on the map, chosen for fit, not for balance's sake, and never pressing a faith on anyone. For each: tradition: its plain name (e.g. "The Stoics", "The Buddha", "Aristotle", "The Book of Job"); idea: the id of the idea on the map that carries it, exactly as listed; counsel: two or three sentences of its counsel for this person's situation, specific to them, in its own spirit (no quotation unless word for word from the source on the map); question: the one question it would ask them to examine, in the Socratic way: open, personal, not leading.
 - survey: the id of one survey from the list that would make the picture clearer (for example mood if they describe low mood, worry if anxiety, problem_map if it is hard to say where the problem lives), or "" if none would help or they have taken it recently.
-- first_step: one small, concrete thing to do this week, specific to their situation.
+- problems: the problem tags (from the list of problem tags) that describe this problem, the main one first, one to three.
+- approach: the psychotherapy (id exactly as listed in the psychotherapies) best matched to THIS person: weigh the strength of evidence for their kind of problem first, then what suits them (their stated preference for practical tools, understanding the past, or talking; their readiness to change; their surveys and personality if known; what they have already tried). why: two or three sentences, to them, on why this approach fits their situation and what the evidence says, honestly. tailored: one or two sentences on how it is adapted to them. professional: true when their situation needs a trained professional (the therapy's own "needs a professional" note applies, a screening is high, risk, trauma, an eating problem, dependence, or a problem the therapy cannot be done alone for); then professional_note says plainly, warmly, why and what to ask a doctor or therapist for (name the therapy), and the programme sticks to safe preparation and support. Otherwise professional_note is "".
+- alternatives: one or two other well-matched therapies (ids as listed), each with why in one sentence, for someone who would rather try another way.
+- program: the chosen therapy's sessions, tailored to them: follow the order and aims of its session outline (you may merge or drop one to fit, four to eight sessions), and write each exercise for THIS person's situation, specifically (their names for things, their example, their week), safe to do alone, small. practice: the session's practice id as listed, or "".
 - check_in: the one question to ask them in a few days, to see how it is going.
 ${SAFETY} When concern is true, keep the rest brief and gentle.`;
-export async function writePlan(talk, { problem, turns, catalogue, views = '', diary = '', schools = '', surveys = '', checks = '' }) {
+export async function writePlan(talk, { problem, turns, catalogue, views = '', diary = '', schools = '', surveys = '', checks = '', therapies = '', prefer = '' }) {
   const asked = turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join('\n\n');
   const msg = await talk.client.beta.messages.create({
     model: talk.model,
@@ -331,9 +341,43 @@ export async function writePlan(talk, { problem, turns, catalogue, views = '', d
     output_config: { effort: 'high', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
     system: [
       { type: 'text', text: PLAN_RULES },
-      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}${schools ? `\n\nThe schools of psychology (id | name | how it sees a problem | its methods | its practices):\n${schools}` : ''}${surveys ? `\n\nThe surveys in the psychology room (id | name):\n${surveys}` : ''}`, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}${schools ? `\n\nThe schools of psychology (id | name | how it sees a problem | its methods | its practices):\n${schools}` : ''}${surveys ? `\n\nThe surveys in the psychology room (id | name):\n${surveys}` : ''}${therapies ? `\n\nThe psychotherapies (id | name | school | good for | evidence | suits | can be done alone? | needs a professional when | session outline):\n${therapies}` : ''}`, cache_control: { type: 'ephemeral' } },
     ],
-    messages: [{ role: 'user', content: `${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}${checks ? `Surveys they have taken (latest; screenings, not diagnoses):\n${checks}\n\n` : ''}${diary ? `From their diary (recent):\n${diary}\n\n` : ''}The problem, in their words:\n${problem}\n\nThe interview:\n${asked || '(They asked to go straight to a route.)'}` }],
+    messages: [{ role: 'user', content: `${views ? `What they have said before (dated views and goals):\n${views}\n\n` : ''}${checks ? `Surveys they have taken (latest; screenings, not diagnoses):\n${checks}\n\n` : ''}${diary ? `From their diary (recent):\n${diary}\n\n` : ''}The problem, in their words:\n${problem}${prefer ? `\n\nThey asked to work with this approach if it fits: ${prefer} (choose it unless it is clearly wrong or unsafe for them, and then say why).` : ''}\n\nThe interview:\n${asked || '(They asked to go straight to a route.)'}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
+// After a session of their programme: a short, warm response to what they did and noticed, and whether to go on.
+export const SESSION_SCHEMA = {
+  type: 'object',
+  properties: { concern: { type: 'boolean' }, reply: { type: 'string' }, next: { type: 'string', enum: ['go_on', 'repeat', 'pause'] }, tip: { type: 'string' } },
+  required: ['concern', 'reply', 'next', 'tip'], additionalProperties: false,
+};
+export async function sessionReply(talk, { therapy, session, n, of, reflection, problem, title, nextSession = null }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model, max_tokens: 6000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: SESSION_SCHEMA } },
+    system: `You are Continuum, guiding someone through a short self-guided programme based on ${therapy}. They have just done session ${n} of ${of} and say how it went. reply: three to five sentences, warm and specific to what they wrote: what went well (name it plainly), what to learn from any difficulty (no blame), and one thing to carry into the next session. next: go_on (ready for the next session), repeat (better to do this session once more first, e.g. they could not try it or it went badly), or pause (they need rest or more support first). tip: one short, practical tip for the next session${nextSession ? ` ("${nextSession.title}": ${nextSession.aim})` : ''}, or for keeping it up if this was the last. Plain words, no formatting. ${SAFETY}`,
+    messages: [{ role: 'user', content: `Their problem: ${title}. In their words: ${problem}\n\nThis session: "${session.title}". Aim: ${session.aim}\nThe exercise: ${session.exercise}\n\nHow it went, in their words:\n${reflection}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+export const RETAILOR_SCHEMA = {
+  type: 'object',
+  properties: { why: { type: 'string' }, tailored: { type: 'string' }, professional: { type: 'boolean' }, professional_note: { type: 'string' }, program: { type: 'array', items: PROGRAM_SESSION } },
+  required: ['why', 'tailored', 'professional', 'professional_note', 'program'], additionalProperties: false,
+};
+// A different approach, chosen by the user: why it can fit them, and its sessions tailored to their situation.
+export async function retailor(talk, { therapyText, title, problem, turns, plan, checks = '' }) {
+  const asked = turns.map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`).join('\n\n');
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model, max_tokens: 12000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: RETAILOR_SCHEMA } },
+    system: `You are Continuum. The user has chosen to work on their problem with this psychotherapy instead (id | name | school | good for | evidence | suits | can be done alone? | needs a professional when | session outline):\n${therapyText}\n\nwhy: two or three honest sentences, to them, on how this approach can help with their problem (and, if the evidence for their kind of problem is thin, say so kindly). tailored: one or two sentences on how it is adapted to them. professional and professional_note: as the therapy's note and their situation require (name what to ask a professional for), else false and "". program: its session outline tailored to THIS person, four to eight sessions, each exercise specific to their situation, small and safe to do alone; practice: the session's practice id or "". Plain words, no formatting. ${SAFETY}`,
+    messages: [{ role: 'user', content: `The problem: ${title}. In their words: ${problem}\n\nThe interview:\n${asked || '(none)'}\n\nWhat was understood so far: ${plan?.heard ?? ''} ${plan?.going_on ?? ''}${checks ? `\n\nSurveys they have taken:\n${checks}` : ''}` }],
   });
   if (msg.stop_reason !== 'end_turn') return null;
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }

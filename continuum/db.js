@@ -229,6 +229,20 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 CREATE INDEX IF NOT EXISTS cases_user ON cases(user_id, status);
 
+-- The sessions of a problem's programme (a psychotherapy tailored to it): what the user did and noticed, and the reply.
+CREATE TABLE IF NOT EXISTS case_sessions (
+  id INTEGER PRIMARY KEY,
+  case_id INTEGER NOT NULL REFERENCES cases(id),
+  therapy TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  reflection TEXT NOT NULL,
+  reply TEXT NOT NULL,
+  next TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS case_sessions_case ON case_sessions(case_id, therapy, idx);
+
 -- Surveys from the psychology room (public/surveys.js): the answers and the score, as JSON, one row each time.
 CREATE TABLE IF NOT EXISTS survey_results (
   id INTEGER PRIMARY KEY,
@@ -263,7 +277,7 @@ CREATE TABLE IF NOT EXISTS reactions (
 
 // Columns added after the first testers' databases were created. SQLite has no ADD COLUMN IF NOT EXISTS.
 const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT'], ['nodes', 'room', 'TEXT'],
-  ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT']];
+  ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });

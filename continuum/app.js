@@ -12,7 +12,9 @@ import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn } from './talk.js';
+// The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
+const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn, sessionReply, retailor } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
@@ -308,9 +310,15 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
     const due = kq.due.get(uid, shiftDay(date, -CHECKIN_DAYS));
     const checkin = due ? { id: due.id, title: due.title, question: lastQuestion(due) } : null;
+    // The next session of a programme, when one is ready today.
+    let session = null;
+    for (const c of kq.withProgram.all(uid)) {
+      const p = programOf(c, JSON.parse(c.plan), date);
+      if (p && !p.finished && !p.opens) { session = { id: c.id, title: c.title, therapy: p.name, n: p.current + 1, of: p.sessions.length, name: p.sessions[p.current].title }; break; }
+    }
     // Days they have opened Continuum (counting today): the first few times it asks what brought them.
     const visits = q.visitDays.get(uid).n;
-    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin, visits });
+    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin, session, visits });
   });
 
   app.post('/api/respond', auth, (req, res) => {
@@ -1438,7 +1446,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // ── Working through a problem: an interview, a plan from the whole map, a course, and check-ins ──
   const CHECKIN_DAYS = 3; const MAX_QUESTIONS = 6;
   const kq = {
-    add: db.prepare('INSERT INTO cases (user_id, problem, turns, local_date, touched_date) VALUES (?, ?, ?, ?, ?)'),
+    add: db.prepare('INSERT INTO cases (user_id, problem, turns, local_date, touched_date, prefer) VALUES (?, ?, ?, ?, ?, ?)'),
+    sessions: db.prepare('SELECT idx, reflection, reply, next, local_date FROM case_sessions WHERE case_id = ? AND therapy = ? ORDER BY idx, id'),
+    addSession: db.prepare('INSERT INTO case_sessions (case_id, therapy, idx, reflection, reply, next, local_date) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    setPlan: db.prepare('UPDATE cases SET plan = ?, touched_date = ? WHERE id = ?'),
+    withProgram: db.prepare("SELECT * FROM cases WHERE user_id = ? AND status = 'open' AND plan LIKE '%\"program\":[{%' ORDER BY touched_date DESC"),
     get: db.prepare('SELECT * FROM cases WHERE id = ? AND user_id = ?'),
     all: db.prepare("SELECT * FROM cases WHERE user_id = ? ORDER BY status = 'closed', touched_date DESC, id DESC"),
     open: db.prepare("SELECT * FROM cases WHERE user_id = ? AND status = 'open' ORDER BY touched_date DESC LIMIT 3"),
@@ -1451,11 +1463,30 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     status: db.prepare('UPDATE cases SET status = ? WHERE id = ?'),
   };
   const lastQuestion = (c) => JSON.parse(c.checkins).at(-1)?.check_in ?? JSON.parse(c.plan ?? '{}').check_in ?? 'How is it going?';
+  // The programme: the chosen therapy tailored to the problem, its sessions (done ones with the reflection and the
+  // reply), the one to do next, and when it opens (one session a day at most; a "repeat" keeps the same one).
+  function programOf(c, plan, date = localDate()) {
+    const a = plan?.approach; const t = a && THERAPIES.find((x) => x.id === a.therapy);
+    if (!t || !plan.program?.length) return null;
+    const done = kq.sessions.all(c.id, t.id);
+    const passed = done.filter((d) => d.next !== 'repeat'); const current = Math.min(passed.length, plan.program.length);
+    const last = done.at(-1);
+    return {
+      therapy: t.id, name: t.name, short: t.short ?? null, school: t.school, self_help: t.self_help, needs_professional: t.needs_professional,
+      why: a.why, tailored: a.tailored, professional: Boolean(a.professional), professional_note: a.professional_note,
+      sessions: plan.program.map((x, i) => ({ ...x, done: done.filter((d) => d.idx === i).map((d) => ({ date: d.local_date, reflection: d.reflection, reply: d.reply, next: d.next })) })),
+      current, finished: current >= plan.program.length, opens: last && last.local_date >= date ? shiftDay(last.local_date, 1) : null,
+      alternatives: (plan.alternatives ?? []).map((x) => ({ ...x, name: THERAPIES.find((y) => y.id === x.therapy)?.name })).filter((x) => x.name),
+    };
+  }
   function caseOut(c, states) {
     const turns = JSON.parse(c.turns); const plan = c.plan ? JSON.parse(c.plan) : null; const route = JSON.parse(c.route);
-    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice),
+    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice), ...(plan?.wisdom ?? []).map((w) => w.idea),
       ...JSON.parse(c.checkins).flatMap((x) => (x.noticed ?? []).map((p) => p.idea))].filter(Boolean);
+    const program = programOf(c, plan);
+    for (const x of program?.sessions ?? []) if (x.practice) ids.push(x.practice);
     return {
+      program,
       id: c.id, title: c.title, problem: c.problem, status: c.status, started: Boolean(c.started), date: c.local_date, touched: c.touched_date,
       turns, plan, route, checkins: JSON.parse(c.checkins), question: c.status === 'open' ? lastQuestion(c) : null,
       refs: talkRefs(states, [...new Set(ids)]),
@@ -1467,8 +1498,15 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const route = (plan.route ?? []).filter((r) => ok(r.id) && q.node.get(r.id).type !== 'practice')
       .filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i).slice(0, 6);
     const pit = (p) => ({ ...p, idea: ok(p.idea) ? p.idea : '' });
+    const known = (id) => THERAPIES.some((t) => t.id === id);
+    const practiceOk = (id) => ok(id) && q.node.get(id).type === 'practice';
+    const approach = plan.approach && known(plan.approach.therapy) ? { ...plan.approach } : null;
+    const program = approach ? (plan.program ?? []).slice(0, 8).map((x) => ({ title: x.title, aim: x.aim, exercise: x.exercise, practice: practiceOk(x.practice) ? x.practice : '' })) : [];
+    const alternatives = (plan.alternatives ?? []).filter((x) => known(x.therapy) && x.therapy !== approach?.therapy).slice(0, 2);
+    const problems = (plan.problems ?? []).filter((x) => PROBLEMS[x]).slice(0, 3);
     const lenses = (plan.lenses ?? []).map((l) => { const sc = SCHOOLS.find((x) => x.id === l.school); return sc && { school: sc.id, name: sc.name, sees: l.sees, method: l.method, practice: ok(l.practice) && q.node.get(l.practice).type === 'practice' ? l.practice : '' }; }).filter(Boolean).slice(0, 4);
-    return { ...plan, route, lenses, survey: surveyById(plan.survey) ? plan.survey : '', pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
+    const wisdom = (plan.wisdom ?? []).filter((w) => w.counsel && w.question).map((w) => ({ tradition: w.tradition, idea: ok(w.idea) ? w.idea : '', counsel: w.counsel, question: w.question })).slice(0, 4);
+    return { ...plan, approach, program, alternatives, problems, wisdom, route, lenses, survey: surveyById(plan.survey) ? plan.survey : '', pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
       practice: ok(plan.practice) && q.node.get(plan.practice).type === 'practice' ? plan.practice : '' };
   }
   // For Talk: the problems they are working through, with the pitfalls named so far.
@@ -1500,7 +1538,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   const failed = (res, e, what) => { console.warn(`${what}: ${e.status ?? ''} ${e.message}`); res.status(502).json({ error: 'claude_failed' }); };
   async function makePlan(uid, date, c, states) {
-    const plan = await writePlan(talk, { problem: c.problem, turns: JSON.parse(c.turns).filter((t) => t.a), catalogue: catalogueFor(states), views: viewsText(uid), diary: talkDiary(uid, states), schools: schoolsText, surveys: surveysList, checks: surveysText(uid, date) });
+    const plan = await writePlan(talk, { problem: c.problem, turns: JSON.parse(c.turns).filter((t) => t.a), catalogue: catalogueFor(states), views: viewsText(uid), diary: talkDiary(uid, states), schools: schoolsText, surveys: surveysList, checks: surveysText(uid, date), therapies: therapiesText + `\n\nThe problem tags: ${problemsText}`, prefer: c.prefer ? THERAPIES.find((t) => t.id === c.prefer)?.name ?? '' : '' });
     if (!plan) return null;
     const clean = cleanPlan(plan, states);
     kq.plan.run(JSON.stringify(clean), clip(clean.title, 80) || 'A problem to work through', JSON.stringify(clean.route), date, c.id);
@@ -1525,7 +1563,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     try {
       const step = await interviewStep(talk, { problem, turns: [], views: viewsText(uid), experience: experienceOf(uid).text });
       if (!step) return res.status(502).json({ error: 'claude_failed' });
-      const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern }]), date, date).lastInsertRowid);
+      const prefer = THERAPIES.some((t) => t.id === req.body?.prefer) ? req.body.prefer : null; // started from a therapy's page
+      const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern }]), date, date, prefer).lastInsertRowid);
       noteFrom(uid, date, problem, 'A problem they brought to Continuum to work through.', 'problem');
       res.json({ case: caseOut(kq.get.get(id, uid), caseStates(uid, date)), concern: step.concern });
     } catch (e) { failed(res, e, 'Interview'); }
@@ -1597,6 +1636,45 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: r.concern });
     } catch (e) { failed(res, e, 'Check-in'); }
   });
+  // A session of the programme done: what they did and noticed, a reply, and whether to go on, repeat or pause.
+  app.post('/api/cases/:id/session', auth, async (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const c = kq.get.get(Number(req.params.id), uid);
+    if (!c || c.status !== 'open') return res.status(404).json({ error: 'not_found' });
+    const plan = JSON.parse(c.plan ?? 'null'); const prog = programOf(c, plan, date);
+    if (!prog || prog.finished) return res.status(409).json({ error: 'no_session' });
+    if (prog.opens) return res.status(409).json({ error: 'tomorrow', opens: prog.opens });
+    const reflection = typeof req.body?.reflection === 'string' ? req.body.reflection.trim() : '';
+    if (!reflection || reflection.length > MAX_USER_TEXT) return res.status(400).json({ error: 'bad_reflection' });
+    if (!guardTalk(req, res)) return;
+    try {
+      const t = THERAPIES.find((x) => x.id === prog.therapy); const session = plan.program[prog.current];
+      const r = await sessionReply(talk, { therapy: t.name, session, n: prog.current + 1, of: plan.program.length, reflection, problem: c.problem, title: c.title, nextSession: plan.program[prog.current + 1] ?? null });
+      if (!r) return res.status(502).json({ error: 'claude_failed' });
+      kq.addSession.run(c.id, t.id, prog.current, reflection, `${r.reply}${r.tip ? `\n\n${r.tip}` : ''}`, ['go_on', 'repeat', 'pause'].includes(r.next) ? r.next : 'go_on', date);
+      kq.checkin.run(c.checkins, c.route, date, c.id);
+      noteFrom(uid, date, reflection, `After session ${prog.current + 1} ("${session.title}") of a ${t.name} programme for: ${c.title}`, 'problem');
+      res.json({ case: caseOut(kq.get.get(c.id, uid), caseStates(uid, date)), concern: r.concern });
+    } catch (e) { failed(res, e, 'Session'); }
+  });
+  // A different approach, chosen by the user: the new therapy tailored to their problem.
+  app.post('/api/cases/:id/approach', auth, async (req, res) => {
+    const uid = req.user.id; const date = localDate(req.body?.date);
+    const c = kq.get.get(Number(req.params.id), uid);
+    const t = THERAPIES.find((x) => x.id === req.body?.therapy);
+    if (!c || c.status !== 'open' || !t) return res.status(404).json({ error: 'not_found' });
+    if (!guardTalk(req, res)) return;
+    const states = caseStates(uid, date); const plan = JSON.parse(c.plan);
+    try {
+      const r = await retailor(talk, { therapyText: therapyLine(t), title: c.title, problem: c.problem, turns: JSON.parse(c.turns).filter((x) => x.a), plan, checks: surveysText(uid, date) });
+      if (!r) return res.status(502).json({ error: 'claude_failed' });
+      const old = plan.approach && { therapy: plan.approach.therapy, why: 'The approach you started with.' };
+      const next = cleanPlan({ ...plan, approach: { therapy: t.id, why: r.why, tailored: r.tailored, professional: r.professional, professional_note: r.professional_note }, program: r.program,
+        alternatives: [old, ...(plan.alternatives ?? [])].filter(Boolean) }, states);
+      kq.setPlan.run(JSON.stringify(next), date, c.id);
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states) });
+    } catch (e) { failed(res, e, 'Changing approach'); }
+  });
   // Resolved, or set aside (closed); or opened again.
   app.post('/api/cases/:id/status', auth, (req, res) => {
     const c = kq.get.get(Number(req.params.id), req.user.id);
@@ -1632,6 +1710,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     res.json({ schools: SCHOOLS, refs: talkRefs(states, [...new Set(SCHOOLS.flatMap((x) => [...x.ideas, ...x.practices]))]) });
   });
   const schoolsText = SCHOOLS.map((x) => `${x.id} | ${x.name} | ${x.sees} | ${x.methods.join('; ')} | ${x.practices.join(', ') || '-'}`).join('\n');
+  const therapyLine = (t) => `${t.id} | ${t.name}${t.short ? ` (${t.short})` : ''} | ${t.school} | ${t.for.map((x) => PROBLEMS[x] ?? x).join(', ')} | ${t.evidence} | ${t.suits} | ${t.self_help} | ${t.needs_professional} | ${t.sessions.map((x, i) => `${i + 1}. ${x.title}: ${x.aim}`).join(' ')}`;
+  const therapiesText = THERAPIES.map(therapyLine).join('\n');
+  const problemsText = Object.entries(PROBLEMS).map(([k, v]) => `${k} (${v})`).join(', ');
+  app.get('/api/therapies', auth, (req, res) => {
+    const states = talkStates(req.user.id, localDate(req.query.date));
+    res.json({ therapies: THERAPIES, problems: PROBLEMS, refs: talkRefs(states, [...new Set(THERAPIES.flatMap((t) => [...t.practices, ...t.ideas, ...t.sessions.map((x) => x.practice)]).filter(Boolean))]) });
+  });
   const surveysList = SURVEYS.map((x) => `${x.id} | ${x.name}${x.kind === 'screen' ? ` (${x.short})` : ' (reflection)'}`).join('\n');
   // The latest of each survey in the last two months, one line each, for Talk and for working through a problem.
   function surveysText(uid, date = localDate()) {
