@@ -30,6 +30,7 @@ before(async () => {
         program: [{ title: 'S1', aim: 'a1', exercise: 'e1', practice: 'practice_behavioural_activation' }, { title: 'S2', aim: 'a2', exercise: 'e2', practice: 'not_real' }, { title: 'S3', aim: 'a3', exercise: 'e3', practice: '' }] });
       if (props.next && props.tip) return json({ concern: false, reply: 'Well done.', next: sessionNext.shift() ?? 'go_on', tip: 'Keep it small.' });
       if (props.tailored && props.program) return json({ why: 'ACT fits', tailored: 'tt', professional: false, professional_note: '', program: [{ title: 'A1', aim: 'x', exercise: 'y', practice: 'practice_values_compass' }, { title: 'A2', aim: 'x', exercise: 'y', practice: '' }, { title: 'A3', aim: 'x', exercise: 'y', practice: '' }, { title: 'A4', aim: 'x', exercise: 'y', practice: '' }] });
+      if (req.tools?.some((t) => t.name === 'web_search')) return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Here is what I found.\nPLACE | Calm Minds Therapy | in person | CBT for anxiety, sliding scale | (555) 123-4567 | https://calmminds.example | Springfield, IL\nPLACE | Online CBT Co | online | licensed therapists by video | "" | not a url | ""\nPLACE |  | x | y | z | w | v\nNOTE: Ask about the approach by name.' }] };
       if (props.progress) return json({ concern: false, reply: 'Good.', progress: 'better', noticed: [{ kind: 'assumption', name: 'Mind reading', how: 'z', idea: '' }],
         route: [{ id: 'bandura_self_efficacy', why: 'next' }, { id: 'dweck_mindsets', why: 'then' }], next_step: 'Two emails.', check_in: 'And now?' });
       return json({});
@@ -121,4 +122,18 @@ test('a programme: a session a day, a repeat keeps the same one, and another app
   assert.ok(c.program.alternatives.some((x) => x.therapy === 'behavioural_activation'));
   const g = (await call('/api/therapies')).json;
   assert.ok(g.therapies.length >= 25 && g.problems.low_mood);
+});
+
+test('finding a therapist reads the search listings; the summary is the user\'s own entries', async () => {
+  const c = (await call('/api/cases?date=2026-11-05')).json.cases.find((x) => x.status === 'open');
+  const r = (await call('/api/help/find', { method: 'POST', body: { place: '62704', how: 'either', case: c.id, date: '2026-11-05' } })).json;
+  assert.deepEqual(r.places.map((x) => [x.name, x.phone, x.url]), [['Calm Minds Therapy', '(555) 123-4567', 'https://calmminds.example'], ['Online CBT Co', '', '']]);
+  assert.equal(r.note, 'Ask about the approach by name.');
+  assert.equal((await call('/api/help/find', { method: 'POST', body: { place: 'x<script>' } })).status, 400);
+  const h = (await call(`/api/cases/${c.id}/handover?date=2026-11-05`)).json;
+  assert.match(h.text, /^A summary for my therapist/);
+  assert.match(h.text, /not a clinical assessment/);
+  assert.match(h.text, /In my own words: I put things off\./);
+  assert.match(h.text, /Self-guided sessions I did/);
+  assert.match(h.text, /What I hope for from therapy:/);
 });

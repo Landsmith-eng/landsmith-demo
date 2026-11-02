@@ -14,7 +14,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn, sessionReply, retailor } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf } from './map.js';
@@ -1448,6 +1448,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   const kq = {
     add: db.prepare('INSERT INTO cases (user_id, problem, turns, local_date, touched_date, prefer) VALUES (?, ?, ?, ?, ?, ?)'),
     sessions: db.prepare('SELECT idx, reflection, reply, next, local_date FROM case_sessions WHERE case_id = ? AND therapy = ? ORDER BY idx, id'),
+    allSessions: db.prepare('SELECT therapy, idx, reflection, local_date FROM case_sessions WHERE case_id = ? ORDER BY id'),
     addSession: db.prepare('INSERT INTO case_sessions (case_id, therapy, idx, reflection, reply, next, local_date) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setPlan: db.prepare('UPDATE cases SET plan = ?, touched_date = ? WHERE id = ?'),
     withProgram: db.prepare("SELECT * FROM cases WHERE user_id = ? AND status = 'open' AND plan LIKE '%\"program\":[{%' ORDER BY touched_date DESC"),
@@ -1674,6 +1675,61 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       kq.setPlan.run(JSON.stringify(next), date, c.id);
       res.json({ case: caseOut(kq.get.get(c.id, uid), states) });
     } catch (e) { failed(res, e, 'Changing approach'); }
+  });
+  // Finding a real therapist near a ZIP code (or online), for the approach this problem needs. The place is used
+  // for the search only, never kept.
+  app.post('/api/help/find', auth, async (req, res) => {
+    const place = typeof req.body?.place === 'string' ? req.body.place.trim() : '';
+    if (!/^[A-Za-z0-9 -]{3,10}$/.test(place)) return res.status(400).json({ error: 'bad_place' });
+    const how = ['in_person', 'online', 'either'].includes(req.body?.how) ? req.body.how : 'either';
+    const c = req.body?.case ? kq.get.get(Number(req.body.case), req.user.id) : null;
+    const plan = c?.plan ? JSON.parse(c.plan) : null;
+    const t = THERAPIES.find((x) => x.id === plan?.approach?.therapy);
+    if (!guardTalk(req, res)) return;
+    try {
+      const r = await findHelp(talk, { place, how, lowCost: req.body?.low_cost === true, therapy: t ? `${t.name}${t.short ? ` (${t.short})` : ''}` : '', need: plan?.approach?.professional_note || c?.title || '' });
+      res.json(r);
+    } catch (e) { failed(res, e, 'Finding help'); }
+  });
+  // A summary for a therapist, written from the user's own entries (no AI wording), for them to read, edit and send.
+  app.get('/api/cases/:id/handover', auth, (req, res) => {
+    const uid = req.user.id; const c = kq.get.get(Number(req.params.id), uid);
+    if (!c) return res.status(404).json({ error: 'not_found' });
+    const date = localDate(req.query.date); const plan = JSON.parse(c.plan ?? 'null'); const prog = plan && programOf(c, plan, date);
+    const t = prog && THERAPIES.find((x) => x.id === prog.therapy);
+    const L = [];
+    L.push('A summary for my therapist', '');
+    L.push(`Prepared with Continuum, a self-guided reflection app, on ${date}. It is my own account and my own self-guided work, not a clinical assessment or a diagnosis.`, '');
+    L.push(`What I would like help with: ${c.title ?? c.problem}`, `In my own words: ${c.problem}`, '');
+    const turns = JSON.parse(c.turns).filter((x) => x.q && x.a);
+    if (turns.length) { L.push('Questions I was asked, and my answers:'); for (const x of turns) L.push(`- ${x.q}`, `  ${x.a}`); L.push(''); }
+    if (plan) {
+      L.push('What was reflected back to me:', `${plan.heard ?? ''} ${plan.going_on ?? ''}`.trim(), '');
+      const pits = [...(plan.pitfalls ?? []), ...JSON.parse(c.checkins).flatMap((x) => x.noticed ?? [])];
+      if (pits.length) { L.push('Patterns that may keep me stuck (possible, not established):'); for (const p of pits) L.push(`- ${p.name}: ${p.how}`); L.push(''); }
+    }
+    const seen = new Set(); const surveys = svq.since.all(uid, shiftDay(date, -183)).filter((r) => { const s = surveyById(r.survey_id); return s?.kind === 'screen'; });
+    if (surveys.length) {
+      L.push('Questionnaires I took (screenings, not diagnoses; newest first):');
+      for (const r of surveys) { const s = surveyById(r.survey_id); const x = JSON.parse(r.result); const again = seen.has(s.id); seen.add(s.id); L.push(`- ${r.local_date} ${s.short} (${s.name.toLowerCase()}): ${x.summary}${x.crisis && !again ? ' I answered above zero to the question about thoughts of being better off dead or of hurting myself.' : ''}`); }
+      L.push('');
+    }
+    if (t) {
+      L.push(`The approach suggested for me: ${t.name}${t.short ? ` (${t.short})` : ''}.`, prog.why ?? '');
+      if (prog.professional && prog.professional_note) L.push(prog.professional_note);
+      L.push('');
+    }
+    // Every session done, under whichever approach (someone may have changed approach along the way).
+    const all = kq.allSessions.all(c.id);
+    if (all.length) {
+      L.push('Self-guided sessions I did, and what I noticed:');
+      for (const d of all) { const name = THERAPIES.find((x) => x.id === d.therapy)?.name ?? d.therapy; const title = d.therapy === prog?.therapy ? plan.program[d.idx]?.title : null; L.push(`- ${d.local_date}, ${name}, session ${d.idx + 1}${title ? ` "${title}"` : ''}: ${d.reflection}`); }
+      L.push('');
+    }
+    const checks = JSON.parse(c.checkins);
+    if (checks.length) { L.push('How it has gone since (my check-ins):'); for (const x of checks) L.push(`- ${x.date}${x.progress && x.progress !== 'unclear' ? ` (${x.progress})` : ''}: ${x.answer}`); L.push(''); }
+    L.push('What I hope for from therapy:', '', '', 'Thank you for reading this.');
+    res.json({ title: c.title ?? 'My summary', text: L.join('\n') });
   });
   // Resolved, or set aside (closed); or opened again.
   app.post('/api/cases/:id/status', auth, (req, res) => {

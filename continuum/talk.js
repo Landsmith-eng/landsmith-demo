@@ -144,6 +144,33 @@ export async function answer(talk, { system, messages, onText, readIdea }) {
   return done('turn_limit');
 }
 
+// Finding a real therapist: a live web search near the user's ZIP code (and online), for the approach their problem
+// needs. One line per place found, in a fixed shape the app reads; nothing that the search did not find.
+export async function findHelp(talk, { place, how, lowCost, therapy, need }) {
+  const messages = [{ role: 'user', content: `Find therapists for me. Where: ${place} (a ZIP or postal code). How: ${how === 'online' ? 'online / telehealth only' : how === 'in_person' ? 'in person, near that place' : 'in person near that place, or online'}.${lowCost ? ' I need low-cost or sliding-scale options.' : ''} The approach to look for: ${therapy || 'a licensed therapist for talking therapy'}.${need ? ` Why: ${need}` : ''}` }];
+  const system = `You help someone find real professional help. Use web_search to find, near the place given and/or online as asked: four to eight current, real options that offer the approach asked for (or general licensed therapy if none do): individual therapists or group practices, community mental health centres, university or training clinics (often low cost), hospital outpatient services, and reputable online therapy services that employ licensed clinicians (say plainly they are online, and what is known about cost or insurance). Prefer listings that name the approach or a relevant speciality. For each, write exactly one line in this form, and nothing else on that line:
+PLACE | name | kind (in person, online, clinic, or directory) | what they offer, in one short phrase (approach, speciality, cost note) | phone, exactly as found, or "" | website or listing URL where the search found it | address or area, or ""
+Use only what the search actually found: never invent a name, phone number, address or URL, and leave a field "" when unknown. After the lines, one line starting "NOTE:" with one or two plain sentences of advice (e.g. check the clinician is licensed, ask about the approach by name, ask about cost and insurance, and that a doctor can also refer). Do not repeat or ask for any personal detail beyond the place.`;
+  const sources = new Map(); let text = '';
+  for (let turn = 0; turn < 6; turn++) {
+    const msg = await talk.client.beta.messages.create({
+      model: talk.model, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      output_config: { effort: 'medium' }, system, tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }], messages,
+    });
+    messages.push({ role: 'assistant', content: msg.content });
+    for (const b of msg.content) { if (b.type === 'text') text += b.text; for (const c of b.citations ?? []) if (c.url) sources.set(c.url, c.title || c.url); }
+    if (msg.stop_reason === 'pause_turn') continue;
+    break;
+  }
+  const clean = (v) => { const x = (v ?? '').trim().replace(/^"|"$/g, ''); return x === '' || /^(n\/a|unknown|none)$/i.test(x) ? '' : x; };
+  const places = text.split('\n').filter((l) => l.trim().startsWith('PLACE |')).map((l) => {
+    const [, name, kind, offer, phone, url, area] = l.split('|').map(clean);
+    return { name, kind, offer, phone, url: /^https?:\/\//.test(url) ? url : '', area };
+  }).filter((x) => x.name);
+  const note = (text.split('\n').find((l) => l.trim().startsWith('NOTE:')) ?? '').replace(/^\s*NOTE:\s*/, '').trim();
+  return { places, note, sources: [...sources].map(([url, title]) => ({ url, title })) };
+}
+
 // [[id]] markers in a reply, for the app to turn into links.
 export const referencedIds = (text) => [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((m) => m[1]))];
 

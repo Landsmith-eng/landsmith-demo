@@ -2581,6 +2581,7 @@ function showMind() {
       h('p', {}, 'How minds work and how people change. Bring a problem and look at it through the schools of psychology, check where you are with a short survey, or explore the ideas and their methods.'),
       h('div', { class: 'think-doors' },
         h('button', { type: 'button', class: 'think-door pick-up', onclick: () => showWorkThrough() }, h('span', { class: 't' }, 'Work through a problem'), h('span', { class: 'muted small' }, 'A few questions, then your problem seen through several schools, a route, and check-ins.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showFindHelp() }, h('span', { class: 't' }, 'Find a therapist'), h('span', { class: 'muted small' }, 'Licensed therapists near you or online, and trusted directories.')),
         h('button', { type: 'button', class: 'think-door', onclick: () => showTherapies() }, h('span', { class: 't' }, 'The psychotherapies'), h('span', { class: 'muted small' }, 'CBT to ACT, interpersonal to family therapy: what each is good for, and how it works.')),
         h('button', { type: 'button', class: 'think-door', onclick: () => showGallery('rooms', { focus: 'room-mind' }) }, h('span', { class: 't' }, 'The ideas in this room'), h('span', { class: 'muted small' }, 'Every thinker and finding, from Freud and Pavlov to the present.'))),
       h('section', { class: 'diary-block' }, h('h2', {}, 'Where are you now?'),
@@ -2632,6 +2633,94 @@ function programSection(c, refs) {
     h('ol', { class: 'program-list' }, p.sessions.map(item)),
     change);
 }
+// Professional help, on a problem's page: find a therapist (near a ZIP code, or online) and a summary to send them.
+function helpSection(c, advised) {
+  return h('section', { class: `wt-part help-block${advised ? ' advised' : ''}` },
+    h('h2', {}, advised ? 'Getting professional help' : 'Talking to a professional'),
+    h('p', { class: 'small' }, advised ? 'For this, a trained therapist is the right next step. Continuum can look for therapists near you or online who offer the approach that fits, and prepare a summary of the work you have done here to send them, so your first appointment starts further along.'
+      : 'If you would like a professional\'s help with this, Continuum can look for therapists near you or online, and prepare a summary of your work here to send them.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' },
+      h('button', { type: 'button', class: advised ? 'btn' : 'btn ghost', onclick: () => showFindHelp(c.id) }, 'Find a therapist'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showHandover(c.id) }, 'A summary for a therapist')));
+}
+// Find a therapist: ZIP code, in person / online, low cost; a live web search, plus trusted directories.
+function showFindHelp(caseId = null) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const zip = h('input', { type: 'text', inputmode: 'numeric', maxlength: '10', placeholder: 'ZIP code', class: 'search', 'aria-label': 'ZIP or postal code', autocomplete: 'postal-code' });
+  let how = 'either';
+  const hows = h('div', { class: 'size-chips' }, [['either', 'In person or online'], ['in_person', 'In person'], ['online', 'Online']].map(([k, label]) =>
+    h('button', { type: 'button', class: `chip ${k === how ? 'on' : ''}`, onclick: (e) => { how = k; hows.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === e.currentTarget)); } }, label)));
+  const low = h('input', { type: 'checkbox', id: 'lowcost' });
+  const go = h('button', { type: 'button', class: 'btn' }, 'Search');
+  const out = h('div', { 'aria-live': 'polite' });
+  const directories = (z) => h('section', { class: 'wt-part' }, h('h2', {}, 'Trusted places to look'),
+    h('ul', { class: 'path' },
+      h('li', {}, h('a', { href: `https://www.psychologytoday.com/us/therapists/${encodeURIComponent(z)}`, target: '_blank', rel: 'noopener' }, 'Psychology Today: therapists near you'), h('p', { class: 'muted small' }, 'The largest directory; filter by the approach, insurance and cost.')),
+      h('li', {}, h('a', { href: `https://findtreatment.gov/locator?sAddr=${encodeURIComponent(z)}`, target: '_blank', rel: 'noopener' }, 'FindTreatment.gov'), h('p', { class: 'muted small' }, 'The U.S. government\'s locator for mental health and addiction services.')),
+      h('li', {}, h('a', { href: 'https://openpathcollective.org/', target: '_blank', rel: 'noopener' }, 'Open Path Collective'), h('p', { class: 'muted small' }, 'Lower-cost therapy for people who need it.')),
+      h('li', {}, h('a', { href: 'https://www.nami.org/help', target: '_blank', rel: 'noopener' }, 'NAMI HelpLine'), h('p', { class: 'muted small' }, 'Call 1-800-950-6264 for help finding support.')),
+      h('li', {}, h('p', {}, h('strong', {}, 'In a crisis: '), 'call or text 988 (the Suicide & Crisis Lifeline), any time.'))));
+  go.addEventListener('click', async () => {
+    const z = zip.value.trim(); if (!/^[A-Za-z0-9 -]{3,10}$/.test(z)) { out.replaceChildren(h('p', { class: 'muted small' }, 'Enter a ZIP code.')); return; }
+    go.disabled = true; out.replaceChildren(h('p', { class: 'muted' }, 'Searching for therapists… this takes about a minute.'), directories(z));
+    try {
+      const r = await api('/api/help/find', { method: 'POST', body: { place: z, how, low_cost: low.checked, case: caseId, date: today() } });
+      out.replaceChildren(
+        r.places.length ? h('section', { class: 'wt-part' }, h('h2', {}, 'What the search found'),
+          h('ul', { class: 'pitfalls' }, r.places.map((x) => h('li', {},
+            h('div', { class: 'eyebrow' }, x.kind || 'therapist'), h('p', {}, h('strong', {}, x.name), x.offer ? ` — ${x.offer}` : ''),
+            x.area && h('p', { class: 'muted small' }, x.area),
+            h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' },
+              x.phone && h('a', { class: 'btn ghost', href: `tel:${x.phone.replace(/[^\d+]/g, '')}` }, `Call ${x.phone}`),
+              x.url && h('a', { class: 'btn ghost', href: x.url, target: '_blank', rel: 'noopener' }, 'Website'))))))
+          : h('p', {}, 'The search did not find specific listings this time. The directories below are the surest way.'),
+        r.note && h('p', { class: 'muted small' }, r.note),
+        h('p', { class: 'muted small' }, 'Found by a web search just now: check that a therapist is licensed, and ask about the approach, cost and insurance when you call. Continuum does not vouch for any of them.'),
+        directories(z),
+        caseId && h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn', onclick: () => showHandover(caseId) }, 'Prepare a summary to send them')));
+    } catch (e) { out.replaceChildren(h('p', {}, e.message === 'daily_limit' ? 'That is enough searching for today. The directories below still work:' : 'The search did not work just now. The directories below still work:'), directories(z)); }
+    go.disabled = false;
+  });
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => (caseId ? showWorkThrough(caseId) : showMind()) }, caseId ? '← Your problem' : '← Psychology and the mind'),
+    h('h1', {}, 'Find a therapist'),
+    h('p', {}, 'Continuum searches the web now for licensed therapists, clinics and online services near you that offer the approach that fits. Your ZIP code is used for this search only and is not kept.'),
+    h('div', { class: 'row' }, zip, go), hows, h('label', { class: 'small', for: 'lowcost', style: 'display:flex;gap:8px;align-items:center;margin:8px 0' }, low, 'Low-cost or sliding-scale options'),
+    out);
+  zip.focus();
+}
+// A summary for a therapist: the user's own entries gathered into a letter, to read, edit and then send or save.
+function showHandover(caseId) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const d = await api(`/api/cases/${caseId}/handover?date=${today()}`);
+    const ta = h('textarea', { rows: '22', class: 'handover', 'aria-label': 'Your summary' }); ta.value = d.text;
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const file = () => new File([ta.value], 'Summary for my therapist.txt', { type: 'text/plain' });
+    const shareFile = navigator.canShare?.({ files: [file()] });
+    const email = h('a', { class: 'btn', href: '#', onclick: (e) => {
+      e.preventDefault();
+      const body = ta.value.length > 7000 ? `${ta.value.slice(0, 7000)}\n\n(Continued in the attached file.)` : ta.value;
+      location.href = `mailto:?subject=${encodeURIComponent(`A summary before our first appointment: ${d.title}`)}&body=${encodeURIComponent(body)}`;
+    } }, 'Email it');
+    const share = h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+      try { if (shareFile) await navigator.share({ files: [file()], title: 'Summary for my therapist' }); else await navigator.share({ title: 'Summary for my therapist', text: ta.value }); } catch { /* closed */ }
+    } }, shareFile ? 'Share as a file' : 'Share');
+    const save = h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+      const a = h('a', { href: URL.createObjectURL(file()), download: 'Summary for my therapist.txt' }); document.body.append(a); a.click(); a.remove();
+      status.textContent = 'Saved to your downloads.';
+    } }, 'Save as a file');
+    const copy = h('button', { type: 'button', class: 'btn ghost', onclick: async () => { try { await navigator.clipboard.writeText(ta.value); status.textContent = 'Copied.'; } catch { status.textContent = 'Could not copy; select the text instead.'; } } }, 'Copy');
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => showWorkThrough(caseId) }, '← Your problem'),
+      h('h1', {}, 'A summary for a therapist'),
+      h('p', {}, 'Your own words and work from Continuum, gathered for a therapist, so your first appointment can start further along. Read it first: change anything, and delete anything you would rather say in person. Nothing is sent until you send it.'),
+      h('p', { class: 'muted small' }, 'Add what you hope for from therapy at the end. Email it to the therapist, or bring it with you.'),
+      ta, h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' }, email, navigator.share && share, save, copy), status);
+  });
+}
+
 // The psychotherapies: what each is good for and how strong the evidence is, which can be done alone, its sessions.
 // From a problem's page (forCase), any one can be chosen as that problem's approach.
 function showTherapies({ forCase = null, problem = null } = {}) {
@@ -2933,6 +3022,7 @@ function renderCase(c) {
     h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
     h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
     p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
+    c.program?.professional && helpSection(c, true),
     programSection(c, refs),
     // The same problem seen through several schools of psychology, each with something to do.
     p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
@@ -2964,6 +3054,7 @@ function renderCase(c) {
       h('p', { class: 'muted small' }, 'Every few days Continuum will ask on Wander. It looks at what you write and say in between, and names a trap if it shows up again.')),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `About "${c.title}": `, draft: true }) }, 'Talk it over')),
+    !c.program?.professional && helpSection(c, false),
     h('details', { class: 'wt-part' }, h('summary', {}, 'How we got here'), log),
     status2);
 }

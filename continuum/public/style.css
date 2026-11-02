@@ -963,3 +963,7 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .program-list li.now { border-left-color: var(--warm); }
 .program-list li.past { opacity: .8; }
 .program-change { margin-top: 16px; display: grid; gap: 8px; }
+/* Professional help */
+.help-block.advised { padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(240, 120, 90, .55); background: rgba(60, 20, 10, .35); }
+textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.wt-part a:not(.btn) { color: var(--accent); text-underline-offset: 3px; }
