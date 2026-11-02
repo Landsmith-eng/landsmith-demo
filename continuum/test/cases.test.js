@@ -17,14 +17,15 @@ before(async () => {
       const props = req.output_config?.format?.schema?.properties ?? {};
       seen.push(req);
       if (props.views) return json({ views: [] });
-      if (props.question) { asked++; return json(asked < 3 ? { concern: false, done: false, reflect: `Heard ${asked}.`, question: `Question ${asked}?` } : { concern: false, done: true, reflect: 'I think I understand.', question: '' }); }
+      if (props.question) { asked++; const offer = asked === 1 ? { kind: 'survey', id: 'mood', why: 'To see how low it is.' } : asked === 2 ? { kind: 'idea', id: 'epictetus_up_to_us', why: 'What is up to you.' } : { kind: 'idea', id: 'not_real', why: '' };
+        return json(asked < 3 ? { concern: false, done: false, reflect: `Heard ${asked}.`, question: `Question ${asked}?`, offer } : { concern: false, done: true, reflect: 'I think I understand.', question: '', offer: { kind: 'none', id: '', why: '' } }); }
       if (props.going_on) return json({ concern: false, title: 'Putting off the job search', heard: 'h', going_on: 'g',
         pitfalls: [{ kind: 'logic', name: 'All-or-nothing thinking', how: 'You said it is pointless unless perfect.', idea: 'ellis_abc_model' }, { kind: 'habit', name: 'x', how: 'y', idea: 'not_real' }],
         route: [{ id: 'ellis_abc_model', why: 'a' }, { id: 'not_real', why: 'b' }, { id: 'gollwitzer_implementation_intentions', why: 'c' }, { id: 'practice_if_then_plan', why: 'not a stop' }],
         practice: 'practice_if_then_plan', first_step: 'Send one email.', check_in: 'Did you send it?',
         lenses: [{ school: 'cbt', sees: 's', method: 'm', practice: 'practice_thought_record' }, { school: 'not_a_school', sees: 'x', method: 'y', practice: '' }, { school: 'motivational', sees: 's2', method: 'm2', practice: 'not_real' }], survey: 'mood',
         wisdom: [{ tradition: 'The Stoics', idea: 'epictetus_up_to_us', counsel: 'c', question: 'What here is up to you?' }, { tradition: 'Nobody', idea: 'not_real', counsel: 'c2', question: 'q2' }],
-        problems: ['procrastination', 'not_a_tag'],
+        problems: ['procrastination', 'not_a_tag'], lead: { kind: 'therapy', why: 'A habit, best met with a programme.' },
         approach: { therapy: 'behavioural_activation', why: 'w', tailored: 't', professional: false, professional_note: '' },
         alternatives: [{ therapy: 'act', why: 'a' }, { therapy: 'nope', why: 'b' }],
         program: [{ title: 'S1', aim: 'a1', exercise: 'e1', practice: 'practice_behavioural_activation' }, { title: 'S2', aim: 'a2', exercise: 'e2', practice: 'not_real' }, { title: 'S3', aim: 'a3', exercise: 'e3', practice: '' }] });
@@ -49,11 +50,16 @@ test('an interview, then a plan from the map that keeps only real ideas', async 
   let c = (await call('/api/cases', { method: 'POST', body: { problem: 'I keep putting off applying for jobs.', date: D } })).json.case;
   assert.equal(c.status, 'interview');
   assert.equal(c.turns.at(-1).q, 'Question 1?');
+  assert.deepEqual(c.turns.at(-1).offer, { kind: 'survey', id: 'mood', why: 'To see how low it is.' });
   c = (await call(`/api/cases/${c.id}/answer`, { method: 'POST', body: { answer: 'For months.', date: D } })).json.case;
   assert.equal(c.turns.at(-1).q, 'Question 2?');
+  assert.equal(c.turns.at(-1).offer.id, 'epictetus_up_to_us'); assert.ok(c.refs.epictetus_up_to_us);
   c = (await call(`/api/cases/${c.id}/answer`, { method: 'POST', body: { answer: 'I tell myself it is pointless.', date: D } })).json.case;
   assert.equal(c.status, 'open');
   assert.equal(c.title, 'Putting off the job search');
+  assert.deepEqual(c.plan.lead, { kind: 'therapy', why: 'A habit, best met with a programme.' });
+  // The interview was given the map and the surveys to draw on.
+  assert.match(seen.find((r) => r.output_config.format.schema.properties.offer).system[1].text, /epictetus_up_to_us/);
   assert.deepEqual(c.route.map((r) => r.id), ['ellis_abc_model', 'gollwitzer_implementation_intentions']);
   assert.equal(c.plan.pitfalls[1].idea, '');
   assert.equal(c.plan.practice, 'practice_if_then_plan');

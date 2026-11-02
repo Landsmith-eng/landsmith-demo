@@ -967,3 +967,7 @@ html.staged .corner .voice, html.staged .corner .look { font-size: 0; gap: 0; pa
 .help-block.advised { padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(240, 120, 90, .55); background: rgba(60, 20, 10, .35); }
 textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
 .wt-part a:not(.btn) { color: var(--accent); text-underline-offset: 3px; }
+.lead-box { padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(244, 192, 99, .55); background: rgba(40, 30, 10, .4); }
+.lead-box h2 { margin-top: .1em; }
+.offer { margin: 12px 0 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.22); background: rgba(10,16,14,.45); }
+.offer h3 { font-family: var(--display); font-size: 1.2rem; margin: .2em 0; }

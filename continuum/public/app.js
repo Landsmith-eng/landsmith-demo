@@ -2804,7 +2804,7 @@ function showSchool(x, refs) {
     x.evidence && h('p', { class: 'muted small' }, `How well supported: ${x.evidence}`));
 }
 // A survey, one question at a time: tap an answer and the next one comes.
-function showSurvey(id) {
+function showSurvey(id, { back = null } = {}) {
   const sv = surveyById(id); if (!sv) return showMind();
   setNav(''); pageBg = PAGE_BG.problem;
   const answers = {}; let k = 0;
@@ -2825,12 +2825,12 @@ function showSurvey(id) {
     render(h('p', { class: 'muted' }, 'Scoring…'));
     try {
       const r = await api(`/api/surveys/${sv.id}`, { method: 'POST', body: { answers, date: today() } });
-      showSurveyResult(sv, r.result, r.refs);
+      showSurveyResult(sv, r.result, r.refs, back);
     } catch { render(h('p', {}, 'Could not save your answers. Check the connection and try again.'), h('button', { type: 'button', class: 'btn', onclick: () => showSurvey(id) }, 'Try again')); }
   }
   step();
 }
-async function showSurveyResult(sv, r, refs = {}) {
+async function showSurveyResult(sv, r, refs = {}, back = null) {
   setNav(''); pageBg = PAGE_BG.problem;
   const mine = await api('/api/surveys').catch(() => ({ results: [] }));
   const before = mine.results.filter((x) => x.survey === sv.id && x.id !== r.id).slice(0, 6);
@@ -2838,7 +2838,7 @@ async function showSurveyResult(sv, r, refs = {}) {
   const named = (r.schools ?? []).map((id) => sch?.schools?.find((x) => x.id === id)).filter(Boolean);
   const links = (ids) => (ids ?? []).map((id) => ideaLink(id, refs)).filter(Boolean);
   render(
-    h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
+    back ? h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough(back) }, '← Back to your problem') : h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
     h('div', { class: 'eyebrow' }, `${sv.name} · ${r.date}`), h('h1', {}, r.summary),
     r.crisis && h('p', { class: 'help-line' }, 'You said you have had thoughts of being better off dead or of hurting yourself. Please talk to someone today: a friend, your doctor, or a crisis line. ', HELP_LINE),
     ...(r.details ?? []).map((d) => h('p', {}, d)),
@@ -2847,8 +2847,8 @@ async function showSurveyResult(sv, r, refs = {}) {
     links(r.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices to try'), h('ul', { class: 'path' }, links(r.practices).map((l) => h('li', {}, l)))),
     links(r.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Ideas behind this'), h('ul', { class: 'path' }, links(r.ideas).map((l) => h('li', {}, l)))),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
-      h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough() }, 'Work through a problem'),
-      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id) }, 'Take it again')),
+      h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough(back ?? undefined) }, back ? 'Back to your problem' : 'Work through a problem'),
+      !back && h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id) }, 'Take it again')),
     before.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'Before'), h('ul', { class: 'path' }, before.map((x) => h('li', {}, h('div', { class: 'eyebrow diary-date' }, x.date), h('p', {}, x.summary))))),
     h('p', { class: 'muted small' }, sv.kind === 'screen' ? `${sv.source} A screening, not a diagnosis.` : sv.source));
 }
@@ -3000,7 +3000,22 @@ function renderCase(c) {
     };
     send.addEventListener('click', () => post({ answer: ta.value }, 'Thinking about what you said… (the route, when it comes, takes about half a minute)'));
     enough.addEventListener('click', () => post({ answer: ta.value, enough: true }, 'Drawing a route from the map… about half a minute.'));
-    render(back, h('h1', {}, 'Let\'s understand it'), help, log, ta, h('div', { class: 'row' }, dictation(ta)?.button, enough, send), status);
+    // What the interview offers with this question: a survey to take, or an idea to consider.
+    const offer = c.turns.at(-1)?.a == null ? c.turns.at(-1)?.offer : null;
+    let offered = null;
+    if (offer?.kind === 'survey' && surveyById(offer.id)) {
+      const sv = surveyById(offer.id);
+      offered = h('div', { class: 'offer' }, h('div', { class: 'eyebrow' }, 'A short survey would help'), offer.why && h('p', { class: 'small' }, offer.why),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id, { back: c.id }) }, `Take "${sv.name}" (${sv.time})`),
+        h('p', { class: 'muted small' }, 'Afterwards you come back here; answer the question too if you like.'));
+    } else if (offer?.kind === 'idea' && c.refs[offer.id]) {
+      const plain = h('p', { class: 'small' });
+      offered = h('div', { class: 'offer' }, h('div', { class: 'eyebrow' }, 'An idea that may speak to this'), h('h3', {}, c.refs[offer.id].title),
+        c.refs[offer.id].thinker && h('p', { class: 'muted small' }, c.refs[offer.id].thinker), plain, offer.why && h('p', { class: 'muted small' }, offer.why),
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => walkTo(offer.id, []) }, 'Open the whole idea →'));
+      api(`/api/node/${encodeURIComponent(offer.id)}?date=${today()}`).then((r) => { plain.textContent = r.node?.plain_face ?? ''; }).catch(() => {});
+    }
+    render(back, h('h1', {}, 'Let\'s understand it'), help, log, offered, ta, h('div', { class: 'row' }, dictation(ta)?.button, enough, send), status);
     requestAnimationFrame(() => ta.scrollIntoView({ block: 'center' }));
     return;
   }
@@ -3034,36 +3049,47 @@ function renderCase(c) {
     c.status === 'open'
       ? h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'closed' } }); notice('Set aside. It is kept, and you can open it again.'); showWorkThrough(); } }, 'It is resolved, or set it aside')
       : h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'open' } }); showWorkThrough(c.id); } }, 'Open it again'));
-  render(back,
-    h('div', { class: 'eyebrow' }, `Since ${c.date}`), h('h1', {}, c.title), help,
-    h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
-    h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
-    p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
-    c.program?.professional && helpSection(c, true),
-    programSection(c, refs),
-    // The same problem seen through several schools of psychology, each with something to do.
-    p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
+  // The sections, then put in the order that suits this person: what helps most comes first ("Where to start").
+  const S = {
+    professional: (c.program?.professional || p.lead?.kind === 'professional') && helpSection(c, true),
+    therapy: programSection(c, refs),
+    lenses: p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
       h('p', { class: 'muted small' }, 'Each school sees a problem in its own way. Try the one that rings truest, or more than one.'),
       h('ul', { class: 'pitfalls lenses' }, p.lenses.map((l) => h('li', {},
         h('button', { type: 'button', class: 'link eyebrow', style: 'padding:0', onclick: () => openSchool(l.school) }, l.name),
         h('p', {}, l.sees), h('p', {}, h('strong', {}, 'Try: '), l.method),
         l.practice && refs[l.practice] && h('p', { class: 'muted small' }, 'A practice for it: ', ideaLink(l.practice, refs)))))),
     // Long before psychology: what the wisdom traditions would counsel, and the question each would ask.
-    p.wisdom?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'What the wisdom traditions would say'),
+    wisdom: p.wisdom?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'What the wisdom traditions would say'),
       h('p', { class: 'muted small' }, 'Philosophers, prophets and poets counselled people through problems like this long before psychology.'),
       h('ul', { class: 'pitfalls lenses' }, p.wisdom.map((w) => h('li', {},
         h('div', { class: 'eyebrow' }, w.tradition), h('p', {}, w.counsel),
         w.idea && refs[w.idea] && h('p', { class: 'muted small' }, 'From: ', ideaLink(w.idea, refs)),
         h('p', { class: 'ask-q' }, w.question),
         h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showTalk({ mode: 'workout', seed: `${w.tradition} asks me: "${w.question}" My answer: `, draft: true }) }, 'Answer it in Talk →'))))),
-    p.survey && surveyById(p.survey) && h('section', { class: 'wt-part' }, h('h2', {}, 'A survey that may help'),
-      h('p', { class: 'small' }, surveyById(p.survey).about),
-      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(p.survey) }, `Take "${surveyById(p.survey).name}" (${surveyById(p.survey).time})`)),
-    c.route.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'A route through it'),
+    route: c.route.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, p.lead?.kind === 'philosophy' ? 'A journey through the ideas' : 'A route through it'),
       h('ol', { class: 'wt-route' }, c.route.map((r) => h('li', {}, ideaLink(r.id, refs), h('p', { class: 'muted small' }, r.why)))),
       c.status === 'open' && h('div', { class: 'row', style: 'justify-content:flex-start' }, start),
       h('p', { class: 'muted small' }, 'As your course, these become your daily ideas, one a day, before anything else.')),
-    p.practice && refs[p.practice] && h('section', { class: 'wt-part' }, h('h2', {}, 'A practice for it'), h('p', {}, ideaLink(p.practice, refs))),
+    practice: p.practice && refs[p.practice] && h('section', { class: 'wt-part' }, h('h2', {}, 'A practice for it'), h('p', {}, ideaLink(p.practice, refs))),
+    survey: p.survey && surveyById(p.survey) && h('section', { class: 'wt-part' }, h('h2', {}, 'A survey that may help'),
+      h('p', { class: 'small' }, surveyById(p.survey).about),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(p.survey, { back: c.id }) }, `Take "${surveyById(p.survey).name}" (${surveyById(p.survey).time})`)),
+  };
+  const ORDER = {
+    professional: ['professional', 'therapy', 'wisdom', 'practice', 'lenses', 'route', 'survey'],
+    philosophy: ['wisdom', 'route', 'practice', 'lenses', 'therapy', 'survey', 'professional'],
+    practice: ['practice', 'lenses', 'wisdom', 'route', 'therapy', 'survey', 'professional'],
+    therapy: ['professional', 'therapy', 'lenses', 'wisdom', 'route', 'practice', 'survey'],
+  }[p.lead?.kind] ?? ['professional', 'therapy', 'lenses', 'wisdom', 'survey', 'route', 'practice'];
+  const LEAD = { therapy: 'A therapy programme', philosophy: 'The wisdom of the ages', practice: 'A daily practice', professional: 'A professional\'s help' };
+  render(back,
+    h('div', { class: 'eyebrow' }, `Since ${c.date}`), h('h1', {}, c.title), help,
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
+    p.lead && h('section', { class: 'wt-part lead-box' }, h('div', { class: 'eyebrow' }, 'Where to start'), h('h2', {}, LEAD[p.lead.kind]), h('p', {}, p.lead.why)),
+    ...ORDER.map((k) => S[k]),
+    p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
     h('section', { class: 'wt-part' }, h('h2', {}, 'A first step this week'), h('p', {}, p.first_step)),
     h('section', { class: 'wt-part' }, h('h2', {}, 'Checking in'),
       checkins.length > 0 && h('ul', { class: 'path' }, checkins),
@@ -3071,7 +3097,7 @@ function renderCase(c) {
       h('p', { class: 'muted small' }, 'Every few days Continuum will ask on Wander. It looks at what you write and say in between, and names a trap if it shows up again.')),
     h('div', { class: 'row', style: 'justify-content:flex-start' },
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `About "${c.title}": `, draft: true }) }, 'Talk it over')),
-    !c.program?.professional && helpSection(c, false),
+    !S.professional && helpSection(c, false),
     h('details', { class: 'wt-part' }, h('summary', {}, 'How we got here'), log),
     status2);
 }

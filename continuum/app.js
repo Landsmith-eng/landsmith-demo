@@ -1481,6 +1481,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     start: db.prepare('UPDATE cases SET started = 1, touched_date = ? WHERE id = ?'),
     status: db.prepare('UPDATE cases SET status = ? WHERE id = ?'),
   };
+  function cleanOffer(o, uid, date) {
+    if (o?.kind === 'survey' && surveyById(o.id)) {
+      const recent = svq.since.all(uid, shiftDay(date, -14)).some((r) => r.survey_id === o.id);
+      return recent ? null : { kind: 'survey', id: o.id, why: o.why ?? '' };
+    }
+    if (o?.kind === 'idea') { const n = q.node.get(o.id); if (n && !hiddenIn(caseStates(uid, date), n)) return { kind: 'idea', id: n.id, why: o.why ?? '' }; }
+    return null;
+  }
   const lastQuestion = (c) => JSON.parse(c.checkins).at(-1)?.check_in ?? JSON.parse(c.plan ?? '{}').check_in ?? 'How is it going?';
   // The programme: the chosen therapy tailored to the problem, its sessions (done ones with the reflection and the
   // reply), the one to do next, and when it opens (one session a day at most; a "repeat" keeps the same one).
@@ -1500,7 +1508,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   function caseOut(c, states) {
     const turns = JSON.parse(c.turns); const plan = c.plan ? JSON.parse(c.plan) : null; const route = JSON.parse(c.route);
-    const ids = [...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice), ...(plan?.wisdom ?? []).map((w) => w.idea),
+    const ids = [...turns.filter((x) => x.offer?.kind === 'idea').map((x) => x.offer.id), ...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice), ...(plan?.wisdom ?? []).map((w) => w.idea),
       ...JSON.parse(c.checkins).flatMap((x) => (x.noticed ?? []).map((p) => p.idea))].filter(Boolean);
     const program = programOf(c, plan);
     for (const x of program?.sessions ?? []) if (x.practice) ids.push(x.practice);
@@ -1525,7 +1533,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const problems = (plan.problems ?? []).filter((x) => PROBLEMS[x]).slice(0, 3);
     const lenses = (plan.lenses ?? []).map((l) => { const sc = SCHOOLS.find((x) => x.id === l.school); return sc && { school: sc.id, name: sc.name, sees: l.sees, method: l.method, practice: ok(l.practice) && q.node.get(l.practice).type === 'practice' ? l.practice : '' }; }).filter(Boolean).slice(0, 4);
     const wisdom = (plan.wisdom ?? []).filter((w) => w.counsel && w.question).map((w) => ({ tradition: w.tradition, idea: ok(w.idea) ? w.idea : '', counsel: w.counsel, question: w.question })).slice(0, 4);
-    return { ...plan, approach, program, alternatives, problems, wisdom, route, lenses, survey: surveyById(plan.survey) ? plan.survey : '', pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
+    const lead = ['therapy', 'philosophy', 'practice', 'professional'].includes(plan.lead?.kind) ? { kind: plan.lead.kind, why: plan.lead.why ?? '' } : null;
+    return { ...plan, lead, approach, program, alternatives, problems, wisdom, route, lenses, survey: surveyById(plan.survey) ? plan.survey : '', pitfalls: (plan.pitfalls ?? []).slice(0, 4).map(pit), noticed: plan.noticed?.map(pit),
       practice: ok(plan.practice) && q.node.get(plan.practice).type === 'practice' ? plan.practice : '' };
   }
   // For Talk: the problems they are working through, with the pitfalls named so far.
@@ -1580,10 +1589,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (!guardTalk(req, res)) return;
     const uid = req.user.id; const date = localDate(req.body?.date);
     try {
-      const step = await interviewStep(talk, { problem, turns: [], views: viewsText(uid), experience: experienceOf(uid).text });
+      const step = await interviewStep(talk, { problem, turns: [], views: viewsText(uid), experience: experienceOf(uid).text, catalogue: catalogueFor(caseStates(uid, date)), surveys: surveysList, checks: surveysText(uid, date) });
       if (!step) return res.status(502).json({ error: 'claude_failed' });
       const prefer = THERAPIES.some((t) => t.id === req.body?.prefer) ? req.body.prefer : null; // started from a therapy's page
-      const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern }]), date, date, prefer).lastInsertRowid);
+      const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern, offer: cleanOffer(step.offer, uid, date) }]), date, date, prefer).lastInsertRowid);
       noteFrom(uid, date, problem, 'A problem they brought to Continuum to work through.', 'problem');
       res.json({ case: caseOut(kq.get.get(id, uid), caseStates(uid, date)), concern: step.concern });
     } catch (e) { failed(res, e, 'Interview'); }
@@ -1607,10 +1616,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     try {
       let step = null;
       if (!enough && turns.length < MAX_QUESTIONS) {
-        step = await interviewStep(talk, { problem: c.problem, turns, views: viewsText(uid), experience: experienceOf(uid).text });
+        step = await interviewStep(talk, { problem: c.problem, turns, views: viewsText(uid), experience: experienceOf(uid).text, catalogue: catalogueFor(states), surveys: surveysList, checks: surveysText(uid, date) });
         if (!step) return res.status(502).json({ error: 'claude_failed' });
         if (!step.done || step.concern) {
-          turns.push({ q: step.question, reflect: step.reflect, a: null, concern: step.concern });
+          turns.push({ q: step.question, reflect: step.reflect, a: null, concern: step.concern, offer: cleanOffer(step.offer, uid, date) });
           kq.turns.run(JSON.stringify(turns), date, c.id);
           return res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: step.concern });
         }
