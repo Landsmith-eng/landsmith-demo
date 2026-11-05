@@ -1507,11 +1507,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       alternatives: (plan.alternatives ?? []).map((x) => ({ ...x, name: THERAPIES.find((y) => y.id === x.therapy)?.name })).filter((x) => x.name),
     };
   }
-  function caseOut(c, states) {
+  function caseOut(c, states, date) {
     const turns = JSON.parse(c.turns); const plan = c.plan ? JSON.parse(c.plan) : null; const route = JSON.parse(c.route);
     const ids = [...turns.filter((x) => x.offer?.kind === 'idea').map((x) => x.offer.id), ...route.map((r) => r.id), ...(plan?.pitfalls ?? []).map((p) => p.idea), plan?.practice, ...(plan?.lenses ?? []).map((l) => l.practice), ...(plan?.wisdom ?? []).map((w) => w.idea),
       ...JSON.parse(c.checkins).flatMap((x) => (x.noticed ?? []).map((p) => p.idea))].filter(Boolean);
-    const program = programOf(c, plan);
+    const program = programOf(c, plan, date);
     for (const x of program?.sessions ?? []) if (x.practice) ids.push(x.practice);
     return {
       program,
@@ -1575,13 +1575,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
 
   app.get('/api/cases', auth, (req, res) => {
-    const states = caseStates(req.user.id, localDate(req.query.date));
-    res.json({ enabled: Boolean(talk), cases: kq.all.all(req.user.id).map((c) => caseOut(c, states)) });
+    const date = localDate(req.query.date); const states = caseStates(req.user.id, date);
+    res.json({ enabled: Boolean(talk), cases: kq.all.all(req.user.id).map((c) => caseOut(c, states, date)) });
   });
   app.get('/api/cases/:id', auth, (req, res) => {
     const c = kq.get.get(Number(req.params.id), req.user.id);
     if (!c) return res.status(404).json({ error: 'not_found' });
-    res.json({ case: caseOut(c, caseStates(req.user.id, localDate(req.query.date))) });
+    res.json({ case: caseOut(c, caseStates(req.user.id, localDate(req.query.date)), localDate(req.query.date)) });
   });
   // A problem, in the user's words: the first question back.
   app.post('/api/cases', auth, async (req, res) => {
@@ -1595,7 +1595,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const prefer = THERAPIES.some((t) => t.id === req.body?.prefer) ? req.body.prefer : null; // started from a therapy's page
       const id = Number(kq.add.run(uid, problem, JSON.stringify([{ q: step.question, reflect: step.reflect, a: null, concern: step.concern, offer: cleanOffer(step.offer, uid, date) }]), date, date, prefer).lastInsertRowid);
       noteFrom(uid, date, problem, 'A problem they brought to Continuum to work through.', 'problem');
-      res.json({ case: caseOut(kq.get.get(id, uid), caseStates(uid, date)), concern: step.concern });
+      res.json({ case: caseOut(kq.get.get(id, uid), caseStates(uid, date), date), concern: step.concern });
     } catch (e) { failed(res, e, 'Interview'); }
   });
   // An answer to the waiting question: the next question, or (when understood, or asked for) the plan.
@@ -1622,13 +1622,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         if (!step.done || step.concern) {
           turns.push({ q: step.question, reflect: step.reflect, a: null, concern: step.concern, offer: cleanOffer(step.offer, uid, date) });
           kq.turns.run(JSON.stringify(turns), date, c.id);
-          return res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: step.concern });
+          return res.json({ case: caseOut(kq.get.get(c.id, uid), states, date), concern: step.concern });
         }
       }
       if (step?.reflect) { turns.push({ q: null, reflect: step.reflect, a: null }); kq.turns.run(JSON.stringify(turns), date, c.id); }
       const plan = await makePlan(uid, date, kq.get.get(c.id, uid), states);
       if (!plan) return res.status(502).json({ error: 'claude_failed' });
-      res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: plan.concern });
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states, date), concern: plan.concern });
     } catch (e) { failed(res, e, 'Interview'); }
   });
   // Set the route as their course: it leads the daily ideas, one stop a day.
@@ -1662,7 +1662,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       history.push({ date, answer, question: lastQuestion(c), reply: r.reply, progress: r.progress, noticed: clean.noticed ?? [], next_step: r.next_step, check_in: r.check_in, rerouted: clean.route.length >= 2 });
       kq.checkin.run(JSON.stringify(history), JSON.stringify(route), date, c.id);
       noteFrom(uid, date, answer, `A check-in on a problem they are working through: ${c.title}`, 'problem');
-      res.json({ case: caseOut(kq.get.get(c.id, uid), states), concern: r.concern });
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states, date), concern: r.concern });
     } catch (e) { failed(res, e, 'Check-in'); }
   });
   // A session of the programme done: what they did and noticed, a reply, and whether to go on, repeat or pause.
@@ -1683,7 +1683,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       kq.addSession.run(c.id, t.id, prog.current, reflection, `${r.reply}${r.tip ? `\n\n${r.tip}` : ''}`, ['go_on', 'repeat', 'pause'].includes(r.next) ? r.next : 'go_on', date);
       kq.checkin.run(c.checkins, c.route, date, c.id);
       noteFrom(uid, date, reflection, `After session ${prog.current + 1} ("${session.title}") of a ${t.name} programme for: ${c.title}`, 'problem');
-      res.json({ case: caseOut(kq.get.get(c.id, uid), caseStates(uid, date)), concern: r.concern });
+      res.json({ case: caseOut(kq.get.get(c.id, uid), caseStates(uid, date), date), concern: r.concern });
     } catch (e) { failed(res, e, 'Session'); }
   });
   // A different approach, chosen by the user: the new therapy tailored to their problem.
@@ -1701,7 +1701,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const next = cleanPlan({ ...plan, approach: { therapy: t.id, why: r.why, tailored: r.tailored, professional: r.professional, professional_note: r.professional_note }, program: r.program,
         alternatives: [old, ...(plan.alternatives ?? [])].filter(Boolean) }, states);
       kq.setPlan.run(JSON.stringify(next), date, c.id);
-      res.json({ case: caseOut(kq.get.get(c.id, uid), states) });
+      res.json({ case: caseOut(kq.get.get(c.id, uid), states, date) });
     } catch (e) { failed(res, e, 'Changing approach'); }
   });
   // Finding a real therapist near a ZIP code (or online), for the approach this problem needs. The place is used
