@@ -17,7 +17,7 @@ const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js')
 import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
-import { computeLayouts, ERAS, eraOf } from './map.js';
+import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
 // Welcoming first questions, for a first day with nothing to go on yet: short, vivid, and open to anyone.
 export const STARTERS = ['socrates_unexamined_life', 'plato_ring_of_gyges', 'nozick_experience_machine', 'singer_drowning_child', 'epictetus_up_to_us'];
 
@@ -600,7 +600,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   // The Map: every idea on the walls laid out two ways (by influence, by meaning), worked out once at start-up.
   const mapQ = {
-    nodes: db.prepare(`SELECT id, title, thinker, year, plain_face, prompt FROM nodes WHERE type != 'practice'`),
+    nodes: db.prepare(`SELECT id, title, thinker, year, plain_face, prompt, field, room FROM nodes WHERE type != 'practice'`),
     edges: db.prepare(`SELECT e.from_id, e.to_id, e.relation FROM edges e JOIN nodes a ON a.id = e.from_id JOIN nodes b ON b.id = e.to_id
       WHERE a.type != 'practice' AND b.type != 'practice'`),
     // The road walked: each idea in the order first met (written about, or walked to).
@@ -646,8 +646,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         id: n.id, title: n.title, thinker: hidden.has(n.id) ? null : n.thinker, year: hidden.has(n.id) ? null : n.year,
         field: n.field ?? 'philosophy', room: n.room, state: n.state, era: hidden.has(n.id) ? null : eraOf(n.year),
         line: hidden.has(n.id) ? null : lineOf.get(n.id) ?? null, fuzzy: fuzzy.has(n.id),
-        influence: layouts.influence[n.id], semantic: layouts.semantic[n.id],
+        influence: layouts.influence[n.id], semantic: layouts.semantic[n.id], time: layouts.time[n.id],
       })),
+      lanes: LANES.map((l, i) => ({ ...l, y: +(.05 + (i / LANES.length) * .9).toFixed(4), h: +(.9 / LANES.length).toFixed(4) })), ticks: TIME_TICKS,
       edges: mapEdges.map((e) => ({ from: e.from_id, to: e.to_id, relation: e.relation })),
       road: mapQ.road.all({ uid }).map((r) => r.node_id).filter((id) => !hidden.has(id)),
       trail: (() => { const t = trq.get.get(uid); return t ? { from: t.from_id, ids: JSON.parse(t.ids), since: t.local_date } : null; })(),
@@ -1348,10 +1349,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const talks = vq.talkCount.get(uid).n;
     const stage = written < 5 ? 'beginning' : written < 20 ? 'exploring' : written < 60 ? 'deepening' : 'seasoned';
     const how = {
-      beginning: 'just beginning: keep to one idea at a time, everyday words and examples, and short questions.',
-      exploring: 'exploring: they know a handful of ideas; connect new ones to those, and name the rival camps.',
-      deepening: 'deepening: bring in the original texts, the strongest objections, and how the ideas changed over time.',
-      seasoned: 'seasoned: treat them as a serious reader; press on assumptions, compare traditions, and ask hard follow-ups.',
+      beginning: 'new to Continuum (this says nothing about what they know: judge that from how they write; connect to the ideas they have met as they meet them).',
+      exploring: 'they have met a handful of ideas here; connect new ones to those.',
+      deepening: 'they have met many ideas here; connect widely across them, and to how their own views have moved.',
+      seasoned: 'a long-time reader here; connect across everything they have met and written.',
     }[stage];
     return { stage, written, talks, text: `${written} ideas written on, ${talks} conversations; ${how}` };
   }

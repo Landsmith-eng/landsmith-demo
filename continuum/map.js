@@ -3,7 +3,10 @@
 //              together share a lineage. Time runs gently from left to right.
 //   semantic:  drawn by meaning (the words of each idea's plain face, title and prompt, and the themes it belongs
 //              to), so ideas close together ask similar questions, even centuries and continents apart.
-// Both are computed once when the server starts, deterministically, and given as 0..1 coordinates.
+//   time:      a timeline: each idea at its date, left to right (the centuries near us given more room), in a lane for
+//              its tradition (Western philosophy, Asian thought, religion, science, psychology, law, the arts…), so
+//              influence reads as arcs forward in time and ideas that arose independently can be seen side by side.
+// All are computed once when the server starts, deterministically, and given as 0..1 coordinates.
 
 // A small seeded random number generator, so the map comes out the same every time.
 function rng(seed) {
@@ -120,5 +123,48 @@ export function computeLayouts(nodes, edges, themes) {
   return {
     influence: force(ids, influenceLinks, { seed: 11, xTarget: rank, xPull: .35 }),
     semantic: force(ids, semanticLinks(nodes, themes), { seed: 5 }),
+    time: timeLayout(nodes),
   };
+}
+
+// The timeline's lanes, top to bottom, and which lane an idea belongs in.
+export const LANES = [
+  { id: 'western', name: 'Western philosophy' },
+  { id: 'asian', name: 'Asian thought' },
+  { id: 'world', name: 'Africa, the Americas, the Near East' },
+  { id: 'religion', name: 'Religion' },
+  { id: 'science', name: 'Science' },
+  { id: 'mind', name: 'Psychology' },
+  { id: 'law', name: 'Law and society' },
+  { id: 'arts', name: 'The arts' },
+];
+export function laneOf(n) {
+  if (n.room === 'mind') return 'mind';
+  if (n.field === 'science') return 'science';
+  if (n.field === 'religion') return 'religion';
+  if (n.field === 'law' || n.field === 'now') return 'law';
+  if (n.field === 'art' || n.field === 'culture') return 'arts';
+  if (n.room === 'east_asia' || n.room === 'india') return 'asian';
+  if (n.room === 'africa' || n.room === 'americas' || n.room === 'near_east') return 'world';
+  return 'western';
+}
+// Years to 0..1 across: by distance back from the present on a log scale, so recent centuries, where most ideas are,
+// get room, and the ancient world still fits. The ticks for the axis come with it.
+const NOW = 2100;
+export const timeX = (year) => 1 - Math.log(Math.max(70, NOW - (year ?? 2000)) / 70) / Math.log(4700 / 70);
+export const TIME_TICKS = [-2000, -500, 0, 500, 1000, 1500, 1700, 1800, 1900, 1950, 2000].map((y) => ({ year: y, x: +(.03 + .94 * timeX(y)).toFixed(4) }));
+function timeLayout(nodes) {
+  const out = {};
+  for (const [li, lane] of LANES.entries()) {
+    const mine = nodes.filter((n) => laneOf(n) === lane.id).map((n) => ({ id: n.id, x: .03 + .94 * timeX(n.year) })).sort((a, b) => a.x - b.x);
+    // Within a lane, ideas close in time take turns on a few rows, so their names do not sit on each other.
+    const rows = 4; const lastX = Array(rows).fill(-1);
+    for (const m of mine) {
+      let r = lastX.findIndex((x) => m.x - x > .022); if (r < 0) r = lastX.indexOf(Math.min(...lastX));
+      lastX[r] = m.x;
+      const top = .05 + (li / LANES.length) * .9; const h = .9 / LANES.length;
+      out[m.id] = [+m.x.toFixed(4), +(top + h * (.18 + .64 * (r / (rows - 1)))).toFixed(4)];
+    }
+  }
+  return out;
 }

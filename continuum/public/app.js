@@ -1990,11 +1990,14 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     if (!state.turns.length) {
       log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
     }
-    const speakOn = () => store.get(SPEAK_KEY) !== 'off';
-    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(speakOn()) }, speakOn() ? 'Replies read aloud' : 'Replies silent');
+    // Replies are silent unless reading aloud is turned on here; a reply to a spoken message is read aloud unless it
+    // was turned off. Off always wins.
+    const speakOn = () => store.get(SPEAK_KEY) === 'on';
+    const speakOff = () => store.get(SPEAK_KEY) === 'off';
+    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(speakOn()) }, speakOn() ? '🔊 Reading replies aloud: on' : '🔇 Reading replies aloud: off');
     speakToggle.addEventListener('click', () => {
       store.set(SPEAK_KEY, speakOn() ? 'off' : 'on'); if (!speakOn()) stopTalkVoice();
-      speakToggle.textContent = speakOn() ? 'Replies read aloud' : 'Replies silent'; speakToggle.setAttribute('aria-pressed', String(speakOn()));
+      speakToggle.textContent = speakOn() ? '🔊 Reading replies aloud: on' : '🔇 Reading replies aloud: off'; speakToggle.setAttribute('aria-pressed', String(speakOn()));
     });
     const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
@@ -2065,7 +2068,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
           }
         }
         const spoken = byVoice; byVoice = false;
-        if ((speakOn() || spoken) && view) {
+        if ((speakOn() || (spoken && !speakOff())) && view) {
           const finished = await playFrom(view, 0);
           // Your turn: after a spoken exchange, listen again (it stops by itself if nothing is said).
           if (spoken && finished && dict && document.body.contains(ta)) { status.textContent = 'Your turn. Speak, or tap to stop.'; dict.start(); }

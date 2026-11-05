@@ -30,6 +30,10 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
 
   let mode = startMode, colorBy = startColor, showRoad = false, selected = null, query = '';
   // Positions animate between the two layouts.
+  // Through time: a timeline about TW times as wide as it is tall, so the centuries have room; it is travelled by dragging.
+  const TW = 2.8;
+  for (const n of data.nodes) if (n.time && !n.timeScaled) { n.time = [n.time[0] * TW, n.time[1]]; n.timeScaled = true; }
+  for (const n of data.nodes) if (!n.time) n.time = [...n.influence];
   const pos = new Map(data.nodes.map((n) => [n.id, [...n[mode]]]));
   let anim = null;
 
@@ -66,7 +70,8 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     controls.replaceChildren(
       h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Draw by' },
         chip('Influence', mode === 'influence', () => setMode('influence')),
-        chip('Meaning', mode === 'semantic', () => setMode('semantic'))),
+        chip('Meaning', mode === 'semantic', () => setMode('semantic')),
+        data.lanes && chip('Through time', mode === 'time', () => setMode('time'))),
       h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Colour by' },
         chip('Era', colorBy === 'era', () => { colorBy = 'era'; renderControls(); draw(); }),
         chip('Field', colorBy === 'field', () => { colorBy = 'field'; renderControls(); draw(); }),
@@ -74,7 +79,8 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
         chip('Your road', showRoad, () => { showRoad = !showRoad; renderControls(); draw(); })),
       h('p', { class: 'muted small map-what' }, mode === 'influence'
         ? 'Drawn by influence: ideas close together share a lineage (who taught, extended, argued with or tested whom). Time runs gently from left to right.'
-        : 'Drawn by meaning: ideas close together ask similar questions, even centuries and continents apart.'),
+        : mode === 'time' ? 'Through time: the history of thought from the ancient world (left) to now (right), a lane for each tradition. Arcs show who influenced whom; dashed gold lines join ideas that arose independently, far apart. Drag to travel through time.'
+          : 'Drawn by meaning: ideas close together ask similar questions, even centuries and continents apart.'),
     );
     renderLegend();
   }
@@ -139,12 +145,15 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   }
-  function fit() { s = Math.min(W, H) * .98; tx = (W - s) / 2; ty = (H - s) / 2; }
+  function fit() { if (mode === 'time') return fitTime(); s = Math.min(W, H) * .98; tx = (W - s) / 2; ty = (H - s) / 2; }
+  // The timeline fills the height and opens at its beginning, the ancient world.
+  function fitTime() { s = H * .96; ty = (H - s) / 2; tx = 10 - .02 * s; }
   const sx = (x) => tx + x * s, sy = (y) => ty + y * s;
 
   function setMode(m) {
     if (m === mode) return;
-    mode = m; renderControls();
+    const was = mode; mode = m; renderControls();
+    if (m === 'time' || was === 'time') fit();
     const from = new Map([...pos].map(([id, p]) => [id, [...p]]));
     const t0 = performance.now();
     cancelAnimationFrame(anim);
@@ -162,7 +171,23 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     weigh();
     const near = selected ? new Set(links.get(selected).map((l) => l.other)) : null;
     const found = new Set(matches().map((n) => n.id));
-    // Links: all of them, faint, when drawn by influence; only the chosen idea's when drawn by meaning.
+    if (mode === 'time') {
+      // Lanes (a faint band each, its name at the left edge of the screen) and the years along the top.
+      g.font = '600 11px Manrope, system-ui, sans-serif'; g.textBaseline = 'alphabetic';
+      data.lanes.forEach((l, i) => {
+        const y0 = sy(l.y), y1 = sy(l.y + l.h);
+        if (i % 2 === 0) { g.fillStyle = 'rgba(255,255,255,.035)'; g.fillRect(0, y0, W, y1 - y0); }
+        g.fillStyle = 'rgba(236,230,210,.55)'; g.fillText(l.name.toUpperCase(), 8, y0 + 13);
+      });
+      g.textAlign = 'center';
+      for (const t of data.ticks) {
+        const x = sx(t.x * TW); if (x < -20 || x > W + 20) continue;
+        g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, 18); g.lineTo(x, H); g.stroke();
+        g.fillStyle = 'rgba(236,230,210,.7)'; g.fillText(t.year < 0 ? `${-t.year} BCE` : t.year === 0 ? '1 CE' : String(t.year), x, 13);
+      }
+      g.textAlign = 'start';
+    }
+    // Links: all of them, faint, when drawn by influence or through time; only the chosen idea's when drawn by meaning.
     g.lineWidth = 1;
     const outer = ego ? ew.w * ew.r2 : 0;
     const named = [];
@@ -170,8 +195,19 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
       const on = selected && (e.from === selected || e.to === selected);
       // In the circle: the links between the inner and outer rings, faint, as the outer ring shows.
       const wider = !on && outer > .02 && ((ego.ring1.has(e.from) && ego.ring2.has(e.to)) || (ego.ring2.has(e.from) && ego.ring1.has(e.to)));
-      if (!on && !wider && (mode !== 'influence' || selected)) continue;
+      if (!on && !wider && ((mode !== 'influence' && mode !== 'time') || selected)) continue;
       const a = shown(e.from), b = shown(e.to); if (!a || !b) continue;
+      if (mode === 'time') {
+        // Arcs forward in time; ideas that arose independently (converged, echoes) joined by a dashed gold line.
+        const apart = e.relation === 'converged' || e.relation === 'echoes';
+        const ax = sx(a[0]), ay = sy(a[1]), bx = sx(b[0]), by = sy(b[1]);
+        if (Math.max(ax, bx) < 0 || Math.min(ax, bx) > W) continue;
+        // Faint unless chosen: the lines are many, and the ideas should stay readable.
+        g.strokeStyle = on ? (apart ? 'rgba(244,192,99,.95)' : 'rgba(255,255,255,.85)') : apart ? 'rgba(244,192,99,.2)' : 'rgba(255,255,255,.08)';
+        g.lineWidth = on ? 2 : .8; g.setLineDash(apart ? [3, 5] : []);
+        g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - Math.min(60, Math.abs(bx - ax) * .07) - 4, bx, by); g.stroke(); g.setLineDash([]);
+        continue;
+      }
       g.strokeStyle = on ? 'rgba(244,192,99,.85)' : wider ? `rgba(160,220,255,${.45 * outer})` : `rgba(255,255,255,${Math.min(.24, .09 * (s / Math.min(W, H)) ** .5)})`;
       g.lineWidth = on ? 1.6 + ew.w : 1;
       g.beginPath(); g.moveTo(sx(a[0]), sy(a[1])); g.lineTo(sx(b[0]), sy(b[1])); g.stroke();
@@ -242,7 +278,7 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     const taken = [];
     const free = (b) => !taken.some((t) => b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]);
     // Regions: each room's name over the middle of its ideas, fading as names take over.
-    const regionA = selected ? 0 : Math.max(0, Math.min(1, (2.3 - zoom) / 1.1)) * .62;
+    const regionA = selected || mode === 'time' ? 0 : Math.max(0, Math.min(1, (2.3 - zoom) / 1.1)) * .62;
     if (regionA > .02) {
       g.textAlign = 'center'; g.font = `600 ${Math.round(12 + 2 * (2.3 - Math.min(2.3, zoom)))}px Manrope, system-ui, sans-serif`;
       for (const r of regions) {
@@ -444,7 +480,7 @@ export function mountMap(mount, data, { h, onOpen, onTrail = null, mode: startMo
     cancelAnimationFrame(glide);
     // With an idea chosen, zoom around it (so its circle gathers in place), while it is on the screen.
     if (selected) { const p = pos.get(selected); const x = sx(p[0]), y = sy(p[1]); if (x > 0 && y > 0 && x < W && y < H) { mx = x; my = y; } }
-    const base = Math.min(W, H); const ns = Math.min(base * 12, Math.max(base * .7, s * f)); const k = ns / s;
+    const base = Math.min(W, H); const ns = Math.min(base * 12, Math.max(base * (mode === 'time' ? .3 : .7), s * f)); const k = ns / s;
     tx = mx - (mx - tx) * k; ty = my - (my - ty) * k; s = ns;
     if (!full && s > base * 1.35) return setFull(true);
     if (full && s < base * .85) return setFull(false, true);
