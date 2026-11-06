@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Propose a connection</title>
+  <link rel="preload" href="/fonts/lora-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    form.propose { display: grid; gap: 18px; margin-top: 8px; }
+    fieldset { border: 1px solid var(--line); border-radius: 4px; padding: 14px 14px 16px; margin: 0; background: var(--surface); }
+    legend { font-family: var(--display); font-weight: 600; font-size: 1.1rem; padding: 0 6px; }
+    label { display: block; font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
+    input, select, textarea { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--ink); }
+    textarea { min-height: 84px; }
+    .switch { display: flex; gap: 6px; margin-bottom: 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+    .help { font-size: .82rem; color: var(--muted); margin: 6px 0 0; }
+    .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+    .themes label { display: flex; gap: 8px; align-items: center; margin: 2px 0; color: var(--ink); font-size: .9rem; }
+    .themes input { width: auto; }
+    .errors { color: var(--f-art); }
+    .prop { border-top: 1px solid var(--line); padding: 12px 0; }
+    .prop pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .85rem/1.5 var(--sans); margin: 6px 0 8px; color: var(--ink); }
+    .status { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .status.open { color: var(--accent); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="bar"><a href="/" class="brand">Continuum</a><nav><a class="link" href="/">Back to the app</a></nav></header>
+  <main>
+    <h1>Propose a connection</h1>
+    <p class="muted small">Link two ideas, or bring something new onto the map: a thinker, an artwork, a court case, a story in the news. Proposals wait in a queue; each is verified and written into the map in a later session, so nothing here appears in the app until then.</p>
+
+    <form id="keyform" class="row" style="justify-content:flex-start">
+      <input id="k" type="password" placeholder="Admin key" autocomplete="off" style="flex:1;min-width:0">
+      <button class="btn">Unlock</button>
+    </form>
+    <p id="keymsg" class="muted small"></p>
+
+    <div id="app" hidden>
+      <form class="propose" id="pf" novalidate></form>
+      <section style="margin-top:32px">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Your proposals</h2>
+          <button type="button" class="btn ghost" id="copy">Copy open ones for Claude</button>
+        </div>
+        <p class="muted small" id="copymsg">Paste the copied text into a chat with Claude to have them verified and added. Or run <code>npm run proposals</code> to write them to content/PROPOSALS.md.</p>
+        <div id="list"></div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module">
+    import { proposalsMarkdown } from '/proposals-format.js';
+    const $ = (s) => document.querySelector(s);
+    const key = () => sessionStorage.getItem('continuum.admin') ?? '';
+    const call = async (path, opts = {}) => {
+      const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', 'x-admin-key': key(), ...(opts.headers ?? {}) } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(body.error ?? res.status), { status: res.status, body });
+      return body;
+    };
+    function h(tag, attrs = {}, ...children) {
+      const el = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+        else if (k === 'class') el.className = v;
+        else el.setAttribute(k, v === true ? '' : v);
+      }
+      for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+      return el;
+    }
+    const yr = (y) => (y == null ? '' : y < 0 ? `${-y} BCE` : String(y));
+    const FIELD_LABEL = { philosophy: 'Philosophy', science: 'Science', religion: 'Religion', practice: 'Practice', art: 'Art', culture: 'Culture', law: 'Law and politics', now: 'In the news' };
+    const TYPE_LABEL = { thinker: 'Thinker', concept: 'Concept', quote: 'Quote', dilemma: 'Dilemma', puzzle: 'Puzzle', text: 'Text', practice: 'Practice', work: 'Artwork', case: 'Court case', event: 'News event' };
+    let model;
+
+    // One end of the link: an idea already on the map (typed with suggestions) or a new one described in full.
+    function endPicker(name, legend, hint) {
+      const box = h('fieldset', {}, h('legend', {}, legend), h('p', { class: 'help' }, hint));
+      let mode = 'map';
+      const pick = h('input', { list: 'ideas', placeholder: 'Start typing a thinker or idea…', autocomplete: 'off' });
+      const f = {
+        title: h('input', { placeholder: 'e.g. West Virginia v. Barnette, or Bruegel, Landscape with the Fall of Icarus' }),
+        who: h('input', { placeholder: 'Author, artist, court or outlet' }),
+        year: h('input', { inputmode: 'numeric', placeholder: 'e.g. 1943, or -350 for 350 BCE' }),
+        field: h('select', {}, model.fields.map((x) => h('option', { value: x }, FIELD_LABEL[x] ?? x))),
+        type: h('select', {}, model.types.map((x) => h('option', { value: x }, TYPE_LABEL[x] ?? x))),
+        as_of: h('input', { type: 'date' }),
+        description: h('textarea', { placeholder: 'What it says or shows, in your words.' }),
+      };
+      const fresh = h('div', { hidden: true },
+        h('label', {}, 'Title'), f.title,
+        h('div', { class: 'grid2' }, h('div', {}, h('label', {}, 'By'), f.who), h('div', {}, h('label', {}, 'Year'), f.year)),
+        h('div', { class: 'grid2' }, h('div', {}, h('label', {}, 'Kind'), f.field), h('div', {}, h('label', {}, 'Type'), f.type)),
+        h('div', { class: 'asof', hidden: true }, h('label', {}, 'Date of the news (for "In the news")'), f.as_of),
+        h('label', {}, 'What it says'), f.description);
+      f.field.addEventListener('change', () => { fresh.querySelector('.asof').hidden = f.field.value !== 'now'; });
+      const onMap = h('div', {}, h('label', {}, 'Idea on the map'), pick);
+      const btnMap = h('button', { type: 'button', class: 'chip on' }, 'On the map');
+      const btnNew = h('button', { type: 'button', class: 'chip' }, 'Something new');
+      const set = (m) => { mode = m; onMap.hidden = m !== 'map'; fresh.hidden = m === 'map'; btnMap.classList.toggle('on', m === 'map'); btnNew.classList.toggle('on', m !== 'map'); };
+      btnMap.onclick = () => set('map'); btnNew.onclick = () => set('new');
+      box.append(h('div', { class: 'switch' }, btnMap, btnNew), onMap, fresh);
+      box.value = () => {
+        if (mode === 'map') return byLabel.get(pick.value.trim()) ?? pick.value.trim();
+        return { title: f.title.value, who: f.who.value, year: f.year.value, field: f.field.value, type: f.type.value,
+          as_of: f.field.value === 'now' ? f.as_of.value : '', description: f.description.value };
+      };
+      box.reset = () => { pick.value = ''; for (const el of Object.values(f)) if (el.tagName !== 'SELECT') el.value = ''; set('map'); };
+      return box;
+    }
+    const byLabel = new Map();
+
+    function buildForm() {
+      const list = h('datalist', { id: 'ideas' }, model.nodes.map((n) => {
+        const label = `${[n.thinker, n.title].filter(Boolean).join(' · ')} (${yr(n.year) || n.type})`;
+        byLabel.set(label, n.id);
+        return h('option', { value: label });
+      }));
+      const from = endPicker('from', 'The earlier idea', 'The older one: the thinker, text or tradition it comes from.');
+      const to = endPicker('to', 'The later idea', 'What took it up: another thinker, an artwork, a court opinion, a news story.');
+      const rel = h('select', {}, model.relations.map((r) => h('option', { value: r.id, selected: r.id === 'echoes' }, r.id)));
+      const relHelp = h('p', { class: 'help' });
+      const showHelp = () => { relHelp.textContent = model.relations.find((r) => r.id === rel.value)?.help ?? ''; };
+      rel.addEventListener('change', showHelp); showHelp();
+      const why = h('textarea', { placeholder: 'One line: what the later idea does with the earlier one.' });
+      const sources = h('textarea', { placeholder: 'One link per line: the text, opinion, museum page or article.' });
+      const themeBoxes = model.themes.map((t) => h('label', {}, h('input', { type: 'checkbox', value: t.id }), t.name));
+      const newTheme = h('input', { placeholder: 'Optional: a new theme, conflict or dilemma this belongs to' });
+      const errors = h('p', { class: 'errors', role: 'alert' });
+      const ok = h('p', { class: 'muted', role: 'status' });
+      const form = $('#pf');
+      form.replaceChildren(list, from, to,
+        h('fieldset', {}, h('legend', {}, 'How they connect'), rel, relHelp,
+          h('label', {}, 'Why, in one line'), why,
+          h('label', {}, 'Sources'), sources),
+        h('fieldset', {}, h('legend', {}, 'Themes'), h('div', { class: 'themes' }, themeBoxes), h('label', {}, 'New theme'), newTheme),
+        errors, ok,
+        h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn' }, 'Add to the queue')));
+      form.onsubmit = async (e) => {
+        e.preventDefault(); errors.textContent = ''; ok.textContent = '';
+        const body = {
+          from: from.value(), to: to.value(), relation: rel.value, why: why.value,
+          sources: sources.value.split(/\s+/).filter(Boolean),
+          themes: themeBoxes.map((l) => l.querySelector('input')).filter((i) => i.checked).map((i) => i.value),
+          new_theme: newTheme.value,
+        };
+        try {
+          const { id } = await call('/admin/api/proposals', { method: 'POST', body: JSON.stringify(body) });
+          ok.textContent = `Saved as proposal ${id}.`;
+          from.reset(); to.reset(); why.value = ''; sources.value = ''; newTheme.value = '';
+          for (const l of themeBoxes) l.querySelector('input').checked = false;
+          loadList();
+        } catch (err) { errors.textContent = err.body?.errors?.join('. ') ?? 'Could not save.'; }
+      };
+    }
+
+    let proposals = [];
+    async function loadList() {
+      ({ proposals } = await call('/admin/api/proposals'));
+      const list = $('#list');
+      if (!proposals.length) { list.replaceChildren(h('p', { class: 'muted' }, 'No proposals yet.')); return; }
+      list.replaceChildren(...proposals.map((p) => {
+        const md = proposalsMarkdown([p], model.nodes, model.themes, { onlyOpen: false }).split('\n').slice(7).join('\n').trim();
+        const act = (status) => async () => {
+          const reply = status === 'declined' ? prompt('Why not? (optional)') ?? '' : '';
+          await call(`/admin/api/proposals/${p.id}`, { method: 'POST', body: JSON.stringify({ status, reply }) });
+          loadList();
+        };
+        return h('div', { class: 'prop' },
+          h('span', { class: `status ${p.status}` }, `${p.status} · #${p.id}`),
+          h('pre', {}, md),
+          h('div', { class: 'row', style: 'justify-content:flex-start' },
+            p.status !== 'added' && h('button', { type: 'button', class: 'chip', onclick: act('added') }, 'Mark added'),
+            p.status !== 'declined' && h('button', { type: 'button', class: 'chip', onclick: act('declined') }, 'Decline'),
+            p.status !== 'open' && h('button', { type: 'button', class: 'chip', onclick: act('open') }, 'Reopen')));
+      }));
+    }
+
+    $('#copy').onclick = async () => {
+      const md = proposalsMarkdown(proposals, model.nodes, model.themes);
+      try { await navigator.clipboard.writeText(md); $('#copymsg').textContent = 'Copied. Paste it into a chat with Claude.'; }
+      catch { const t = h('textarea', { readonly: true, style: 'min-height:200px' }); t.value = md; $('#copymsg').replaceChildren('Copy this text:', t); t.select(); }
+    };
+
+    async function start() {
+      try {
+        model = await call('/admin/api/model');
+        $('#keyform').hidden = true; $('#keymsg').textContent = ''; $('#app').hidden = false;
+        buildForm(); loadList();
+      } catch (err) {
+        $('#keymsg').textContent = err.status === 403 ? 'Wrong key, or CONTINUUM_ADMIN_KEY is not set on the server.' : 'Could not load.';
+      }
+    }
+    $('#keyform').addEventListener('submit', (e) => { e.preventDefault(); sessionStorage.setItem('continuum.admin', $('#k').value); start(); });
+    if (key()) start();
+  </script>
+</body>
+</html>

@@ -1,0 +1,952 @@
+[
+[
+"Aaron T. Beck",
+"Martin Seligman",
+"influenced"
+],
+[
+"Al-Farabi",
+"Averroes",
+"influenced"
+],
+[
+"Al-Farabi",
+"Avicenna",
+"influenced"
+],
+[
+"Al-Farabi",
+"Maimonides",
+"influenced"
+],
+[
+"Al-Ghazali",
+"Averroes",
+"influenced"
+],
+[
+"Al-Ghazali",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Alexis de Tocqueville",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Anselm of Canterbury",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Anselm of Canterbury",
+"Ren\u00e9 Descartes",
+"influenced"
+],
+[
+"Anselm of Canterbury",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Aristotle",
+"Al-Farabi",
+"influenced"
+],
+[
+"Aristotle",
+"Averroes",
+"influenced"
+],
+[
+"Aristotle",
+"Avicenna",
+"influenced"
+],
+[
+"Aristotle",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Aristotle",
+"Boethius",
+"influenced"
+],
+[
+"Aristotle",
+"Dante Alighieri",
+"influenced"
+],
+[
+"Aristotle",
+"Edmund Burke",
+"influenced"
+],
+[
+"Aristotle",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Aristotle",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Aristotle",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Aristotle",
+"Henry David Thoreau",
+"influenced"
+],
+[
+"Aristotle",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Aristotle",
+"Maimonides",
+"influenced"
+],
+[
+"Aristotle",
+"Ren\u00e9 Descartes",
+"influenced"
+],
+[
+"Aristotle",
+"S\u00f8ren Kierkegaard",
+"influenced"
+],
+[
+"Aristotle",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Aristotle",
+"Thomas Hobbes",
+"influenced"
+],
+[
+"Arthur Schopenhauer",
+"Albert Einstein",
+"influenced"
+],
+[
+"Arthur Schopenhauer",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Arthur Schopenhauer",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Arthur Schopenhauer",
+"Ludwig Wittgenstein",
+"influenced"
+],
+[
+"Attar of Nishapur",
+"Rumi",
+"influenced"
+],
+[
+"Augustine of Hippo",
+"Blaise Pascal",
+"influenced"
+],
+[
+"Augustine of Hippo",
+"Boethius",
+"influenced"
+],
+[
+"Augustine of Hippo",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Augustine of Hippo",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Averroes",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Averroes",
+"Ibn Khaldun",
+"influenced"
+],
+[
+"Averroes",
+"Maimonides",
+"influenced"
+],
+[
+"Averroes",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Avicenna",
+"Averroes",
+"influenced"
+],
+[
+"Avicenna",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Avicenna",
+"Maimonides",
+"influenced"
+],
+[
+"Avicenna",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Albert Einstein",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Baruch Spinoza",
+"Johann Wolfgang von Goethe",
+"influenced"
+],
+[
+"Blaise Pascal",
+"Alexis de Tocqueville",
+"influenced"
+],
+[
+"Blaise Pascal",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Blaise Pascal",
+"William James",
+"influenced"
+],
+[
+"Boethius",
+"Dante Alighieri",
+"influenced"
+],
+[
+"Boethius",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Charles Darwin",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Charles Darwin",
+"Henry David Thoreau",
+"influenced"
+],
+[
+"Cicero",
+"Edmund Burke",
+"influenced"
+],
+[
+"Cicero",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Confucius",
+"Mencius",
+"influenced"
+],
+[
+"Confucius",
+"Zengzi",
+"taught"
+],
+[
+"David Hume",
+"Albert Einstein",
+"influenced"
+],
+[
+"David Hume",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"David Hume",
+"Charles Darwin",
+"influenced"
+],
+[
+"David Hume",
+"Edmund Burke",
+"influenced"
+],
+[
+"David Hume",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Democritus",
+"Aristotle",
+"influenced"
+],
+[
+"Democritus",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Democritus",
+"Epicurus",
+"influenced"
+],
+[
+"Democritus",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Edmund Burke",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Epictetus",
+"Blaise Pascal",
+"influenced"
+],
+[
+"Epicurus",
+"Aristotle",
+"influenced"
+],
+[
+"Epicurus",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Epicurus",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Friedrich Nietzsche",
+"Albert Camus",
+"influenced"
+],
+[
+"Fyodor Dostoevsky",
+"Albert Camus",
+"influenced"
+],
+[
+"Fyodor Dostoevsky",
+"Albert Einstein",
+"influenced"
+],
+[
+"Fyodor Dostoevsky",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Fyodor Dostoevsky",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Gautama Buddha",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Gautama Buddha",
+"Mahatma Gandhi",
+"influenced"
+],
+[
+"Georg Wilhelm Friedrich Hegel",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Georg Wilhelm Friedrich Hegel",
+"Jean-Paul Sartre",
+"influenced"
+],
+[
+"Georg Wilhelm Friedrich Hegel",
+"Karl Marx",
+"influenced"
+],
+[
+"Georg Wilhelm Friedrich Hegel",
+"Ralph Waldo Emerson",
+"influenced"
+],
+[
+"Georg Wilhelm Friedrich Hegel",
+"S\u00f8ren Kierkegaard",
+"influenced"
+],
+[
+"George Berkeley",
+"David Hume",
+"influenced"
+],
+[
+"George Berkeley",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Henry David Thoreau",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Henry David Thoreau",
+"Mahatma Gandhi",
+"influenced"
+],
+[
+"Henry David Thoreau",
+"Martin Luther King Jr.",
+"influenced"
+],
+[
+"Heraclitus",
+"Aristotle",
+"influenced"
+],
+[
+"Heraclitus",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Heraclitus",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Heraclitus",
+"Plato",
+"influenced"
+],
+[
+"Homer",
+"Dante Alighieri",
+"influenced"
+],
+[
+"Homer",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Homer",
+"Henry David Thoreau",
+"influenced"
+],
+[
+"Homer",
+"Plato",
+"influenced"
+],
+[
+"Immanuel Kant",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"Immanuel Kant",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Immanuel Kant",
+"Fyodor Dostoevsky",
+"influenced"
+],
+[
+"Immanuel Kant",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Immanuel Kant",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Immanuel Kant",
+"S\u00f8ren Kierkegaard",
+"influenced"
+],
+[
+"Isaac Newton",
+"Albert Einstein",
+"influenced"
+],
+[
+"Isaac Newton",
+"David Hume",
+"influenced"
+],
+[
+"Isaac Newton",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Jean-Jacques Rousseau",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Jean-Jacques Rousseau",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Jean-Jacques Rousseau",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Jean-Jacques Rousseau",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Jean-Paul Sartre",
+"Albert Camus",
+"influenced"
+],
+[
+"Jean-Paul Sartre",
+"Simone de Beauvoir",
+"influenced"
+],
+[
+"Jeremy Bentham",
+"John Stuart Mill",
+"taught"
+],
+[
+"Johann Wolfgang von Goethe",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"Johann Wolfgang von Goethe",
+"Charles Darwin",
+"influenced"
+],
+[
+"Johann Wolfgang von Goethe",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"John Locke",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"John Locke",
+"David Hume",
+"influenced"
+],
+[
+"John Locke",
+"Edmund Burke",
+"influenced"
+],
+[
+"John Locke",
+"George Berkeley",
+"influenced"
+],
+[
+"John Locke",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Karl Marx",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Karl Marx",
+"Jean-Paul Sartre",
+"influenced"
+],
+[
+"Laozi",
+"Zhuangzi",
+"influenced"
+],
+[
+"Leo Tolstoy",
+"Mahatma Gandhi",
+"influenced"
+],
+[
+"Lucretius",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Mahatma Gandhi",
+"Albert Einstein",
+"influenced"
+],
+[
+"Mahatma Gandhi",
+"Martin Luther King Jr.",
+"influenced"
+],
+[
+"Maimonides",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Maimonides",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Michel de Montaigne",
+"Blaise Pascal",
+"influenced"
+],
+[
+"Michel de Montaigne",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Michel de Montaigne",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Michel de Montaigne",
+"Ralph Waldo Emerson",
+"influenced"
+],
+[
+"Niccol\u00f2 Machiavelli",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Niccol\u00f2 Machiavelli",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Niccol\u00f2 Machiavelli",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Plato",
+"Al-Farabi",
+"influenced"
+],
+[
+"Plato",
+"Aristotle",
+"influenced"
+],
+[
+"Plato",
+"Aristotle",
+"taught"
+],
+[
+"Plato",
+"Arthur Schopenhauer",
+"influenced"
+],
+[
+"Plato",
+"Augustine of Hippo",
+"influenced"
+],
+[
+"Plato",
+"Averroes",
+"influenced"
+],
+[
+"Plato",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Plato",
+"Boethius",
+"influenced"
+],
+[
+"Plato",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Plato",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Plato",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Plato",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Plato",
+"Leo Tolstoy",
+"influenced"
+],
+[
+"Plato",
+"Ralph Waldo Emerson",
+"influenced"
+],
+[
+"Plato",
+"Ren\u00e9 Descartes",
+"influenced"
+],
+[
+"Plato",
+"Thomas Aquinas",
+"influenced"
+],
+[
+"Plato",
+"Thomas Hobbes",
+"influenced"
+],
+[
+"Plotinus",
+"Al-Farabi",
+"influenced"
+],
+[
+"Plotinus",
+"Albert Camus",
+"influenced"
+],
+[
+"Plotinus",
+"Averroes",
+"influenced"
+],
+[
+"Plotinus",
+"Avicenna",
+"influenced"
+],
+[
+"Plotinus",
+"Boethius",
+"influenced"
+],
+[
+"Plotinus",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Pyrrho",
+"Epicurus",
+"influenced"
+],
+[
+"Ralph Waldo Emerson",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Ralph Waldo Emerson",
+"Henry David Thoreau",
+"influenced"
+],
+[
+"Ralph Waldo Emerson",
+"William James",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"Blaise Pascal",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"Georg Wilhelm Friedrich Hegel",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"Immanuel Kant",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"Isaac Newton",
+"influenced"
+],
+[
+"Ren\u00e9 Descartes",
+"John Locke",
+"influenced"
+],
+[
+"Seneca the Younger",
+"Boethius",
+"influenced"
+],
+[
+"Sigmund Freud",
+"Viktor Frankl",
+"influenced"
+],
+[
+"Simone de Beauvoir",
+"Albert Camus",
+"influenced"
+],
+[
+"Socrates",
+"Aristotle",
+"influenced"
+],
+[
+"Socrates",
+"Friedrich Nietzsche",
+"influenced"
+],
+[
+"Socrates",
+"Hannah Arendt",
+"influenced"
+],
+[
+"Socrates",
+"Plato",
+"influenced"
+],
+[
+"Socrates",
+"Plato",
+"taught"
+],
+[
+"Socrates",
+"Zeno of Citium",
+"influenced"
+],
+[
+"S\u00f8ren Kierkegaard",
+"Albert Camus",
+"influenced"
+],
+[
+"S\u00f8ren Kierkegaard",
+"Hannah Arendt",
+"influenced"
+],
+[
+"S\u00f8ren Kierkegaard",
+"Ludwig Wittgenstein",
+"influenced"
+],
+[
+"Thomas Aquinas",
+"Dante Alighieri",
+"influenced"
+],
+[
+"Thomas Aquinas",
+"Ren\u00e9 Descartes",
+"influenced"
+],
+[
+"Thomas Hobbes",
+"Baruch Spinoza",
+"influenced"
+],
+[
+"Thomas Hobbes",
+"John Locke",
+"influenced"
+],
+[
+"William James",
+"W. E. B. Du Bois",
+"influenced"
+]
+]

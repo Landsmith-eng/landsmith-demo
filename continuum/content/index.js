@@ -1,0 +1,88 @@
+// All content: the daily line plus walk-only branch files in content/branches/.
+// Branch nodes have no `seq`, so they are never daily cards; users reach them by walking.
+// The same practice node may appear in several files; the first copy wins.
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import * as line from './line_poc.js';
+
+const branchDir = new URL('./branches/', import.meta.url);
+const branchFiles = existsSync(branchDir) ? readdirSync(branchDir).filter((f) => f.endsWith('.js')).sort() : [];
+const branches = await Promise.all(branchFiles.map((f) => import(new URL(f, branchDir))));
+
+const byId = new Map();
+const tagged = [[line, 'line_poc.js'], ...branches.map((m, i) => [m, branchFiles[i]])];
+for (const n of tagged.flatMap(([m, file]) => m.nodes.map((node) => ({ ...node, file })))) {
+  if (byId.has(n.id) && n.type !== 'practice') throw new Error(`duplicate node id ${n.id}`);
+  if (!byId.has(n.id)) byId.set(n.id, n);
+}
+const edgeKey = (e) => `${e.from}|${e.to}|${e.relation}`;
+const edges = [...new Map([line, ...branches].flatMap((m) => m.edges).map((e) => [edgeKey(e), e])).values()];
+
+// Deeper-analysis links live in one file so they can be checked and updated without touching the branches.
+const { analysisLinks } = await import('./analysis_links.js');
+for (const [id, url] of Object.entries(analysisLinks)) {
+  const n = byId.get(id);
+  if (!n) throw new Error(`analysis_links.js: unknown node ${id}`);
+  n.analysis_url = url;
+}
+
+// Illustrations for the daily nodes. A bad or half-added entry is skipped here (the server keeps running) and
+// reported by `npm run check`.
+const { images, imageProblems, IMAGE_DIR } = await import('./images.js');
+const imageSize = (file) => { try { return statSync(new URL(file, IMAGE_DIR)).size; } catch { return null; } };
+const imageIssues = [];
+for (const [id, img] of Object.entries(images)) {
+  const n = byId.get(id);
+  if (!n) throw new Error(`images.js: unknown node ${id}`);
+  if (img == null) continue;
+  if (n.seq == null) { imageIssues.push(`${id}: images are for the 14 daily nodes only`); continue; }
+  const issues = imageProblems(id, img, imageSize);
+  if (issues.length) { imageIssues.push(...issues); continue; }
+  n.image = { src: `/img/nodes/${img.file}`, kind: img.kind, alt: img.alt.trim(), credit: img.credit.trim(), credit_url: img.credit_url ?? null };
+}
+
+// Gallery rooms. Unknown ids fail loudly; an idea with no room is reported by `npm run check`.
+const { rooms, roomOf } = await import('./rooms.js');
+for (const [id, room] of Object.entries(roomOf)) {
+  const n = byId.get(id);
+  if (!n) throw new Error(`rooms.js: unknown node ${id}`);
+  if (!rooms.some((r) => r.id === room)) throw new Error(`rooms.js: unknown room ${room}`);
+  n.room = room;
+}
+
+// Schools of psychology: each lists ideas and practices on the map. Unknown ids fail loudly.
+const { SCHOOLS } = await import('./schools.js');
+{
+  const seen = new Set();
+  for (const s of SCHOOLS) {
+    if (seen.has(s.id)) throw new Error(`schools.js: duplicate school ${s.id}`);
+    seen.add(s.id);
+    for (const id of s.ideas) if (!byId.has(id) || byId.get(id).type === 'practice') throw new Error(`schools.js: ${s.id} lists unknown idea ${id}`);
+    for (const id of s.practices) if (byId.get(id)?.type !== 'practice') throw new Error(`schools.js: ${s.id} lists unknown practice ${id}`);
+  }
+}
+
+// Therapies: each names a school, practices and ideas, and the problem tags it fits. Unknown ids fail loudly.
+const { THERAPIES, PROBLEMS } = await import('./therapies.js');
+{
+  const seen = new Set();
+  const schoolIds = new Set(SCHOOLS.map((s) => s.id));
+  const isPractice = (id) => byId.get(id)?.type === 'practice';
+  for (const t of THERAPIES) {
+    if (seen.has(t.id)) throw new Error(`therapies.js: duplicate therapy ${t.id}`);
+    seen.add(t.id);
+    if (!schoolIds.has(t.school)) throw new Error(`therapies.js: ${t.id} names unknown school ${t.school}`);
+    if (!['yes', 'partly', 'professional'].includes(t.self_help)) throw new Error(`therapies.js: ${t.id} has bad self_help ${t.self_help}`);
+    for (const tag of t.for) if (!Object.hasOwn(PROBLEMS, tag)) throw new Error(`therapies.js: ${t.id} lists unknown problem ${tag}`);
+    for (const id of t.ideas) if (!byId.has(id) || isPractice(id)) throw new Error(`therapies.js: ${t.id} lists unknown idea ${id}`);
+    for (const id of t.practices) if (!isPractice(id)) throw new Error(`therapies.js: ${t.id} lists unknown practice ${id}`);
+    if (t.sessions.length < 5 || t.sessions.length > 8) throw new Error(`therapies.js: ${t.id} has ${t.sessions.length} sessions (5 to 8)`);
+    for (const s of t.sessions) if (s.practice && !isPractice(s.practice)) throw new Error(`therapies.js: ${t.id} session "${s.title}" names unknown practice ${s.practice}`);
+  }
+}
+
+export const nodes = [...byId.values()];
+export { rooms };
+export { SCHOOLS } from './schools.js';
+export { THERAPIES, PROBLEMS } from './therapies.js';
+export { imageIssues };
+export { edges, branchFiles };
