@@ -273,6 +273,17 @@ function bubble(r, onclick, note = r.note, label = TYPE_LABEL[r.type] ?? null) {
     note && h('span', { class: 'b-note' }, note));
 }
 
+// Where to read a source that has no link of its own: a search for the work it cites (Google Scholar for an article,
+// Google Books for a book), so every source can be reached.
+function findUrl(citation) {
+  if (!citation) return null;
+  const work = citation.split(/;|\. Summary|\. Modern translations|\. Translated|\. English translations?|\. Discussed/)[0]
+    .replace(/\([^)]*\)?/g, ' ').split(/\s,|\s\.|,?\s*§|,\s*(?:pp?|chs?|vol|Book|Part|esp)\.?\s/)[0].replace(/\s+/g, ' ').trim().slice(0, 160);
+  return /["“].*\d/.test(work) ? `https://scholar.google.com/scholar?q=${encodeURIComponent(work)}` : `https://www.google.com/search?tbm=bks&q=${encodeURIComponent(work)}`;
+}
+const sourceLink = (url, citation, label = 'Read it ↗', cls = 'fulltext') => (url || findUrl(citation))
+  && h('a', { href: url || findUrl(citation), target: '_blank', rel: 'noopener', class: cls }, url ? label : 'Find it ↗');
+
 const ROLE_LABEL = { majority: 'Opinion of the Court', plurality: 'Plurality opinion', concurrence: 'Concurring', dissent: 'Dissenting' };
 
 // The parts of a revealed concept, in order.
@@ -293,7 +304,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('blockquote', { class: 'quote' }, node.source_face.split('\n\n').map((p) => h('p', {}, p))),
       h('cite', {}, node.source_citation ?? ''),
       h('div', { class: 'srclinks' },
-        node.source_url && h('a', { href: node.source_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Read the full text ↗'),
+        sourceLink(node.source_url, node.source_citation, 'Read the full text ↗'),
         node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')),
     ]));
   }
@@ -1433,9 +1444,9 @@ function showConcept(node, trail, opts = {}) {
 function writeView(data) {
   const node = data.node;
   const draftKey = `continuum.draft.${node.id}`;
-  const ta = h('textarea', { id: 'resp', placeholder: 'Write before you read. There are no wrong answers.', maxlength: '5000' });
+  const ta = h('textarea', { id: 'resp', placeholder: 'What do you think? There are no wrong answers.', maxlength: '5000' });
   ta.value = store.get(draftKey) ?? '';
-  const submit = h('button', { type: 'submit', class: 'btn', disabled: !ta.value.trim() }, 'Done. Show me the idea');
+  const submit = h('button', { type: 'submit', class: 'btn', disabled: !ta.value.trim() }, 'Done. Show me the rest');
   const status = h('span', { class: 'muted small', role: 'status' });
   ta.addEventListener('input', () => { submit.disabled = !ta.value.trim(); store.set(draftKey, ta.value); });
   const form = h('form', {
@@ -1468,10 +1479,22 @@ function writeView(data) {
       h('h1', {}, node.title),
       nameReveal(node),
       node.why && h('p', { class: 'muted small why' }, node.why),
+      sourceFirst(node),
       hint('Scroll to the question'),
     ]),
     panel('question', 'The question', [form, checkinCard(data), doors()]),
   ], { background: node.backdrop ?? null, backgroundMax: .45 });
+}
+
+// What the question is about, before it is asked: the idea in plain words, and where to read it.
+function sourceFirst(node) {
+  if (!node.plain_face && !node.source_url) return null;
+  return h('div', { class: 'source-first' },
+    node.plain_face && h('p', { class: 'plain' }, node.plain_face.split('\n\n')[0]),
+    (node.source_citation || node.source_url) && h('p', { class: 'small source-line' },
+      node.source_citation && h('span', { class: 'muted' }, `Source: ${node.source_citation} `),
+      sourceLink(node.source_url, node.source_citation),
+      node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')));
 }
 
 // The top of Today's card: the user's own walk, not a fixed count. "Day 6 of your walk · 23 ideas met · 3 days in a row"
@@ -1564,7 +1587,7 @@ const ERAS = [
   [-Infinity, -500, 'Before 500 BCE'], [-500, 500, '500 BCE to 500 CE'], [500, 1450, '500 to 1450'],
   [1450, 1800, '1450 to 1800'], [1800, 1900, '1800 to 1900'], [1900, Infinity, '1900 to now'],
 ];
-const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card: write first", upcoming: 'Coming up' };
+const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card", upcoming: 'Coming up' };
 const openEntry = (n) => (n.state === 'today' ? showToday() : walkTo(n.id, []));
 
 function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false, theme = null, kind = 'all', search = false } = {}) {
@@ -1735,7 +1758,7 @@ function galleryTimeline(nodes, focus, featuredOnly) {
 function inviteView() {
   render(
     h('h1', {}, 'Continuum'),
-    h('p', {}, 'One small idea a day. You write first, then read it, then follow where it came from and where it went.'),
+    h('p', {}, 'One small idea a day. You see what it is and where to read it, say what you think, then follow where it came from and where it went.'),
     h('p', { class: 'muted' }, 'This is a small private test. Open the personal link you were sent to begin.'),
     h('p', { class: 'muted small' }, 'Been here before? Your browser forgot you (DuckDuckGo does this when it clears its data). Open your personal link again; nothing you wrote is lost. To stop it happening: in DuckDuckGo, open the menu and choose "Fireproof this site", or add Continuum to your home screen from the browser menu.'));
 }
@@ -1951,9 +1974,9 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       log.append(b); return b;
     };
     // A finished reply: each sentence a tap target (listen from here), and Listen/Pause/Resume and Repeat below.
-    function finishReply(b, text) {
-      const parts = sentences(text);
-      if (!parts.length) { b.replaceChildren(...replyNodes(text, refs, true)); return null; }
+    function finishReply(b, text, web = []) {
+      const parts = sentences(text); const src = sourceList(text, web);
+      if (!parts.length) { b.replaceChildren(...[src, ...replyNodes(text, refs, true)].filter(Boolean)); return null; }
       const btn = h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false' }, 'Listen');
       const again = h('button', { type: 'button', class: 'chip' }, 'Repeat');
       const view = { spans: [], spoken: parts.map((t) => spokenReply(t, refs)), btn, clips: new Map() };
@@ -1964,7 +1987,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       });
       btn.addEventListener('click', () => togglePlay(view));
       again.addEventListener('click', () => playFrom(view, 0));
-      b.replaceChildren(h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again));
+      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again)].filter(Boolean));
       return view;
     }
     // A reply that lays out a path (several ideas named in order) can be walked as a journey: it leads the next days.
@@ -1982,10 +2005,19 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       });
       return h('div', { class: 'talk-controls' }, go);
     }
-    // The pages a web search drew on, under the reply.
-    const sourceList = (sources) => sources?.length > 0 && h('div', { class: 'talk-sources' },
-      h('div', { class: 'eyebrow' }, 'Sources'),
-      h('ul', {}, sources.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, x.title)))));
+    // At the top of every reply: the sources it draws on. The ideas it names from the map (open it here, or read the
+    // original) and the pages a web search found.
+    const sourceList = (text, web = []) => {
+      const ids = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((x) => x[1]))].filter((id) => refs[id]);
+      const items = [
+        ...ids.map((id) => { const r = refs[id]; return h('li', {},
+          h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title),
+          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`),
+          ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out')); }),
+        ...(web ?? []).map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))),
+      ];
+      return items.length > 0 && h('details', { class: 'talk-sources', open: '' }, h('summary', { class: 'eyebrow' }, 'Sources'), h('ul', {}, items));
+    };
     state.turns.forEach((x) => bubble(x.who, x.text));
     if (!state.turns.length) {
       log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
@@ -2059,8 +2091,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
               keepInView(out);
             }
             else if (m.t === 'done') {
-              Object.assign(refs, m.refs); view = finishReply(out, reply.trim());
-              const src = sourceList(m.sources); if (src) out.append(src);
+              Object.assign(refs, m.refs); view = finishReply(out, reply.trim(), m.sources);
               const walk = journeyOffer(reply, sendAs ?? current); if (walk) out.append(walk);
               keepInView(out);
             }
@@ -2451,7 +2482,7 @@ const TOUR_KEY = 'continuum.tour';
 const TOUR = [
   { text: 'Welcome: a journey of discovery: the ideas that shaped how we think, what we value and how we live, from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
   { text: 'Most of what we believe, we picked up without choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
-  { target: '.tabs [data-nav=today]', text: 'Wander: one question a day, answered before you read anything. Then the idea opens one part at a time. About two minutes.' },
+  { target: '.tabs [data-nav=today]', text: 'Wander: one idea a day, with a short summary and a link to its source, and a question about it. Then the idea opens one part at a time. About two minutes.' },
   { target: '.tabs [data-nav=think]', text: 'Think: respond by voice or in writing. Bring a debate with a friend, the news or a goal. It remembers what you\'ve said, pushes back when you\'re very sure, and what you talk about chooses what comes next.' },
   { target: '.tabs [data-nav=think]', text: 'Work through a problem, or join the Parthenon: small groups talking over one question together, live, with Continuum as moderator.' },
   { target: '.tabs [data-nav=today]', text: 'Practice, on Wander too: ideas into habits, from ten seconds a day.' },
@@ -2910,7 +2941,7 @@ function arrive() {
         h('h1', {}, first ? `Welcome, ${first}` : 'Welcome'),
         h('p', {}, 'What brings you here?'),
         h('div', { class: 'think-doors' }, pickUp,
-          choice('Learn something new', 'One idea a day: you write first, then read it, then follow where it leads.', showToday, 'learn'),
+          choice('Learn something new', 'One idea a day: what it is and where to read it, what you think of it, then where it leads.', showToday, 'learn'),
           choice('Think something through', 'A problem, a decision, a disagreement, the news: bring it, and think it over with the world\'s wisdom.', showThink, 'think'),
           choice('Build a daily habit', 'Ideas into practice, from ten seconds a day.', showPractice, 'habit')),
         h('p', { class: 'muted small' }, 'Every way is open from the menu below, whichever you choose.'));

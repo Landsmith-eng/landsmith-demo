@@ -105,13 +105,14 @@ test('no token -> 401', async () => {
 const todayOf = async (date, token = TOKEN) => (await call(`/api/today?date=${date}`, { token })).json.node.id;
 const cards = {}; // date -> the card written that day (by the tester)
 
-test('day 1: a welcoming first question, card and question only; nothing to read before writing', async () => {
+test('day 1: a welcoming first question, with what it is about and where to read it before writing', async () => {
   const r = await call('/api/today?date=2026-11-01');
   assert.equal(r.json.state, 'write');
   assert.ok(STARTERS.includes(r.json.node.id), r.json.node.id);
   assert.ok(r.json.node.prompt);
-  assert.equal(r.json.node.plain_face, undefined);
-  assert.equal(r.json.node.source_face, undefined);
+  assert.ok(r.json.node.plain_face); // the synopsis comes first, with the source's citation and link
+  assert.ok('source_citation' in r.json.node && 'source_url' in r.json.node);
+  assert.equal(r.json.node.source_face, undefined); // the source text itself is in the full reading after writing
   // Walking to today's own card before writing doesn't open it either.
   const w = await call(`/api/node/${r.json.node.id}?date=2026-11-01`);
   assert.equal(w.json.today, true);

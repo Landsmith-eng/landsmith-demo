@@ -536,7 +536,7 @@ html.gazing { overflow: hidden; }
 .stop-line > .muted { display: block; margin-bottom: 4px; }
 
 .talk-modes { margin: 4px 0 8px; }
-.talk-sources { margin-top: 10px; font-family: var(--sans); font-size: .85rem; }
+.talk-sources { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-family: var(--sans); font-size: .85rem; }
 .talk-sources ul { margin: 4px 0 0; padding-left: 1.1em; }
 .talk-sources a { color: var(--accent); word-break: break-word; }
 .weigh-btn { margin-top: 14px; }
@@ -971,3 +971,10 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .lead-box h2 { margin-top: .1em; }
 .offer { margin: 12px 0 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.22); background: rgba(10,16,14,.45); }
 .offer h3 { font-family: var(--display); font-size: 1.2rem; margin: .2em 0; }
+
+.talk-sources summary { cursor: pointer; }
+.talk-sources li { margin: 3px 0; }
+.source-first { margin-top: 14px; }
+.source-first .plain { margin: 0 0 8px; }
+.source-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.source-first a { color: var(--accent); text-underline-offset: 3px; }

@@ -241,7 +241,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
 
   const card = (n) => ({ id: n.id, type: n.type, field: n.field, title: n.title, thinker: n.thinker, year: n.year, prompt: n.prompt, daily: n.seq != null });
 
-  // Before writing, the user sees only the card and the question. Everything else is behind "write first".
+  // The whole idea: its plain words, the source text, the user's entry and its links.
   function fullNode(n, uid, date = localDate()) {
     const entry = q.entry.get(uid, n.id) ?? null;
     return {
@@ -305,7 +305,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const n = pick ? q.node.get(pick) : null;
       // The closed card carries only the picture's address (its own, or else its room's), shown faded behind the title.
       // The picture itself, with alt text and credit, belongs to the reveal after writing.
-      node = n ? { ...card(n), backdrop: (n.image ? JSON.parse(n.image).src : null) ?? roomBgOn(n.room, date), why: q.pickFor.get(uid, date)?.why ?? null } : null;
+      // The synopsis and the source come first, so the question is never about something the user cannot see.
+      node = n ? { ...card(n), plain_face: n.plain_face, source_citation: n.source_citation ?? null, source_url: n.source_url ?? null, analysis_url: n.analysis_url ?? null, backdrop: (n.image ? JSON.parse(n.image).src : null) ?? roomBgOn(n.room, date), why: q.pickFor.get(uid, date)?.why ?? null } : null;
     }
     q.insertEvent.run(uid, 'open', node?.id ?? null, date);
     const due = kq.due.get(uid, shiftDay(date, -CHECKIN_DAYS));
@@ -1404,7 +1405,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   const talkRefs = (states, ids) => Object.fromEntries(ids.map((id) => {
     const n = q.node.get(id);
-    return n && !hiddenIn(states, n) ? [id, { title: n.title, type: n.type, field: n.field, thinker: n.thinker }] : null;
+    return n && !hiddenIn(states, n) ? [id, { title: n.title, type: n.type, field: n.field, thinker: n.thinker, citation: n.source_citation ?? null, url: n.source_url ?? null }] : null;
   }).filter(Boolean));
   // The user-visible transcript: their words and the replies, not the look-ups or the model's thinking.
   const transcript = (messages) => messages.flatMap((m) => {
