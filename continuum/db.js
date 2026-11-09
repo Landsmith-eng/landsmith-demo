@@ -273,6 +273,59 @@ CREATE TABLE IF NOT EXISTS reactions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, node_id)
 );
+
+-- The line in the water: one lure a day (the day's idea), how it was chosen and how the user took it. This is the
+-- trail. The course (which part of the map it is fishing in, and how many tries have not landed) is replayed from it.
+CREATE TABLE IF NOT EXISTS lures (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  local_date TEXT NOT NULL,
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  room TEXT,
+  move TEXT NOT NULL,                  -- start|stay|follow|adjacent|galaxy|topic, or route|talk|trail|journey|other
+  topic TEXT,                          -- what the user said was on their mind (move = topic)
+  shown_at TEXT,                       -- first shown on the opening screen
+  reaction TEXT,
+  reacted_at TEXT,
+  strength TEXT,                       -- bite|nibble|miss (no reaction after being shown counts as a miss)
+  sentiment TEXT,                      -- warm|neutral|cool
+  words INTEGER,
+  seconds INTEGER,                     -- from shown to reaction
+  ack TEXT,                            -- what the app said back ('' for just a nod)
+  PRIMARY KEY (user_id, local_date)
+);
+
+-- Now and then, looking back over the trail: the thread through it, or an honest dead end.
+CREATE TABLE IF NOT EXISTS syntheses (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  local_date TEXT NOT NULL,
+  upto TEXT NOT NULL,                  -- the last trail day it covers
+  text TEXT NOT NULL,
+  thread TEXT,
+  stops TEXT NOT NULL,                 -- JSON [{id, title, thinker, outcome}]
+  seen_at TEXT
+);
+
+-- Notes like a text from a friend, a couple of times a week at most, fewer when the user goes quiet.
+CREATE TABLE IF NOT EXISTS nudges (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  text TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+  delivered INTEGER NOT NULL DEFAULT 0,
+  seen_at TEXT
+);
+CREATE TABLE IF NOT EXISTS push_subs (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  keys TEXT NOT NULL,                  -- JSON {p256dh, auth}
+  tz TEXT,                             -- the phone's time zone, to write only in the daytime
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS settings (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
 `;
 
 // Columns added after the first testers' databases were created. SQLite has no ADD COLUMN IF NOT EXISTS.

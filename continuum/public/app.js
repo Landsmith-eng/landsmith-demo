@@ -1859,7 +1859,8 @@ function showJournal() {
       h('button', { type: 'button', class: 'chip on', 'aria-pressed': 'true' }, 'Diary'),
       h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
       h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), working, views, journey, roads, threads, entries, again, keepOnPhone(), yourDetails());
+    const road = await roadSection();
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails());
   });
 }
 
@@ -2912,11 +2913,35 @@ function showThink() {
   });
 }
 
-// ── Arriving ──
-// Each time the app opens: a home screen. The first few days it asks what brought you here (to learn, to think
-// something through, or to build a habit); after that, glad to see you back, where to today, led by what you
-// usually choose. Either way, "Pick up where you left off" comes first when there is somewhere to pick up.
-const GREETED_KEY = 'continuum.greeted'; const WHY_KEY = 'continuum.why'; const ASK_DAYS = 3;
+// The road so far, in the diary: the looks back, and the last stretch of the line.
+async function roadSection() {
+  const r = await api(`/api/road?date=${today()}`).catch(() => null);
+  if (!r || !r.stops.some((s) => s.outcome)) return null;
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'The road so far'),
+    ...r.syntheses.slice(0, 3).map((s) => h('div', { class: 'road-look' }, h('div', { class: 'eyebrow' }, s.date), h('p', { class: 'synthesis' }, s.text))),
+    roadPath(r.stops.filter((s) => s.outcome).slice(0, 10)));
+}
+// Notes now and then, in the diary: on or off, whenever they like.
+function nudgeSetting() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  const box = h('section', { class: 'diary-block' }, h('h2', {}, 'A line now and then'));
+  const draw = (on) => box.replaceChildren(h('h2', {}, 'A line now and then'),
+    h('p', { class: 'muted small' }, on ? 'Continuum drops you a line a couple of times a week at most, about something you wrote, and less if you are busy.' : 'Off. Continuum can drop you a line a couple of times a week at most, about something you wrote, and less if you are busy.'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      const now = on ? (await turnNudgesOff().catch(() => {}), false) : await turnNudgesOn().catch(() => false);
+      store.set(NUDGE_ASKED_KEY, now ? 'yes' : 'no'); draw(now);
+    } }, on ? 'Turn off' : 'Turn on'));
+  api('/api/push/key').then((k) => (k.key ? draw(k.on) : box.remove())).catch(() => box.remove());
+  return box;
+}
+
+// ── Arriving: one line in the water ──
+// Each time the app opens: never the whole map, one thing. A line from a friend, one question about one idea (with what
+// it is and where to read it), and room to say anything back, even "huh". What the app says back is short, and often
+// nothing at all. "Something else on my mind" sends today's line wherever they point. Now and then, first, a look back
+// over the road so far. Everything else is in the menu below.
+const GREETED_KEY = 'continuum.greeted'; const NUDGE_ASKED_KEY = 'continuum.nudges.asked';
 // A shortcut from the home-screen icon (press and hold it) goes straight to its place.
 const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal() };
 function arrive() {
@@ -2925,42 +2950,148 @@ function arrive() {
   if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
   setNav('');
   return guarded(async () => {
-    const t = await api(`/api/today?date=${today()}`);
+    const o = await api(`/api/lure?date=${today()}`);
+    store.set(GREETED_KEY, today());
     pageBg = brightFor('arrive') ?? null;
-    const go = (why, fn) => () => { store.set(GREETED_KEY, today()); if (why) store.set(WHY_KEY, why); fn(); offerTour(); };
-    const choice = (title, line, fn, why) => h('button', { type: 'button', class: 'think-door', onclick: go(why, fn) }, h('span', { class: 't' }, title), line && h('span', { class: 'muted small' }, line));
-    const first = (t.name ?? '').split(' ')[0];
-    // Pick up where you left off: the place last open, if within the last month.
-    const last = lastPlace();
-    const fresh = last && Date.now() - (last.at ?? 0) < 30 * 86400000;
-    const lastLine = fresh && (last.kind === 'idea' ? `"${last.title}"${last.thinker ? `, ${last.thinker}` : ''}${last.label ? ` · ${last.label}` : ''}` : last.title);
-    const pickUp = fresh && h('button', { type: 'button', class: 'think-door pick-up', onclick: go(null, () => resume(last)) },
-      h('span', { class: 't' }, 'Pick up where you left off'), h('span', { class: 'muted small' }, lastLine));
-    if ((t.visits ?? 1) <= ASK_DAYS) {
-      return render(
-        h('h1', {}, first ? `Welcome, ${first}` : 'Welcome'),
-        h('p', {}, 'What brings you here?'),
-        h('div', { class: 'think-doors' }, pickUp,
-          choice('Learn something new', 'One idea a day: what it is and where to read it, what you think of it, then where it leads.', showToday, 'learn'),
-          choice('Think something through', 'A problem, a decision, a disagreement, the news: bring it, and think it over with the world\'s wisdom.', showThink, 'think'),
-          choice('Build a daily habit', 'Ideas into practice, from ten seconds a day.', showPractice, 'habit')),
-        h('p', { class: 'muted small' }, 'Every way is open from the menu below, whichever you choose.'));
-    }
-    const idea = t.state === 'write'
-      ? choice('Today\'s idea', t.node?.why ?? 'A new question is waiting. Write first, then read.', showToday, 'learn')
-      : t.state === 'done_today' ? choice('Back to today\'s idea', `"${t.node.title}": walk on from where you were.`, showToday, 'learn') : null;
-    const checkin = t.checkin && choice(`Check in: ${t.checkin.title}`, t.checkin.question, () => showWorkThrough(t.checkin.id), 'think');
-    const session = t.session && choice(`Session ${t.session.n} of ${t.session.of}: ${t.session.name}`, `${t.session.therapy}, for "${t.session.title}"`, () => showWorkThrough(t.session.id), 'think');
-    const think = choice('Think something through', 'Talk, a problem, a debate, the news.', showThink, 'think');
-    const habit = choice('Today\'s practice', 'Ideas into habits, from ten seconds a day.', showPractice, 'habit');
-    const order = { learn: [idea, think, habit], think: [think, idea, habit], habit: [habit, idea, think] }[store.get(WHY_KEY)] ?? [idea, think, habit];
-    render(
-      h('h1', {}, first ? `Glad to see you back, ${first}` : 'Glad to see you back'),
-      h('p', {}, 'Where would you like to go today?'),
-      h('div', { class: 'think-doors' }, pickUp, session, checkin, ...order,
-        choice('Explore the map', 'Every idea, and how they connect.', showMap, null),
-        choice('Your diary', 'What you have written, and how your views have moved.', showJournal, null)));
+    if (o.synthesis) return lookBack(o);
+    lineView(o);
   });
+}
+
+// The road behind: where the line went, how each one landed, and the thread (or the honest dead end).
+const OUTCOME_LABEL = { bite: 'caught you', nibble: 'a nibble', miss: 'did not land' };
+function roadPath(stops) {
+  return h('ol', { class: 'road-path' }, stops.map((s) => h('li', { class: `road-stop ${s.outcome ?? 'open'}` },
+    h('button', { type: 'button', class: 'link', onclick: () => walkTo(s.id, []) }, s.title),
+    h('span', { class: 'muted small' }, [s.thinker, OUTCOME_LABEL[s.outcome]].filter(Boolean).join(' · ')))));
+}
+function lookBack(o) {
+  const s = o.synthesis;
+  render(
+    h('div', { class: 'eyebrow' }, 'Looking back'),
+    roadPath(s.stops),
+    h('p', { class: 'synthesis' }, s.text),
+    s.thread && h('p', { class: 'muted small' }, `The thread: ${s.thread}`),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn', onclick: () => {
+      api('/api/lure/seen', { method: 'POST', body: { synthesis: s.id } }).catch(() => {});
+      lineView({ ...o, synthesis: null });
+    } }, 'Onward')));
+}
+
+// Quiet ways out, under the one thing: wherever they left off, a session that is waiting, and the escape hatch.
+function quietLinks(o, { onTopic }) {
+  const last = lastPlace();
+  const fresh = last && Date.now() - (last.at ?? 0) < 30 * 86400000;
+  const lastLine = fresh && (last.kind === 'idea' ? `"${last.title}"` : last.title);
+  const box = h('div', { class: 'line-else' });
+  const hatch = h('button', { type: 'button', class: 'link' }, 'Something else on my mind');
+  hatch.addEventListener('click', () => {
+    const input = h('input', { type: 'text', class: 'search', maxlength: '300', placeholder: 'What is it? A word or a sentence.', 'aria-label': 'What is on your mind' });
+    const goBtn = h('button', { type: 'button', class: 'btn' }, 'Go');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const send = async () => { const v = input.value.trim(); if (!v) return; goBtn.disabled = true; status.textContent = 'Looking…'; await onTopic(v, status).catch(() => { status.textContent = 'Could not reach Continuum. Try again.'; }); goBtn.disabled = false; };
+    goBtn.addEventListener('click', send); input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    hatch.replaceWith(h('div', { class: 'hatch' }, h('div', { class: 'row' }, input, goBtn), status));
+    input.focus();
+  });
+  box.append(hatch);
+  const waiting = o.session ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.session.id) }, `Waiting: session ${o.session.n} of ${o.session.of}, ${o.session.name}`)
+    : o.checkin ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.checkin.id) }, `Check in: ${o.checkin.title}`) : null;
+  if (waiting) box.append(waiting);
+  if (lastLine) box.append(h('button', { type: 'button', class: 'link', onclick: () => resume(last) }, `Pick up where you left off: ${lastLine}`));
+  return box;
+}
+
+function lineView(o) {
+  const n = o.node;
+  // Something else on their mind: before answering, today's line goes there; after, it becomes a conversation.
+  const onTopic = async (topic, status) => {
+    if (o.state !== 'write') return showTalk({ seed: topic });
+    const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+    if (r.found) return lineView(r);
+    status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+  };
+  if (o.state === 'complete' || !n) {
+    return render(h('p', { class: 'opener' }, 'You have met every idea on the map so far. New ones arrive often.'),
+      h('div', { class: 'think-doors' }, h('button', { type: 'button', class: 'think-door', onclick: () => showThink() }, h('span', { class: 't' }, 'Think something through'))),
+      quietLinks(o, { onTopic }));
+  }
+  if (o.state === 'done_today') {
+    return render(
+      h('p', { class: 'opener' }, 'Today\'s line:'),
+      h('h1', { class: 'line-title' }, n.title),
+      o.reaction && h('blockquote', { class: 'kept' }, o.reaction.text),
+      o.reaction?.ack && h('p', { class: 'ack' }, o.reaction.ack),
+      h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showToday() }, 'Read where it comes from')),
+      quietLinks(o, { onTopic }));
+  }
+  const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'Say anything. Even "huh" tells me something.', 'aria-label': 'Your answer' });
+  const draftKey = `continuum.draft.${n.id}`; ta.value = store.get(draftKey) ?? '';
+  const send = h('button', { type: 'button', class: 'btn', disabled: !ta.value.trim() }, 'Send');
+  const status = h('span', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); store.set(draftKey, ta.value); });
+  const form = h('div', { class: 'line-form' }, ta, h('div', { class: 'row' }, dictation(ta, { label: 'Say it instead' })?.button ?? h('span'), send), status);
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = '';
+    try {
+      const r = await api('/api/respond', { method: 'POST', body: { node_id: n.id, body: ta.value, date: today() } });
+      store.del(draftKey);
+      // Front of house: a few words back, or just the nod.
+      const said = h('blockquote', { class: 'kept' }, ta.value.trim());
+      const back = r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' });
+      form.replaceWith(h('div', { class: 'line-after' }, said, back,
+        h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showToday() }, 'Read where it comes from')),
+        nudgeOffer(o)));
+      offerTour();
+    } catch (err) {
+      const stale = err.message === 'already_answered_today' || err.message === 'not_todays_node';
+      status.textContent = stale ? 'Today has changed. Reloading…' : 'Could not send. Your words are kept; try again.';
+      send.disabled = false;
+      if (stale) setTimeout(arrive, 1200);
+    }
+  });
+  render(
+    o.opener && h('p', { class: 'opener' }, o.opener),
+    h('h1', { class: 'line-prompt' }, n.prompt),
+    // What it is about and where to read it, at once; the summary itself just under the answer box.
+    h('p', { class: 'muted small line-src' }, [n.title, n.thinker].filter(Boolean).join(' · '), ' ', sourceLink(n.source_url, n.source_citation)),
+    form,
+    n.plain_face && h('div', { class: 'line-about' }, h('div', { class: 'eyebrow' }, 'What it is about'), sourceFirst(n)),
+    quietLinks(o, { onTopic }));
+}
+
+// Asked once, after a few answers: may Continuum drop them a line now and then? Only where the phone can take one.
+function nudgeOffer(o) {
+  if (store.get(NUDGE_ASKED_KEY) || o.nudges?.offered === 'on' || (o.nudges?.answered ?? 0) < 3) return null;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return null;
+  const box = h('div', { class: 'nudge-offer' },
+    h('p', {}, 'Can I drop you a line now and then? A couple of times a week at most, and less if you are busy.'));
+  const no = h('button', { type: 'button', class: 'btn ghost' }, 'No thanks');
+  const yes = h('button', { type: 'button', class: 'btn' }, 'Yes, now and then');
+  no.addEventListener('click', () => { store.set(NUDGE_ASKED_KEY, 'no'); box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It is in the menu under You if you change your mind.')); });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    const ok = await turnNudgesOn().catch(() => false);
+    store.set(NUDGE_ASKED_KEY, ok ? 'yes' : 'no');
+    box.replaceChildren(h('p', { class: 'muted small' }, ok ? 'Good. I will be in touch, not often.' : 'Your phone did not allow it. You can turn it on later under You.'));
+  });
+  box.append(h('div', { class: 'row', style: 'justify-content:flex-start' }, yes, no));
+  return box;
+}
+async function turnNudgesOn() {
+  const { key } = await api('/api/push/key');
+  if (!key || (await Notification.requestPermission()) !== 'granted') return false;
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(key.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+  const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+  await api('/api/push', { method: 'POST', body: { subscription: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+  return true;
+}
+async function turnNudgesOff() {
+  const reg = await navigator.serviceWorker?.getRegistration('/sw.js');
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) { await api('/api/push', { method: 'DELETE', body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); }
 }
 
 // ── Working through a problem ──────────────────────────────────────────────────────────────────────────────

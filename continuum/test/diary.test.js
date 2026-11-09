@@ -66,19 +66,12 @@ test('diary: notes on any idea, threads between ideas met, and roads chosen from
   } finally { server.close(); }
 });
 
-test('adaptive daily cards from the first day: a welcoming starter, a reason on every card, a gentle challenge every fifth written day, and the walk counted', async () => {
+test('adaptive daily cards from the first day: a welcoming starter, a reason on every card, the course moving on after three lukewarm answers, and the walk counted', async () => {
   const { db, server, call } = await boot();
   try {
     const day = (n) => new Date(Date.UTC(2026, 10, 1 + n)).toISOString().slice(0, 10);
-    const wroteRooms = () => new Set(db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE n.room IS NOT NULL').all().map((r) => r.room));
-    // Rooms the user has not written in that still hold an unwritten idea with a question: a challenge is possible.
-    const awayOpen = () => {
-      const wrote = wroteRooms();
-      return db.prepare(`SELECT DISTINCT room FROM nodes WHERE type != 'practice' AND prompt IS NOT NULL AND prompt != '' AND room IS NOT NULL
-        AND id NOT IN (SELECT node_id FROM journal)`).all().some((r) => !wrote.has(r.room));
-    };
-    const picks = [];
-    let challenges = 0;
+    const lureOn = (d) => db.prepare('SELECT move, room FROM lures WHERE local_date = ?').get(d);
+    const picks = []; const moves = [];
     for (let n = 0; n < 20; n++) {
       const t = (await call(`/api/today?date=${day(n)}`)).json;
       assert.equal(t.state, 'write');
@@ -93,16 +86,16 @@ test('adaptive daily cards from the first day: a welcoming starter, a reason on 
         assert.ok(STARTERS.includes(t.node.id), t.node.id);
         assert.match(t.node.why, /first question/);
       }
-      if (n % 5 === 4 && awayOpen()) {
-        assert.match(t.node.why, /gentle challenge/, `day ${n + 1}`);
-        const room = db.prepare('SELECT room FROM nodes WHERE id = ?').get(t.node.id).room;
-        assert.ok(!wroteRooms().has(room), `day ${n + 1}: ${room} already written in`);
-        challenges++;
-      } else assert.doesNotMatch(t.node.why, /gentle challenge/, `day ${n + 1}`);
-      picks.push(t.node.id);
-      assert.equal((await call('/api/respond', { node_id: t.node.id, body: 'Fear of losing what I love.', date: day(n) })).status, 200);
+      picks.push(t.node.id); moves.push(lureOn(day(n)));
+      // Lukewarm every day: the line never lands.
+      assert.equal((await call('/api/respond', { node_id: t.node.id, body: 'Not sure.', date: day(n) })).status, 200);
     }
-    assert.ok(challenges >= 2, `only ${challenges} gentle challenges in 20 days`);
+    // Three tries on a course, then a step sideways along the graph, and when that does not land either, somewhere
+    // else entirely; and round again.
+    assert.deepEqual(moves.slice(0, 7).map((m) => m.move), ['start', 'stay', 'stay', 'adjacent', 'stay', 'stay', 'galaxy']);
+    assert.notEqual(moves[3].room, moves[0].room);
+    assert.ok(![moves[0].room, moves[3].room].includes(moves[6].room), 'a new part of the map');
+    assert.equal(moves[9].move, 'adjacent');
     // A missed day breaks the run but not the count.
     const t = (await call(`/api/today?date=${day(21)}`)).json;
     assert.equal(t.journey.day, 21);

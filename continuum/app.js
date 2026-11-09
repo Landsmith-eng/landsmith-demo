@@ -10,6 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
+import { createLure } from './lure.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
@@ -181,6 +182,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const pick = adaptivePick(uid, date);
     if (!pick) return null;
     q.savePick.run(uid, date, pick.id, pick.why ?? null);
+    lure.record(uid, date, pick.id, pick.move ?? 'other');
     return pick.id;
   }
 
@@ -197,27 +199,35 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     // A problem they are working through comes first: the next idea on the course it set, not yet written on.
     for (const c of kq.started.all(uid)) {
       const route = JSON.parse(c.route); const k = route.findIndex((r) => inPool.has(r.id) && fresh.some((n) => n.id === r.id));
-      if (k >= 0) return { id: route[k].id, why: `For what you are working through ("${c.title}"), step ${k + 1} of ${route.length}: ${route[k].why}` };
+      if (k >= 0) return { id: route[k].id, move: 'route', why: `For what you are working through ("${c.title}"), step ${k + 1} of ${route.length}: ${route[k].why}` };
     }
     // What they have been talking about lately comes first: an idea that bears on a view, goal or question they
     // voiced in the last week, not yet written on (fresh ones first).
     for (const v of vq.since.all(uid, shiftDay(date, -7))) {
       const ids = JSON.parse(v.ideas).filter((id) => inPool.has(id));
       const id = ids.find((x) => fresh.some((n) => n.id === x)) ?? ids[0];
-      if (id) return { id, why: `You talked about ${v.topic} (${v.local_date}). This idea speaks to it.` };
+      if (id) return { id, move: 'talk', why: `You talked about ${v.topic} (${v.local_date}). This idea speaks to it.` };
     }
     // Then a journey they started on the Map: its next stop not yet written on.
     const trail = trq.get.get(uid);
     if (trail) {
       const ids = JSON.parse(trail.ids); const k = ids.findIndex((id) => inPool.has(id));
-      if (k >= 0) return { id: ids[k], why: `On the journey you started from "${q.node.get(trail.from_id)?.title ?? 'the Map'}": stop ${k + 1} of ${ids.length}.` };
+      if (k >= 0) return { id: ids[k], move: 'trail', why: `On the journey you started from "${q.node.get(trail.from_id)?.title ?? 'the Map'}": stop ${k + 1} of ${ids.length}.` };
     }
     // Then their journey from the debates: the next stop they have not written on.
     for (const stop of journeyFor(uid).stops) {
       for (const [card, why] of [[stop.shares, 'makes the case that spoke to you, at its best'], [stop.differs, 'makes the other camp\'s case, at its best']]) {
-        if (card && inPool.has(card.id)) return { id: card.id, why: `From your journey: on "${stop.question}", this one ${why}.` };
+        if (card && inPool.has(card.id)) return { id: card.id, move: 'journey', why: `From your journey: on "${stop.question}", this one ${why}.` };
       }
     }
+    // Then the line in the water: the course, once one has started (its first lure comes from the ways below).
+    const fished = lure.next(uid, date, fresh.length ? fresh : pool);
+    if (fished) return fished;
+    const start = startPick(uid, date, pool, fresh, d);
+    return start && { ...start, move: 'start' };
+  }
+  function startPick(uid, date, pool, fresh, d) {
+    const inPool = new Set(pool.map((n) => n.id));
     const adaptiveDays = aq.adaptiveCount.get(uid).n;
     if (!adaptiveDays && !d.met.size) {
       const start = STARTERS.filter((id) => inPool.has(id));
@@ -289,8 +299,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   const shiftDay = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
-  app.get('/api/today', auth, (req, res) => {
-    const date = localDate(req.query.date);
+  app.get('/api/today', auth, (req, res) => res.json(todayData(req, localDate(req.query.date))));
+  function todayData(req, date) {
     const uid = req.user.id;
     const total = q.lineCount.get().n;
     const done = q.writtenCount.get(uid).n;
@@ -319,8 +329,57 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     }
     // Days they have opened Continuum (counting today): the first few times it asks what brought them.
     const visits = q.visitDays.get(uid).n;
-    res.json({ name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin, session, visits });
+    return { name: req.user.name, state, done, total, node, journey: journey(uid, date, Boolean(written)), checkin, session, visits };
+  }
+
+  // The opening screen: one line in the water. Today's idea as a friend would put it, what the user said back (and
+  // what the app said to that, often nothing), and now and then a look back over the road. Seeing it counts: a lure
+  // shown and never answered is a miss.
+  app.get('/api/lure', auth, (req, res) => {
+    const date = localDate(req.query.date); const uid = req.user.id;
+    const t = todayData(req, date);
+    if (t.state === 'write') lure.shown(uid, date);
+    const l = lure.today(uid, date);
+    const first = (req.user.name ?? '').split(' ')[0];
+    const nudge = lure.unseenNudge(uid); lure.seeNudges(uid);
+    lure.maybeSynthesize(uid, date); // in the background: ready for next time if it is due
+    res.json({ ...t, opener: t.state === 'write' ? (nudge?.text ?? lure.opener(uid, date, first)) : null,
+      reaction: t.state === 'done_today' && l?.reaction ? { text: l.reaction, ack: l.ack ?? '' } : null,
+      synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
   });
+  // Something else on their mind: today's line goes there instead (until they have answered today's).
+  app.post('/api/lure/topic', auth, async (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id;
+    const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim().slice(0, 300) : '';
+    if (!topic) return res.status(400).json({ error: 'topic_required' });
+    if (q.writtenOn.get(uid, date)) return res.status(409).json({ error: 'already_answered_today' });
+    const id = await lure.forTopic(topic, aq.pool.all({ uid }));
+    if (!id) return res.json({ found: false });
+    q.dropPick.run(uid, date);
+    q.savePick.run(uid, date, id, `You said ${topic.length > 60 ? `${topic.slice(0, 60)}…` : topic} was on your mind.`);
+    lure.record(uid, date, id, 'topic', topic);
+    lure.shown(uid, date);
+    res.json({ found: true, ...todayData(req, date), opener: lure.opener(uid, date) });
+  });
+  app.post('/api/lure/seen', auth, (req, res) => {
+    const id = Number(req.body?.synthesis);
+    if (id) lure.seeSynthesis(req.user.id, id);
+    res.json({ ok: true });
+  });
+  // The road so far: every lure, how it went, and the looks back.
+  app.get('/api/road', auth, (req, res) => {
+    const date = localDate(req.query.date); const s = lure.course(req.user.id, date);
+    res.json({ stops: s.rows.map((r) => ({ id: r.node_id, title: r.title, thinker: r.thinker, date: r.local_date, room: roomName.get(r.room) ?? null, move: r.move,
+      outcome: r.strength ?? (r.shown_at && r.local_date < date ? 'miss' : null), reaction: r.reaction })).reverse(),
+    syntheses: lure.syntheses(req.user.id) });
+  });
+  // Nudges: the phone's push subscription, given only when the user says yes.
+  app.get('/api/push/key', auth, async (req, res) => res.json({ key: await lure.publicKey(), on: lure.subscribed(req.user.id) }));
+  app.post('/api/push', auth, (req, res) => {
+    if (!lure.subscribe(req.user.id, req.body?.subscription, req.body?.tz)) return res.status(400).json({ error: 'bad_subscription' });
+    res.json({ on: true });
+  });
+  app.delete('/api/push', auth, (req, res) => { lure.unsubscribe(req.user.id, req.body?.endpoint); res.json({ on: lure.subscribed(req.user.id) }); });
 
   app.post('/api/respond', auth, (req, res) => {
     const { node_id: nodeId, body } = req.body ?? {};
@@ -336,7 +395,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     q.insertEvent.run(uid, 'respond', nodeId, date);
     const answered = q.node.get(nodeId);
     noteFrom(uid, date, text, `Their answer to "${answered.prompt}" (on "${answered.title}"), written before reading it.`, 'answer');
-    res.json({ node: fullNode(answered, uid, date) });
+    const { ack } = lure.reacted(uid, date, nodeId, text);
+    res.json({ node: fullNode(answered, uid, date), ack });
   });
 
   // The rabbit hole: any node opens fully, with no bottom enforced. The one exception is today's
@@ -822,6 +882,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   const themeName = new Map(themes.map((t) => [t.id, t.name]));
   // Stable per user and day, so the suggestion doesn't flicker on every visit.
   const hash = (str) => { let x = 2166136261; for (const ch of str) x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return x >>> 0; };
+  // The line in the water: the course each day's idea is fished from, the trail, the looking back, and the nudges.
+  const lure = createLure(db, { talk, hash, roomName, themesOf, log: (m) => console.warn(m) });
+  app.nudgeTick = (now) => lure.nudgeTick(now);
 
   app.get('/api/compass', auth, (req, res) => {
     const uid = req.user.id; const date = localDate(req.query.date); const from = String(req.query.from ?? '');
@@ -836,12 +899,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       for (const t of themesOf(s.id)) tScore.set(t.id, (tScore.get(t.id) ?? 0) + w);
     }
     const topThemes = [...tScore.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id]) => id);
-    let curiosity = null;
-    for (const tid of topThemes) {
-      const cands = fresh.filter((e) => themesOf(e.id).some((t) => t.id === tid));
-      const c = pick(cands, tid);
-      if (c) { curiosity = { entry: c, why: `You keep coming back to "${themeName.get(tid)}". This one asks the same question another way.` }; break; }
-    }
+    const curious = (not = null) => {
+      for (const tid of topThemes) {
+        const c = pick(fresh.filter((e) => e.id !== not && themesOf(e.id).some((t) => t.id === tid)), tid);
+        if (c) return { entry: c, why: `You keep coming back to "${themeName.get(tid)}". This one asks the same question another way.` };
+      }
+      return null;
+    };
+    let curiosity = curious();
     // Challenges, in order of how clear the signal is.
     let challenge = null;
     const recent = cq.recentReactions.all(uid);
@@ -881,7 +946,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         if (other) challenge = { entry: other, kind: 'field', why: `You haven't walked into ${missing === 'religion' ? 'the religious traditions' : missing} yet. A different kind of answer to the same questions.` };
       }
     }
-    if (challenge && curiosity && challenge.entry.id === curiosity.entry.id) curiosity = null;
+    if (challenge && curiosity && challenge.entry.id === curiosity.entry.id) curiosity = curious(challenge.entry.id);
     const practisedToday = Boolean(pq.logOn.get(uid, date));
     res.json({ curiosity, challenge, practice_nudge: practisedToday ? null : 'Ten seconds of practice' });
   });

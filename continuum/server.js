@@ -67,10 +67,15 @@ tts?.preferVoice(voiceName)
 
 const talk = createTalk({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.CONTINUUM_TALK_MODEL || undefined });
 
-createApp(db, {
+const app = createApp(db, {
   adminKey: process.env.CONTINUUM_ADMIN_KEY, tts, talk,
   talkDailyLimit: Number(process.env.CONTINUUM_TALK_DAILY_LIMIT) || undefined,
-}).listen(PORT, (err) => {
+});
+// Nudges: every ten minutes, a look at who is due a note (most are not). Set CONTINUUM_NUDGES=off to stop them.
+if (process.env.CONTINUUM_NUDGES !== 'off') {
+  setInterval(() => app.nudgeTick().then((n) => n && console.log(`Nudges sent: ${n}`)).catch((e) => console.warn(`Nudges: ${e.message}`)), 10 * 60_000).unref();
+}
+app.listen(PORT, (err) => {
   if (err?.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use: another copy of Continuum is probably still running, with older code.`);
     console.error('Close it first (Ctrl+C in its window). On Windows, if you cannot find it: Get-Process node | Stop-Process');

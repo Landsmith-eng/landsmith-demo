@@ -148,8 +148,8 @@ test('talk: weighing an opinion adds the weigh instructions and returns web sour
 test('a problem to consider: written once by Claude, kept, and never for today\'s card before it is written', async () => {
   const calls = [];
   const client = { beta: { messages: { create: async (params) => { calls.push(params); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Mara finds a wallet. What should she do, and why?' }] }; } } } };
-  // Only the problem writer's calls (Talk also notes views in the background after a daily answer).
-  const problemCalls = () => calls.filter((c) => c.output_config?.format?.schema !== VIEWS_SCHEMA);
+  // Only the problem writer's calls (Talk also notes views, and reads how the answer landed, in the background).
+  const problemCalls = () => calls.filter((c) => c.output_config?.format?.schema !== VIEWS_SCHEMA && !c.output_config?.format?.schema?.properties?.strength);
   const { server, call } = await boot(createTalk({ client }));
   try {
     const today = (await (await call(`/api/today?date=${D}`)).json()).node.id;

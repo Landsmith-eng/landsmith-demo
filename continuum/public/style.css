@@ -978,3 +978,38 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .source-first .plain { margin: 0 0 8px; }
 .source-line { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .source-first a { color: var(--accent); text-underline-offset: 3px; }
+
+/* The opening screen: one line in the water */
+.opener { font-family: var(--sans); font-size: .98rem; opacity: .9; margin: 4px 0 14px; padding: 10px 14px; border-radius: 16px 16px 16px 4px;
+  background: color-mix(in srgb, currentColor 9%, transparent); display: inline-block; max-width: 92%; }
+.line-prompt { font-size: clamp(1.35rem, 5.4vw, 1.85rem); line-height: 1.25; margin: 6px 0 6px; }
+.line-title { font-size: clamp(1.4rem, 5.5vw, 1.9rem); margin: 4px 0 12px; }
+.line-form { margin-top: 16px; }
+.line-form textarea { width: 100%; }
+.line-after { margin-top: 18px; }
+.ack { font-family: var(--display); font-size: 1.15rem; font-style: italic; margin: 10px 0 14px; animation: ack-in .8s ease both; }
+@keyframes ack-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.nod { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin: 14px 0 18px 4px; animation: nod 1.6s ease both; }
+@keyframes nod { 0% { opacity: 0; transform: scale(.4); } 35% { opacity: 1; transform: scale(1.5); } 100% { opacity: .75; transform: scale(1); } }
+.line-else { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 26px; font-size: .92rem; }
+.line-else .link { padding: 0; text-align: left; opacity: .85; }
+.hatch { width: 100%; }
+.hatch .row { gap: 8px; }
+.hatch input { flex: 1; min-width: 0; }
+.nudge-offer { margin-top: 22px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.nudge-offer p { margin: 0 0 10px; }
+/* The road behind */
+.road-path { list-style: none; margin: 10px 0 16px; padding: 0 0 0 18px; position: relative; }
+.road-path::before { content: ''; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; background: color-mix(in srgb, currentColor 22%, transparent); }
+.road-stop { position: relative; display: flex; flex-direction: column; padding: 4px 0 8px; }
+.road-stop::before { content: ''; position: absolute; left: -18px; top: 9px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; box-sizing: border-box; }
+.road-stop.bite::before { background: var(--accent); }
+.road-stop.nibble::before { background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); }
+.road-stop.miss::before { border-color: color-mix(in srgb, currentColor 35%, transparent); }
+.road-stop .link { padding: 0; text-align: left; font-family: var(--display); font-size: 1.02rem; }
+.synthesis { font-family: var(--display); font-size: 1.15rem; line-height: 1.5; }
+.road-look { margin-bottom: 8px; }
+.line-src a { margin-left: 4px; color: var(--accent); }
+.line-about { margin-top: 22px; }
+.line-about .source-first { margin-top: 6px; }
+.line-about .plain { font-size: .98rem; line-height: 1.55; opacity: .9; }
