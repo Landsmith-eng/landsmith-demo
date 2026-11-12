@@ -1904,9 +1904,14 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     res.json({ ok: true });
   });
   // Speech to text: the phone records, the server has ElevenLabs write it down (when ELEVENLABS_API_KEY is set).
-  app.get('/api/stt', auth, (req, res) => res.json({ enabled: Boolean(tts?.transcribe) }));
+  // When ElevenLabs refuses the key itself (no speech-to-text permission, or a bad key), it is off for every phone until
+  // the key is fixed (a new key restarts the server) or six hours pass, so phones go straight to their own voice
+  // typing instead of recording, uploading and failing on every first try.
+  let sttDown = null;
+  const sttLive = () => Boolean(tts?.transcribe) && !(sttDown && Date.now() < sttDown.until);
+  app.get('/api/stt', auth, (req, res) => res.json({ enabled: sttLive() }));
   app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
-    if (!tts?.transcribe) return res.status(404).json({ error: 'stt_off' });
+    if (!sttLive()) return res.status(503).json({ error: 'stt_off' });
     if (!Buffer.isBuffer(req.body) || req.body.length < 1000) {
       console.warn(`Speech to text: no usable audio arrived (${Buffer.isBuffer(req.body) ? `${req.body.length} bytes` : `content-type ${req.get('content-type')}`}).`);
       return res.status(400).json({ error: 'no_audio' });
@@ -1918,8 +1923,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       console.log(`Speech to text: ${Math.round(req.body.length / 1024)} KB of ${mime} -> ${r.text.length} characters (${r.model}).`);
       res.json({ text: r.text });
     } catch (e) {
+      // The real reason, for the server log (never the words: none came back). The phone gets a plain one.
       console.warn(`ElevenLabs refused speech to text: ${e.message}${e.why ? ` (${e.why})` : ''}`);
-      res.status(502).json({ error: e.message, why: e.why ?? null });
+      if (e.status === 401 || e.status === 403) {
+        sttDown = { until: Date.now() + 6 * 3600_000 };
+        console.warn('Speech to text is off for six hours: the ElevenLabs key needs the "Speech to Text" permission (ElevenLabs > Developers > API keys). Phones will use their own voice typing until then.');
+      }
+      res.status(502).json({ error: e.status === 401 || e.status === 403 ? 'stt_key' : 'stt_failed' });
     }
   });
   app.get('/api/tts/voices', auth, async (req, res) => {

@@ -111,6 +111,23 @@ test('speech to text: the recording goes to ElevenLabs Scribe and the text comes
   try { assert.deepEqual(await (await off.call('/api/stt')).json(), { enabled: false }); } finally { off.server.close(); }
 });
 
+test('speech to text with a key that lacks the permission: a plain error, then off for every phone, without asking ElevenLabs again', async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; return new Response(JSON.stringify({ detail: { status: 'missing_permissions', message: 'The API key you used is missing the permission speech_to_text to execute this operation.' } }), { status: 401 }); };
+  const { server, call } = await boot(createTts({ apiKey: 'k', fetchImpl }));
+  try {
+    const origin = new URL((await call('/api/stt')).url).origin;
+    const send = () => fetch(`${origin}/api/stt?lang=en`, { method: 'POST', headers: { 'x-continuum-token': 't', 'content-type': 'audio/webm' }, body: new Uint8Array(4000).fill(7) });
+    const r = await send();
+    assert.equal(r.status, 502);
+    assert.deepEqual(await r.json(), { error: 'stt_key' }); // the phone gets no raw message from ElevenLabs
+    assert.equal(calls, 1); // a refused key is not retried with the older model
+    assert.deepEqual(await (await call('/api/stt')).json(), { enabled: false });
+    assert.equal((await send()).status, 503);
+    assert.equal(calls, 1);
+  } finally { server.close(); }
+});
+
 test('reading with timings: the clip and each letter\'s start time, kept beside the clip', async () => {
   const calls = [];
   const fetchImpl = async (url, opts) => {

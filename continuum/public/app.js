@@ -971,7 +971,13 @@ const voiceLog = (event, detail = '') => { fetch('/api/voicelog', { method: 'POS
 // The way of speaking in can be chosen in the Voice sheet: auto (ElevenLabs when the server has it), or the phone's.
 const STT_KEY = 'continuum.speakin';
 const speakInWay = () => store.get(STT_KEY) ?? 'auto';
-const sttEnabled = async () => { if (sttOn === null) sttOn = await api('/api/stt').then((r) => r.enabled).catch(() => null); return Boolean(sttOn); };
+// After the server failed to write one down, this phone uses its own voice typing for a while without asking again.
+const STT_DOWN_KEY = 'continuum.stt.down';
+const sttEnabled = async () => {
+  if (sttOn === null && Recognition && Date.now() - Number(store.get(STT_DOWN_KEY) ?? 0) < 6 * 3600_000) sttOn = false;
+  if (sttOn === null) sttOn = await api('/api/stt').then((r) => r.enabled).catch(() => null);
+  return Boolean(sttOn);
+};
 if (canRecord) sttEnabled();
 const canSpeakIn = () => Boolean(Recognition || (canRecord && sttOn !== false));
 function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {}, onBlocked = (m) => notice(m), quietMs = 30000 } = {}) {
@@ -1010,20 +1016,27 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
           voiceLog('recorded', `${secs.toFixed(1)} s, ${Math.round(blob.size / 1024)} KB, ${blob.type}, ear ${earState}`);
           if (secs < .7 || blob.size < 1000) { notice('I did not catch anything. Tap Speak, talk, then tap again when you are done.'); return done(''); }
           show('busy');
+          const wait = new AbortController(); const tooLong = setTimeout(() => wait.abort(), 60_000);
           try {
-            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] || 'audio/webm' }, body: blob });
+            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] || 'audio/webm' }, body: blob, signal: wait.signal });
             const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw Object.assign(new Error(j.error || `http_${r.status}`), { why: j.why, status: r.status });
-            voiceLog('written down', `${(j.text ?? '').length} characters`);
+            if (!r.ok) throw Object.assign(new Error(j.error || `http_${r.status}`), { status: r.status });
+            voiceLog('written down', `${(j.text ?? '').length} characters`); // a count only, never the words
             if (!j.text) notice('Nothing was heard in that recording. Try again a little closer to the phone.');
             put(j.text ?? ''); done(j.text ?? '');
           } catch (e) {
-            voiceLog('not written down', `${e.status ?? ''} ${e.message} ${e.why ?? ''}`);
-            // ElevenLabs said no (often a key without speech-to-text access): use the phone's own voice typing from now on.
-            if (e.status === 502 && Recognition) sttOn = false;
-            notice(`Could not write that down${e.why ? `: ${e.why}` : ''}.${e.status === 502 && Recognition ? ' Switching to the phone\'s own voice typing; tap Speak again.' : ' Try again, or type it.'}`);
+            const why = e.name === 'AbortError' ? 'timed out' : `${e.status ?? 'offline'} ${e.message}`;
+            voiceLog('not written down', why);
+            // The server cannot write it down (its key, or the service): the phone's own voice typing, from now on.
+            const serverSide = e.status >= 500 || e.status === 404;
+            if (serverSide) { sttOn = false; store.set(STT_DOWN_KEY, String(Date.now())); }
+            const fallback = serverSide && Recognition;
+            notice(fallback ? 'Sorry, that recording could not be written down. Switching to the phone\'s own voice typing: tap Speak and say it again.'
+              : e.name === 'AbortError' ? 'Writing that down took too long. Try a shorter piece, or type it.'
+                : !navigator.onLine ? 'You seem to be offline. Type it for now, or try again when you are connected.'
+                  : 'Sorry, that could not be written down. Try again, or type it.');
             done('');
-          }
+          } finally { clearTimeout(tooLong); }
         };
         if (ear?.state === 'running') {
           try {
@@ -1046,7 +1059,7 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
 
   // ── The browser's own recognition ──
   function recognizer() {
-    let rec = null; let heard = ''; let quiet = 0;
+    let rec = null; let heard = ''; let quiet = 0; let failed = null; let quickEnds = 0; let began = 0;
     const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
     function listen() {
       const r = rec = new Recognition();
@@ -1058,16 +1071,35 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
         else session = list.map((x) => x[0].transcript).join(' ');
         hush(); put(`${heard} ${session}`);
       };
-      r.onerror = (e) => { voiceLog('phone recognition error', e.error); if (e.error === 'not-allowed' || e.error === 'service-not-allowed') blocked(); };
+      r.onerror = (e) => {
+        voiceLog('phone recognition error', e.error);
+        if (e.error === 'no-speech' || e.error === 'aborted') return; // a pause, or our own stop: carry on
+        failed = e.error; listening = false; // anything else: stop, and say so once
+      };
       r.onend = () => {
         heard = `${heard} ${session}`.replace(/\s+/g, ' ').trim(); rec = null;
-        if (listening) { try { listen(); return; } catch { listening = false; } }
+        // Phrase by phrase it starts again after each pause, but never in a tight loop: three quick empty ends stop it.
+        quickEnds = !session && Date.now() - began < 1500 ? quickEnds + 1 : 0;
+        if (quickEnds >= 3) { failed = failed ?? 'restart-loop'; listening = false; }
+        if (listening) { try { listen(); return; } catch (err) { failed = err?.name ?? 'restart'; listening = false; } }
+        if (failed) {
+          clearTimeout(quiet);
+          if (failed === 'not-allowed' || failed === 'service-not-allowed') { put(heard); blocked(); return; }
+          notice(failed === 'network' ? 'The phone\'s voice typing needs a connection, and it could not reach it. Try again, or type it.'
+            : failed === 'audio-capture' ? 'The microphone is busy or not working (another app may be using it). Try again, or type it.'
+              : failed === 'language-not-supported' ? 'The phone\'s voice typing does not support this language. Type it instead.'
+                : failed === 'restart-loop' ? 'I did not hear anything. Tap Speak and talk a little closer to the phone, or type it.'
+                : 'Voice typing stopped unexpectedly. Try again, or type it.');
+        }
         clearTimeout(quiet); voiceLog('phone recognition done', `${heard.length} characters`); put(heard); done(heard);
       };
-      r.start();
+      began = Date.now(); r.start();
     }
     return {
-      start() { heard = ''; hush(); try { listen(); } catch { listening = false; show('off'); } },
+      start() {
+        heard = ''; failed = null; quickEnds = 0; hush();
+        try { listen(); } catch (err) { voiceLog('phone recognition failed to start', err?.name); listening = false; show('off'); notice('Voice typing could not start. Try again, or type it.'); }
+      },
       finish() { listening = false; if (rec) rec.stop(); else { clearTimeout(quiet); done(heard); } },
       cancel() { listening = false; clearTimeout(quiet); if (rec) { rec.onend = null; rec.abort(); rec = null; } },
     };
@@ -1086,11 +1118,15 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
     if (!useRecorder) ear?.close().catch(() => {});
     engine = useRecorder ? recorder(ear) : Recognition ? recognizer() : null;
     if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
-    engine.start();
+    await engine.start();
   }
+  const begin = () => start().catch((e) => {
+    voiceLog('speaking in failed', `${e?.name ?? ''} ${e?.message ?? ''}`);
+    listening = false; show('off'); notice('Voice typing ran into a problem. Try again, or type it.');
+  });
   function stop() { const was = listening; listening = false; engine?.cancel(); if (was || button.classList.contains('on')) show('off'); }
-  button.addEventListener('click', () => { if (button.disabled) return; if (listening) { listening = false; engine?.finish(); return; } start(); });
-  return { button, start, stop, active: () => listening };
+  button.addEventListener('click', () => { if (button.disabled) return; if (listening) { listening = false; engine?.finish(); return; } begin(); });
+  return { button, start: begin, stop, active: () => listening };
 }
 listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
 voiceBtn.addEventListener('click', () => chooseVoice());
