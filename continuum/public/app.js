@@ -1140,7 +1140,7 @@ function speakInSection() {
   const out = h('p', { class: 'muted small', role: 'status' });
   const dict = dictation(ta, { label: 'Test the microphone', onDone: (said) => { out.textContent = said ? `Heard ${said.split(/\s+/).length} words. If they are wrong or repeated, try the other way above.` : 'Nothing came through. Check the message at the top, and the server window.'; } });
   const way = (k, label) => h('button', { type: 'button', class: `chip ${speakInWay() === k ? 'on' : ''}`, 'aria-pressed': String(speakInWay() === k), onclick: (e) => {
-    store.set(STT_KEY, k); if (k !== 'phone') sttOn = null;
+    store.set(STT_KEY, k); if (k !== 'phone') { sttOn = null; store.del(STT_DOWN_KEY); } // choosing it asks the server afresh
     e.currentTarget.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === e.currentTarget; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
   } }, label);
   return h('div', {},
