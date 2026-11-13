@@ -80,6 +80,7 @@ function h(tag, attrs = {}, ...children) {
 function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
   if (talkPlayer.state !== 'idle') stopTalkVoice(); // leaving a reply being read aloud stops it
+  document.documentElement.classList.remove('talk-calm', 'peek', 'speaking');
   document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
   if (!staged) { unstage(); setWallpaper(pageBg ?? brightFor(currentTab ?? 'page') ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
@@ -1961,7 +1962,19 @@ function skipTalk(delta) {
 }
 talkBarFollow.addEventListener('click', () => { talkPlayer.follow = true; talkBarFollow.hidden = true; followTalk(true); });
 document.body.append(talkBar);
-const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; } };
+// A calm Talk screen: only the two voices. The menus, the header, the playback controls (and, while a reply is read,
+// the box for writing) fade away; a tap anywhere brings them back for a few seconds.
+let peekTimer = 0;
+function peek(ms = 3500) {
+  const root = document.documentElement; if (!root.classList.contains('talk-calm')) return;
+  root.classList.add('peek'); clearTimeout(peekTimer); peekTimer = setTimeout(() => root.classList.remove('peek'), ms);
+}
+addEventListener('pointerup', (e) => {
+  if (!document.documentElement.classList.contains('talk-calm')) return;
+  if (e.target.closest('textarea, input, select, .talk-head')) return;
+  peek(); // a tap on the controls themselves keeps them up a little longer
+});
+const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; peek(); } };
 for (const ev of ['touchmove', 'wheel']) addEventListener(ev, userScrolled, { passive: true });
 addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && e.target === document.body) userScrolled(); });
 // Keep the sentence being read in view: its start a third of the way down, or for a long sentence, the part being
@@ -1992,7 +2005,10 @@ function setPlayState(view, state) {
   view.btn.setAttribute('aria-pressed', String(state === 'playing'));
   view.btn.classList.remove('wants-tap');
   view.spans.forEach((sp, k) => sp.classList.toggle('now', state !== 'idle' && k === talkPlayer.i));
+  const was = document.documentElement.classList.contains('speaking');
   talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
+  document.documentElement.classList.toggle('speaking', state === 'playing');
+  if (state === 'playing' && !was) peek(2500); // show the controls as reading starts, then let them go
   talkBarPause.textContent = state === 'paused' ? '▶' : '❚❚'; talkBarPause.setAttribute('aria-label', state === 'paused' ? 'Play' : 'Pause');
   if (state === 'idle') { talkBarFollow.hidden = true; }
   placeTalkBar();
@@ -2103,7 +2119,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       });
       btn.addEventListener('click', () => togglePlay(view));
       again.addEventListener('click', () => playFrom(view, 0));
-      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls' }, btn, again)].filter(Boolean));
+      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls chrome' }, btn, again)].filter(Boolean));
       return view;
     }
     // A reply that lays out a path (several ideas named in order) can be walked as a journey: it leads the next days.
@@ -2132,7 +2148,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
           ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out')); }),
         ...(web ?? []).map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))),
       ];
-      return items.length > 0 && h('details', { class: 'talk-sources', open: '' }, h('summary', { class: 'eyebrow' }, 'Sources'), h('ul', {}, items));
+      return items.length > 0 && h('details', { class: 'talk-sources' }, h('summary', { class: 'eyebrow' }, `Sources · ${items.length}`), h('ul', {}, items));
     };
     state.turns.forEach((x) => bubble(x.who, x.text, true, x.via));
     if (!state.turns.length) {
@@ -2157,6 +2173,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         const b = h('button', { type: 'button', class: `chip ${k === current ? 'on' : ''}`, 'aria-pressed': String(k === current) }, m.label);
         b.addEventListener('click', () => {
           current = k; ta.placeholder = m.placeholder;
+          const title = document.querySelector('.talk-head-title'); if (title) title.textContent = m.label;
           setWallpaper(talkPlate(k), .35, { plain: true });
           b.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === b; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
           ta.focus();
@@ -2180,6 +2197,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       const sendAs = current !== 'talk' ? current : null; // every mode but plain Talk asks for its own kind of reply
       const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
       const spoken = byVoice; byVoice = false; // how this message was given: spoken in, spoken back
+      document.querySelector('.talk-head')?.removeAttribute('open');
       stopTalkVoice(); stopMic();
       send.disabled = true; ta.value = ''; status.textContent = '';
       bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text, true, spoken ? 'voice' : 'typed');
@@ -2240,24 +2258,33 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     });
     const mic = dict?.button;
     const stopMic = () => dict?.stop();
-    compose.append(h('div', { class: 'row' }, mic || h('span'), send),
-      h('button', { type: 'button', class: 'link small', style: 'padding:4px 0', onclick: () => chooseVoice() }, 'Microphone: test it, or switch how it listens'));
+    compose.append(h('div', { class: 'row' }, mic || h('span'), send));
     if (current === 'act') {
       log.replaceChildren(h('div', { class: 'talk-turn from-map' },
         `Where do you live? Name a town or a zip code, and I will look for current ways to act on "${practice.title}" near you: volunteering, drives, and civic roles like working the polls. The place is used only for this search and not kept.`));
     }
-    render(
-      h('h1', {}, current === 'act' ? 'Act on it near you' : 'Talk'),
+    // Above the conversation: the title, the modes and the settings, folded into one small line once a conversation
+    // is under way, so the screen belongs to the two voices.
+    const headBody = h('div', { class: 'talk-head-body' },
       current !== 'act' && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showParthenon() }, 'The Parthenon: talk with your group →')),
       h('p', { class: 'muted small' }, current === 'act'
         ? 'Found with a web search, so check each one before you go.'
         : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
       modeChips,
-      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && summary.button, current !== 'act' && fresh, current !== 'act' && pastBtn),
+      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && fresh, current !== 'act' && pastBtn,
+        h('button', { type: 'button', class: 'chip', onclick: () => chooseVoice() }, 'Microphone and voice')));
+    const folded = state.turns.length > 0 && current !== 'act';
+    const head = h('details', { class: 'talk-head', ...(folded ? {} : { open: '' }) },
+      h('summary', {}, h('span', { class: 'talk-head-title' }, current === 'act' ? 'Act on it near you' : TALK_MODES[current]?.label ?? 'Talk'), h('span', { class: 'muted small' }, ' · options')),
+      headBody);
+    render(
+      head,
+      current !== 'act' && h('div', { class: 'talk-tools chrome' }, summary.button),
       summary.box,
       log,
       compose,
       status);
+    document.documentElement.classList.add('talk-calm');
     if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
     if (seed && draft && voice && dict) { ta.value = seed; dict.start(); } // answer aloud: the microphone is already listening
     else if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }

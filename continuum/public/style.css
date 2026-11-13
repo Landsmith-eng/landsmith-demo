@@ -1050,3 +1050,23 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .sum-when { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
 .sum-link { margin: 4px 0 6px; font-size: .95rem; }
 .sum-ask { padding: 0; text-align: left; font-style: italic; color: var(--accent); }
+
+/* Talk, calm: the two voices first. Everything else fades, and a tap brings it back for a few seconds. */
+html.talk-calm header.bar, html.talk-calm .corner, html.talk-calm .dock, html.talk-calm .chrome,
+html.talk-calm.speaking .talk-compose, html.talk-calm.speaking .talk-bar {
+  opacity: 0; pointer-events: none; transition: opacity .5s ease;
+}
+html.talk-calm.peek header.bar, html.talk-calm.peek .corner, html.talk-calm.peek .dock, html.talk-calm.peek .chrome,
+html.talk-calm.peek.speaking .talk-compose, html.talk-calm.peek.speaking .talk-bar {
+  opacity: 1; pointer-events: auto; transition: opacity .2s ease;
+}
+html.talk-calm .talk-bar { transition: opacity .5s ease; }
+.talk-head { margin: 0 0 10px; }
+.talk-head > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 2px; padding: 4px 0; }
+.talk-head > summary::-webkit-details-marker { display: none; }
+.talk-head > summary::before { content: '▸'; font-size: .8rem; margin-right: 8px; opacity: .7; transition: transform .2s; }
+.talk-head[open] > summary::before { transform: rotate(90deg); }
+.talk-head-title { font-family: var(--display); font-size: 1.35rem; }
+.talk-head-body { padding: 4px 0 6px; }
+.talk-tools { display: flex; justify-content: flex-end; margin: -6px 0 4px; }
+.talk-sources summary { cursor: pointer; }
