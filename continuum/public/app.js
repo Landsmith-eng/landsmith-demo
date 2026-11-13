@@ -79,6 +79,7 @@ function h(tag, attrs = {}, ...children) {
 
 function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
+  if (talkPlayer.state !== 'idle') stopTalkVoice(); // leaving a reply being read aloud stops it
   document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
   if (!staged) { unstage(); setWallpaper(pageBg ?? brightFor(currentTab ?? 'page') ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
@@ -669,8 +670,17 @@ function playClip(url, run) {
     audioEl.src = url;
     audioEl.preservesPitch = true;
     audioEl.playbackRate = readRate();
-    audioEl.play().catch(done);
+    // The browser refusing to play without a tap (autoplay rules) is not the end of the clip: say so, so the caller can
+    // ask for a tap instead of racing silently through every sentence.
+    audioEl.play().catch((e) => { if (e?.name === 'NotAllowedError') { URL.revokeObjectURL(url); resolve('blocked'); } else done(); });
   });
+}
+// The tap on the microphone is the gesture that lets a reply be heard later, after it has been written: play a moment
+// of silence through the same audio element (and the phone's voice) right then, so the browser counts them as allowed.
+const SILENCE_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+function primeAudio() {
+  try { if (audioEl.paused) { audioEl.src = SILENCE_WAV; audioEl.play().then(() => audioEl.pause()).catch(() => {}); } } catch { /* nothing to prime */ }
+  try { if (speech && !speech.speaking) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speech.speak(u); } } catch { /* no phone voice */ }
 }
 
 // The reader: the stage as a queue of sentences. A clear play/pause key shows in the middle of the screen as reading
@@ -1107,7 +1117,7 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
 
   async function start() {
     if (listening) return;
-    onStart();
+    onStart(); primeAudio();
     listening = true; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
     show('on');
     // Made right at the tap, before anything is awaited, so Android lets it run.
@@ -1921,12 +1931,43 @@ const spokenReply = (text, refs) => text.replace(/\[\[([a-z0-9_]+)\]\]/g, (_, id
 
 // Reading a reply aloud, one sentence at a time, so it can be paused, repeated, or started from any sentence (tap it).
 // One reply plays at a time; the sentence being read is highlighted. view = { spans, spoken, btn, clips }.
-const talkPlayer = { view: null, i: 0, state: 'idle', run: null };
+const talkPlayer = { view: null, i: 0, state: 'idle', run: null, follow: true, part: 0 };
+// While a reply is read aloud: a bar at the top to stop it (or pause), and the page follows the sentence being read
+// (highlighted) until the user scrolls it themselves; then "Follow along" brings it back.
+const talkBar = h('div', { class: 'talk-bar', hidden: true, role: 'region', 'aria-label': 'Reading aloud' });
+const talkBarPause = h('button', { type: 'button', class: 'chip' }, 'Pause');
+const talkBarFollow = h('button', { type: 'button', class: 'chip', hidden: true }, 'Follow along');
+talkBar.append(h('button', { type: 'button', class: 'chip stop', onclick: () => stopTalkVoice() }, '■ Stop'), talkBarPause, talkBarFollow);
+talkBarPause.addEventListener('click', () => talkPlayer.view && togglePlay(talkPlayer.view));
+talkBarFollow.addEventListener('click', () => { talkPlayer.follow = true; talkBarFollow.hidden = true; followTalk(true); });
+document.body.append(talkBar);
+const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; } };
+for (const ev of ['touchmove', 'wheel']) addEventListener(ev, userScrolled, { passive: true });
+addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && e.target === document.body) userScrolled(); });
+// Keep the sentence being read in view: its start a third of the way down, or for a long sentence, the part being
+// read (from the clip's progress, or the phone voice's word position).
+function followTalk(jump = false) {
+  const p = talkPlayer; const sp = p.view?.spans[p.i];
+  if (!sp || !p.follow || !document.body.contains(sp)) return;
+  const r = sp.getBoundingClientRect(); const vh = innerHeight;
+  const room = (document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? vh) - 16;
+  const at = r.height > vh * .3 ? r.top + r.height * Math.min(1, p.part) : r.top;
+  const want = vh * .32;
+  if (jump || at < 70 || at > room - 40 || (r.height > vh * .3 && Math.abs(at - want) > vh * .15)) window.scrollBy({ top: at - want, behavior: 'smooth' });
+}
+audioEl.addEventListener('timeupdate', () => {
+  if (talkPlayer.state !== 'playing' || !audioEl.duration) return;
+  talkPlayer.part = audioEl.currentTime / audioEl.duration; followTalk();
+});
 function setPlayState(view, state) {
   if (!view) return;
   view.btn.textContent = state === 'playing' ? 'Pause' : state === 'paused' ? 'Resume' : 'Listen';
   view.btn.setAttribute('aria-pressed', String(state === 'playing'));
+  view.btn.classList.remove('wants-tap');
   view.spans.forEach((sp, k) => sp.classList.toggle('now', state !== 'idle' && k === talkPlayer.i));
+  talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
+  talkBarPause.textContent = state === 'paused' ? 'Resume' : 'Pause';
+  if (state === 'idle') { talkBarFollow.hidden = true; }
 }
 function stopTalkVoice() {
   const p = talkPlayer;
@@ -1937,8 +1978,8 @@ function stopTalkVoice() {
 async function playFrom(view, i) {
   stopTalkVoice();
   const p = talkPlayer; const run = { stop: false, wake: null };
-  Object.assign(p, { view, i, state: 'playing', run });
-  setPlayState(view, 'playing');
+  Object.assign(p, { view, i, state: 'playing', run, follow: true, part: 0 });
+  setPlayState(view, 'playing'); followTalk(true);
   const plan = await voicePlan();
   const clip = (k) => {
     if (!view.clips.has(k)) view.clips.set(k, fetchBlob(view.spoken[k], plan.el).catch((e) => { view.clips.delete(k); throw e; }));
@@ -1946,19 +1987,26 @@ async function playFrom(view, i) {
   };
   let useEl = 'el' in plan;
   while (p.i < view.spoken.length && !run.stop) {
-    setPlayState(view, 'playing');
+    p.part = 0; setPlayState(view, 'playing'); followTalk();
     if (useEl) {
       try {
         const blob = await clip(p.i);
         if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
         if (run.stop) return false;
-        await playClip(URL.createObjectURL(blob), run);
+        if (await playClip(URL.createObjectURL(blob), run) === 'blocked') {
+          // The browser wants a tap first: ask for one, on the reply itself.
+          stopTalkVoice(); view.btn.textContent = '▶ Tap to hear the reply'; view.btn.classList.add('wants-tap');
+          return false;
+        }
       } catch (e) {
         if (!speech) break;
-        notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ''}. Using the phone's voice.`);
+        notice('The natural voice is not available right now. Using the phone\'s voice.');
         useEl = false; continue;
       }
-    } else await sayPhone(view.spoken[p.i], plan.phone ?? null, run);
+    } else {
+      const len = view.spoken[p.i].length || 1;
+      await sayPhone(view.spoken[p.i], plan.phone ?? null, run, (c) => { p.part = c / len; followTalk(); });
+    }
     if (run.stop || p.state === 'paused') return false; // paused: stay on this sentence
     p.i++;
   }
@@ -2005,9 +2053,10 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     let current = mode;
     const refs = { ...state.refs };
     const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
-    const bubble = (who, text, done = true) => {
+    const bubble = (who, text, done = true, via = null) => {
       const b = h('div', { class: `talk-turn ${who === 'you' ? 'from-you' : 'from-map'}` });
-      if (who === 'you') b.textContent = text; else if (done) finishReply(b, text); else b.replaceChildren(...replyNodes(text, refs, false));
+      if (who === 'you') { b.textContent = text; if (via === 'voice') b.prepend(h('span', { class: 'said-aloud', title: 'Spoken', 'aria-label': 'Spoken' }, '🎙 ')); }
+      else if (done) finishReply(b, text); else b.replaceChildren(...replyNodes(text, refs, false));
       log.append(b); return b;
     };
     // A finished reply: each sentence a tap target (listen from here), and Listen/Pause/Resume and Repeat below.
@@ -2055,19 +2104,19 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       ];
       return items.length > 0 && h('details', { class: 'talk-sources', open: '' }, h('summary', { class: 'eyebrow' }, 'Sources'), h('ul', {}, items));
     };
-    state.turns.forEach((x) => bubble(x.who, x.text));
+    state.turns.forEach((x) => bubble(x.who, x.text, true, x.via));
     if (!state.turns.length) {
       log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
     }
-    // Replies are silent unless reading aloud is turned on here; a reply to a spoken message is read aloud unless it
-    // was turned off. Off always wins.
-    const speakOn = () => store.get(SPEAK_KEY) === 'on';
-    const speakOff = () => store.get(SPEAK_KEY) === 'off';
-    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(speakOn()) }, speakOn() ? '🔊 Reading replies aloud: on' : '🔇 Reading replies aloud: off');
-    speakToggle.addEventListener('click', () => {
-      store.set(SPEAK_KEY, speakOn() ? 'off' : 'on'); if (!speakOn()) stopTalkVoice();
-      speakToggle.textContent = speakOn() ? '🔊 Reading replies aloud: on' : '🔇 Reading replies aloud: off'; speakToggle.setAttribute('aria-pressed', String(speakOn()));
-    });
+    // Spoken in, spoken back: a message said aloud is always answered aloud. A typed one is answered in text only,
+    // unless replies are set to be read aloud always. (The old on/off switch: "on" is always; "off" becomes the default.)
+    const always = () => store.get(SPEAK_KEY) === 'on';
+    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(always()) });
+    const label = () => { speakToggle.textContent = always() ? '🔊 Replies aloud: always' : '🎙 Replies aloud: when I speak'; speakToggle.setAttribute('aria-pressed', String(always())); };
+    label();
+    speakToggle.addEventListener('click', () => { store.set(SPEAK_KEY, always() ? 'voice' : 'on'); if (!always()) stopTalkVoice(); label(); });
+    const summary = summaryPanel(() => convoId);
+    const pastBtn = h('button', { type: 'button', class: 'chip', onclick: () => { stopTalkVoice(); showTalkHistory(); } }, 'Past conversations');
     const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
 
@@ -2100,14 +2149,15 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       if (!typed || send.disabled) return;
       const sendAs = current !== 'talk' ? current : null; // every mode but plain Talk asks for its own kind of reply
       const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
+      const spoken = byVoice; byVoice = false; // how this message was given: spoken in, spoken back
       stopTalkVoice(); stopMic();
       send.disabled = true; ta.value = ''; status.textContent = '';
-      bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text);
+      bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text, true, spoken ? 'voice' : 'typed');
       const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
       keepInView(out);
       let reply = ''; let view = null;
       try {
-        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), ...(sendAs ? { mode: sendAs } : {}) }) });
+        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), via: spoken ? 'voice' : 'typed', ...(sendAs ? { mode: sendAs } : {}) }) });
         if (!res.ok) {
           const e = await res.json().catch(() => ({}));
           throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
@@ -2135,8 +2185,8 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
             else if (m.t === 'error') throw new Error(m.error);
           }
         }
-        const spoken = byVoice; byVoice = false;
-        if ((speakOn() || (spoken && !speakOff())) && view) {
+        summary.stale();
+        if ((spoken || always()) && view) {
           const finished = await playFrom(view, 0);
           // Your turn: after a spoken exchange, listen again (it stops by itself if nothing is said).
           if (spoken && finished && dict && document.body.contains(ta)) { status.textContent = 'Your turn. Speak, or tap to stop.'; dict.start(); }
@@ -2173,7 +2223,8 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         ? 'Found with a web search, so check each one before you go.'
         : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
       modeChips,
-      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && fresh),
+      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && summary.button, current !== 'act' && fresh, current !== 'act' && pastBtn),
+      summary.box,
       log,
       compose,
       status);
@@ -2182,6 +2233,69 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     else if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
     else if (seed) { ta.value = seed; submit(); }
     if (log.lastElementChild) keepInView(log.lastElementChild);
+  });
+}
+
+// The summary of a conversation: what it is about, the key points, the perspectives offered, and the sources. Kept up
+// to date by the server after each exchange; here it opens and closes, and refreshes when a new reply has come in.
+const PERSP_LABEL = { philosophy: 'Philosophy', psychology: 'Psychology', tradition: 'Tradition', science: 'Science', law: 'Law', other: 'Other' };
+function summaryView(s) {
+  const ideas = s.sources?.ideas ?? []; const pages = s.sources?.pages ?? [];
+  return [
+    h('h3', { class: 'sum-title' }, s.title || 'This conversation'),
+    s.points.length ? h('ul', { class: 'sum-points' }, s.points.map((p) => h('li', {}, p))) : h('p', { class: 'muted small' }, 'Nothing to sum up yet.'),
+    s.perspectives.length > 0 && h('div', {}, h('div', { class: 'eyebrow' }, 'Perspectives'),
+      h('ul', { class: 'sum-persp' }, s.perspectives.map((p) => h('li', {}, h('span', { class: 'sum-kind' }, PERSP_LABEL[p.kind] ?? p.kind), ' ', h('strong', {}, p.name), `: ${p.gist}`)))),
+    (ideas.length > 0 || pages.length > 0) && h('div', {}, h('div', { class: 'eyebrow' }, 'Sources'),
+      h('ul', { class: 'sum-src' },
+        ideas.map((r) => h('li', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); walkTo(r.id, []); } }, r.title),
+          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`), ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out'))),
+        pages.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))))),
+    s.pending && h('p', { class: 'muted small' }, 'Updating with the latest exchange…'),
+  ];
+}
+async function loadSummary(id, box, { tries = 12 } = {}) {
+  let s = null;
+  for (let k = 0; k < tries; k++) {
+    s = await api(`/api/talk/${id}/summary?date=${today()}`).catch(() => null);
+    if (!document.body.contains(box)) return;
+    if (!s) { box.replaceChildren(h('p', { class: 'muted small' }, 'Could not load the summary. Try again.')); return; }
+    box.replaceChildren(...summaryView(s).filter(Boolean));
+    if (!s.pending) return;
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+}
+function summaryPanel(idOf) {
+  const box = h('div', { class: 'talk-summary', hidden: true, 'aria-live': 'polite' });
+  const button = h('button', { type: 'button', class: 'chip', 'aria-expanded': 'false' }, 'Summary');
+  const open = () => { const id = idOf(); if (!id) { box.replaceChildren(h('p', { class: 'muted small' }, 'The summary starts with your first message.')); return; } box.replaceChildren(h('p', { class: 'muted small' }, 'Loading…')); loadSummary(id, box); };
+  button.addEventListener('click', () => {
+    box.hidden = !box.hidden; button.setAttribute('aria-expanded', String(!box.hidden)); button.classList.toggle('on', !box.hidden);
+    if (!box.hidden) open();
+  });
+  return { box, button, stale: () => { if (!box.hidden) open(); } };
+}
+// Past conversations: each with its summary's title and first points; open it to carry on, or read its summary here.
+function showTalkHistory() {
+  setNav('talk');
+  return guarded(async () => {
+    const { talks } = await api('/api/talks');
+    pageBg = talkPlate('talk');
+    render(
+      h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showTalk() }, '← Talk')),
+      h('h1', {}, 'Past conversations'),
+      talks.length ? h('ul', { class: 'path talk-history' }, talks.map((t) => {
+        const box = h('div', { class: 'talk-summary', hidden: true });
+        const sum = h('button', { type: 'button', class: 'chip' }, 'Summary');
+        sum.addEventListener('click', () => { box.hidden = !box.hidden; sum.classList.toggle('on', !box.hidden); if (!box.hidden) { box.replaceChildren(h('p', { class: 'muted small' }, 'Loading…')); loadSummary(t.id, box); } });
+        return h('li', {},
+          h('div', { class: 'eyebrow' }, `${t.updated.slice(0, 10)} · ${t.turns} ${t.turns === 1 ? 'message' : 'messages'}`),
+          h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => { store.set(TALK_KEY, String(t.id)); showTalk(); } }, h('span', { class: 't' }, t.title || 'A conversation')),
+          t.points.length > 0 && h('p', { class: 'muted small' }, t.points.join(' ')),
+          h('div', { class: 'row', style: 'justify-content:flex-start' }, sum,
+            h('button', { type: 'button', class: 'chip', onclick: () => { store.set(TALK_KEY, String(t.id)); showTalk(); } }, 'Carry on')),
+          box);
+      })) : h('p', { class: 'muted' }, 'No conversations yet. Say what is on your mind in Talk.'));
   });
 }
 

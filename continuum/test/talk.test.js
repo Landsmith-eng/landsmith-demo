@@ -171,3 +171,42 @@ test('a problem to consider: written once by Claude, kept, and never for today\'
     assert.equal(problemCalls().length, 2);
   } finally { server.close(); }
 });
+
+test('talk: each message keeps how it was said; a running summary with perspectives and sources, kept with the conversation; the history lists it', async () => {
+  const reply = (text) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
+  const fake = fakeClaude([reply('Epictetus would say [[epictetus_up_to_us]]: your anger is a judgement.'), reply('Seneca agreed, and so does CBT.')]);
+  const summaries = [];
+  fake.client.beta.messages.create = async (params) => {
+    const schema = params.output_config?.format?.schema;
+    if (schema?.properties?.perspectives) {
+      summaries.push(params.messages[0].content);
+      const n = summaries.length;
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ title: 'Anger at work', points: n === 1 ? ['You said your boss makes you furious.'] : ['You said your boss makes you furious.', 'You asked whether anger is ever useful.'], perspectives: [{ kind: 'philosophy', name: 'Epictetus', gist: 'Anger comes from our judgement, not the event.' }] }) }] };
+    }
+    return { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"items":[]}' }] };
+  };
+  const { server, call, lines } = await boot(createTalk({ client: fake.client }));
+  try {
+    const first = await lines(await call('/api/talk', { text: 'My boss makes me furious.', date: D, via: 'voice' }));
+    const id = first[0].id;
+    await lines(await call('/api/talk', { id, text: 'Is anger ever useful?', date: D }));
+    for (let i = 0; i < 50 && summaries.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 20));
+    const t = await (await call(`/api/talk?id=${id}&date=${D}`)).json();
+    assert.deepEqual(t.turns.filter((x) => x.who === 'you').map((x) => x.via), ['voice', 'typed']);
+    // Incremental: the second update sees the summary so far and only the new turns.
+    assert.equal(summaries.length, 2);
+    assert.match(summaries[1], /The summary so far/);
+    assert.doesNotMatch(summaries[1], /boss makes me furious/);
+    assert.match(summaries[0], /Epictetus|Some things are up to us/); // ids are names, not [[ids]], for the model
+    const s = await (await call(`/api/talk/${id}/summary?date=${D}`)).json();
+    assert.equal(s.title, 'Anger at work');
+    assert.equal(s.points.length, 2);
+    assert.equal(s.perspectives[0].name, 'Epictetus');
+    assert.equal(s.sources.ideas[0].id, 'epictetus_up_to_us');
+    assert.equal(s.pending, false);
+    const list = (await (await call('/api/talks')).json()).talks;
+    assert.equal(list[0].id, id); assert.equal(list[0].title, 'Anger at work');
+    assert.equal((await call('/api/talk/9999/summary')).status, 404);
+  } finally { server.close(); }
+});

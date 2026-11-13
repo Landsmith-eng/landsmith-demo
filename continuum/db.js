@@ -330,7 +330,8 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // Columns added after the first testers' databases were created. SQLite has no ADD COLUMN IF NOT EXISTS.
 const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT'], ['nodes', 'room', 'TEXT'],
-  ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT']];
+  ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT'],
+  ['talks', 'vias', 'TEXT'], ['talks', 'sources', 'TEXT'], ['talks', 'summary', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });

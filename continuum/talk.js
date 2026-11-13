@@ -265,6 +265,35 @@ export async function noteViews(talk, { said, context = '', catalogue }) {
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
 }
 
+// A running summary of one conversation, brought up to date after each exchange from the summary so far and the new
+// turns only (so it costs little however long the talk runs). Sources are not asked of the model: the app lists the
+// ideas the replies named and the pages a search found.
+export const TALK_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    points: { type: 'array', items: { type: 'string' } },
+    perspectives: { type: 'array', items: { type: 'object', properties: {
+      kind: { type: 'string', enum: ['philosophy', 'psychology', 'tradition', 'science', 'law', 'other'] },
+      name: { type: 'string' }, gist: { type: 'string' } }, required: ['kind', 'name', 'gist'], additionalProperties: false } },
+  },
+  required: ['title', 'points', 'perspectives'],
+  additionalProperties: false,
+};
+export async function summarizeTalk(talk, { previous = null, turns }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 3000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: TALK_SUMMARY_SCHEMA } },
+    system: 'You keep a short running summary of one conversation in Continuum, a philosophy app, for its user to look back on. Update the summary so far with the new turns. title: what the conversation is about, in three to eight words. points: the key points so far, at most seven, each one plain sentence, in the order they came up; keep earlier ones unless the new turns changed them, and attribute what the user said to "you" ("You argued that…"). perspectives: each distinct perspective the replies offered (a philosophical idea or thinker, a school of psychology, a religious or wisdom tradition, a scientific finding, a legal view), with its name and its gist for this conversation in one sentence; at most eight, merging repeats. Use only what is in the conversation; never add sources, quotations or facts that were not there. Ideas written as [[id]] are links to ideas in the app: write their names in plain words.',
+    messages: [{ role: 'user', content: `${previous ? `The summary so far:\n${JSON.stringify(previous)}\n\n` : ''}The new turns:\n${turns.map((t) => `${t.who === 'you' ? 'User' : 'Continuum'}: ${t.text}`).join('\n\n')}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
 // One question back after the user writes a note on an idea: something that helps them learn about themselves and the
 // idea at once. Uses what they have said before (views) only to make the question personal, never to judge it.
 export async function askBack(talk, { note, idea, views = '' }) {

@@ -15,7 +15,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
@@ -1383,8 +1383,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   };
   const tq = {
     create: db.prepare('INSERT INTO talks (user_id) VALUES (?)'),
-    get: db.prepare('SELECT id, messages FROM talks WHERE id = ? AND user_id = ?'),
-    save: db.prepare("UPDATE talks SET messages = ?, updated_at = datetime('now') WHERE id = ?"),
+    get: db.prepare('SELECT id, messages, vias, sources, summary, updated_at FROM talks WHERE id = ? AND user_id = ?'),
+    save: db.prepare("UPDATE talks SET messages = ?, vias = ?, sources = ?, updated_at = datetime('now') WHERE id = ?"),
+    setSummary: db.prepare('UPDATE talks SET summary = ? WHERE id = ? AND user_id = ?'),
+    list: db.prepare("SELECT id, messages, summary, updated_at FROM talks WHERE user_id = ? AND messages != '[]' ORDER BY updated_at DESC, id DESC LIMIT 50"),
     latest: db.prepare('SELECT id FROM talks WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
     today: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND kind = 'talk' AND local_date = ?"),
   };
@@ -1486,10 +1488,64 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const date = localDate(req.query.date);
     const id = Number(req.query.id) || tq.latest.get(req.user.id)?.id;
     const t = id && tq.get.get(id, req.user.id);
-    const turns = t ? transcript(JSON.parse(t.messages)) : [];
+    const turns = t ? withVias(transcript(JSON.parse(t.messages)), t.vias) : [];
     res.json({ enabled: Boolean(talk), id: t?.id ?? null, turns, refs: talkRefs(talkStates(req.user.id, date), referencedIds(turns.map((x) => x.text).join(' '))) });
   });
   app.post('/api/talk/new', auth, (req, res) => res.json({ id: Number(tq.create.run(req.user.id).lastInsertRowid) }));
+
+  // How each of the user's messages was given (voice or typed), in order.
+  const withVias = (turns, vias) => { const v = JSON.parse(vias ?? '[]'); let k = 0; return turns.map((x) => (x.who === 'you' ? { ...x, via: v[k++] ?? 'typed' } : x)); };
+
+  // ── A running summary of each conversation: what it is about, the key points, the perspectives the replies offered,
+  // and the sources (the ideas named and the pages found, listed by the app, not written by the model). Brought up to
+  // date in the background after each exchange; kept with the conversation, for that user only, and never logged.
+  const summarizing = new Map(); // talk id -> promise
+  function summaryOf(t, uid, date) {
+    const turns = transcript(JSON.parse(t.messages));
+    const s = t.summary ? JSON.parse(t.summary) : null;
+    const states = talkStates(uid, date);
+    const ideas = Object.entries(talkRefs(states, referencedIds(turns.filter((x) => x.who === 'map').map((x) => x.text).join(' '))))
+      .map(([id, r]) => ({ id, title: r.title, thinker: r.thinker, citation: r.citation, url: r.url }));
+    return {
+      id: t.id, title: s?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: s?.points ?? [], perspectives: s?.perspectives ?? [],
+      sources: { ideas, pages: JSON.parse(t.sources ?? '[]') }, upto: s?.upto ?? 0, turns: turns.length, updated: t.updated_at,
+      pending: summarizing.has(t.id) || (s?.upto ?? 0) < turns.length,
+    };
+  }
+  function updateSummary(uid, id) {
+    if (summarizing.has(id)) return summarizing.get(id);
+    const job = (async () => {
+      const t = tq.get.get(id, uid); if (!t) return;
+      const turns = transcript(JSON.parse(t.messages)).map((x) => ({ ...x, text: x.text.replace(/\[\[([a-z0-9_]+)\]\]/g, (_, nid) => q.node.get(nid)?.title ?? nid) }));
+      const prev = t.summary ? JSON.parse(t.summary) : null;
+      const fresh = turns.slice(prev?.upto ?? 0);
+      if (!fresh.length) return;
+      let next = null;
+      if (talk) {
+        try { next = await summarizeTalk(talk, { previous: prev && { title: prev.title, points: prev.points, perspectives: prev.perspectives }, turns: fresh }); } catch (e) { console.warn(`Talk summary: Claude failed (${e.status ?? ''} ${e.name ?? 'error'})`); }
+      }
+      // Without Claude (or if it fails): what the user said, in order, so the summary is never empty.
+      if (!next) next = { title: prev?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: [...(prev?.points ?? []), ...fresh.filter((x) => x.who === 'you').map((x) => `You said: ${clip(x.text, 140)}`)].slice(-7), perspectives: prev?.perspectives ?? [] };
+      tq.setSummary.run(JSON.stringify({ ...next, upto: turns.length }), id, uid);
+    })().catch((e) => console.warn(`Talk summary: the update failed (${e.status ?? ''} ${e.name ?? 'error'})`)) // no content in the log
+      .finally(() => summarizing.delete(id));
+    summarizing.set(id, job);
+    return job;
+  }
+  app.get('/api/talk/:id/summary', auth, (req, res) => {
+    const t = tq.get.get(Number(req.params.id), req.user.id);
+    if (!t) return res.status(404).json({ error: 'not_found' });
+    const s = summaryOf(t, req.user.id, localDate(req.query.date));
+    if (s.pending && !summarizing.has(t.id)) updateSummary(req.user.id, t.id); // catch up anything missed (a restart)
+    res.json(s);
+  });
+  // The conversations so far, newest first, each with its summary's title and first points.
+  app.get('/api/talks', auth, (req, res) => {
+    res.json({ talks: tq.list.all(req.user.id).map((t) => {
+      const s = t.summary ? JSON.parse(t.summary) : null; const turns = transcript(JSON.parse(t.messages));
+      return { id: t.id, title: s?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: (s?.points ?? []).slice(0, 2), turns: turns.length, updated: t.updated_at };
+    }).filter((t) => t.turns > 0) });
+  });
   // A message in, the reply streamed back as lines of JSON: {t:'text', d} while it is written, then {t:'done', refs}.
   app.post('/api/talk', auth, async (req, res) => {
     if (!talk) return res.status(404).json({ error: 'talk_off' });
@@ -1505,6 +1561,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     let t = keep && Number(req.body?.id) ? tq.get.get(Number(req.body.id), uid) : null;
     if (!t) t = keep ? { id: Number(tq.create.run(uid).lastInsertRowid), messages: '[]' } : { id: null, messages: '[]' };
     const messages = JSON.parse(t.messages);
+    const vias = JSON.parse(t.vias ?? '[]'); vias.push(req.body?.via === 'voice' ? 'voice' : 'typed');
     messages.push({ role: 'user', content: text });
     if (mode) messages.push({ role: 'system', content: MODES[mode] });
     q.insertEvent.run(uid, 'talk', null, date);
@@ -1517,7 +1574,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date) });
       const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
       if (keep) {
-        tq.save.run(JSON.stringify(messages), t.id);
+        const pages = JSON.parse(t.sources ?? '[]');
+        for (const p of sources) if (!pages.some((x) => x.url === p.url)) pages.push(p);
+        tq.save.run(JSON.stringify(messages), JSON.stringify(vias), JSON.stringify(pages), t.id);
+        updateSummary(uid, t.id);
         noteFrom(uid, date, text, `In a conversation${mode ? ` (${mode})` : ''}; the reply began: ${reply.slice(0, 300)}`, 'talk');
       }
       send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources });
