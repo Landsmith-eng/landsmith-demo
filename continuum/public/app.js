@@ -662,11 +662,12 @@ async function fetchTimed(text, voiceId) {
   const bytes = Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0));
   return { blob: new Blob([bytes], { type: 'audio/mpeg' }), starts: j.starts ?? null };
 }
-function playClip(url, run) {
+function playClip(url, run, from = 0, onLength = null) {
   return new Promise((resolve) => {
     const done = () => { URL.revokeObjectURL(url); resolve(); };
     audioEl.onended = audioEl.onerror = done;
     if (run) run.wake = done;
+    audioEl.onloadedmetadata = () => { if (Number.isFinite(audioEl.duration)) onLength?.(audioEl.duration); if (from > 0 && from < audioEl.duration) audioEl.currentTime = from; };
     audioEl.src = url;
     audioEl.preservesPitch = true;
     audioEl.playbackRate = readRate();
@@ -1935,10 +1936,29 @@ const talkPlayer = { view: null, i: 0, state: 'idle', run: null, follow: true, p
 // While a reply is read aloud: a bar at the top to stop it (or pause), and the page follows the sentence being read
 // (highlighted) until the user scrolls it themselves; then "Follow along" brings it back.
 const talkBar = h('div', { class: 'talk-bar', hidden: true, role: 'region', 'aria-label': 'Reading aloud' });
-const talkBarPause = h('button', { type: 'button', class: 'chip' }, 'Pause');
-const talkBarFollow = h('button', { type: 'button', class: 'chip', hidden: true }, 'Follow along');
-talkBar.append(h('button', { type: 'button', class: 'chip stop', onclick: () => stopTalkVoice() }, '■ Stop'), talkBarPause, talkBarFollow);
+const talkBarPause = h('button', { type: 'button', class: 'tb-btn tb-main', 'aria-label': 'Pause' }, '❚❚');
+const talkBarFollow = h('button', { type: 'button', class: 'chip tb-follow', hidden: true }, 'Follow along');
+talkBar.append(talkBarFollow, h('div', { class: 'tb-row' },
+  h('button', { type: 'button', class: 'tb-btn', 'aria-label': 'Back 15 seconds', onclick: () => skipTalk(-15) }, h('span', { class: 'tb-skip' }, '↺'), h('small', {}, '15')),
+  talkBarPause,
+  h('button', { type: 'button', class: 'tb-btn', 'aria-label': 'Forward 15 seconds', onclick: () => skipTalk(15) }, h('span', { class: 'tb-skip' }, '↻'), h('small', {}, '15')),
+  h('button', { type: 'button', class: 'tb-btn tb-stop', 'aria-label': 'Stop', onclick: () => stopTalkVoice() }, '■')));
 talkBarPause.addEventListener('click', () => talkPlayer.view && togglePlay(talkPlayer.view));
+// Skipping 15 seconds either way. Each sentence is its own clip, so a skip within the clip just moves in it; one that
+// runs past either end walks over whole sentences (their lengths known once played, else estimated from their words)
+// and lands part-way into the right one.
+const secsOf = (view, k) => view.durs?.[k] ?? Math.max(1, view.spoken[k].length / (14.5 * readRate()));
+function skipTalk(delta) {
+  const p = talkPlayer; const view = p.view; if (!view) return;
+  const inClip = !audioEl.paused || (p.state === 'paused' && audioEl.src && !audioEl.ended && audioEl.duration);
+  const here = inClip && audioEl.duration ? audioEl.currentTime : secsOf(view, p.i) * (p.part || 0);
+  let t = here + delta; let i = p.i;
+  if (inClip && audioEl.duration && t >= 0 && t < audioEl.duration - .2) { audioEl.currentTime = t; return; }
+  while (t < 0 && i > 0) { i -= 1; t += secsOf(view, i); }
+  while (t >= secsOf(view, i) && i < view.spoken.length - 1) { t -= secsOf(view, i); i += 1; }
+  if (t >= secsOf(view, i)) return stopTalkVoice(); // past the end
+  playFrom(view, i, Math.max(0, t));
+}
 talkBarFollow.addEventListener('click', () => { talkPlayer.follow = true; talkBarFollow.hidden = true; followTalk(true); });
 document.body.append(talkBar);
 const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; } };
@@ -1950,7 +1970,7 @@ function followTalk(jump = false) {
   const p = talkPlayer; const sp = p.view?.spans[p.i];
   if (!sp || !p.follow || !document.body.contains(sp)) return;
   const r = sp.getBoundingClientRect(); const vh = innerHeight;
-  const room = (document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? vh) - 16;
+  const room = (talkBar.hidden ? document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? vh : talkBar.getBoundingClientRect().top) - 16;
   const at = r.height > vh * .3 ? r.top + r.height * Math.min(1, p.part) : r.top;
   const want = vh * .32;
   if (jump || at < 70 || at > room - 40 || (r.height > vh * .3 && Math.abs(at - want) > vh * .15)) window.scrollBy({ top: at - want, behavior: 'smooth' });
@@ -1959,6 +1979,13 @@ audioEl.addEventListener('timeupdate', () => {
   if (talkPlayer.state !== 'playing' || !audioEl.duration) return;
   talkPlayer.part = audioEl.currentTime / audioEl.duration; followTalk();
 });
+// The controls sit just above the box for writing, where a thumb reaches them.
+function placeTalkBar() {
+  if (talkBar.hidden) return;
+  const top = document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? innerHeight - 90;
+  talkBar.style.bottom = `${Math.max(12, innerHeight - Math.min(top, innerHeight - 70) + 10)}px`;
+}
+addEventListener('resize', placeTalkBar); addEventListener('scroll', placeTalkBar, { passive: true });
 function setPlayState(view, state) {
   if (!view) return;
   view.btn.textContent = state === 'playing' ? 'Pause' : state === 'paused' ? 'Resume' : 'Listen';
@@ -1966,8 +1993,9 @@ function setPlayState(view, state) {
   view.btn.classList.remove('wants-tap');
   view.spans.forEach((sp, k) => sp.classList.toggle('now', state !== 'idle' && k === talkPlayer.i));
   talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
-  talkBarPause.textContent = state === 'paused' ? 'Resume' : 'Pause';
+  talkBarPause.textContent = state === 'paused' ? '▶' : '❚❚'; talkBarPause.setAttribute('aria-label', state === 'paused' ? 'Play' : 'Pause');
   if (state === 'idle') { talkBarFollow.hidden = true; }
+  placeTalkBar();
 }
 function stopTalkVoice() {
   const p = talkPlayer;
@@ -1975,7 +2003,7 @@ function stopTalkVoice() {
   speech?.cancel(); audioEl.pause();
   const v = p.view; p.view = null; p.run = null; p.state = 'idle'; setPlayState(v, 'idle');
 }
-async function playFrom(view, i) {
+async function playFrom(view, i, offset = 0) {
   stopTalkVoice();
   const p = talkPlayer; const run = { stop: false, wake: null };
   Object.assign(p, { view, i, state: 'playing', run, follow: true, part: 0 });
@@ -1993,7 +2021,8 @@ async function playFrom(view, i) {
         const blob = await clip(p.i);
         if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
         if (run.stop) return false;
-        if (await playClip(URL.createObjectURL(blob), run) === 'blocked') {
+        const at = offset; offset = 0;
+        if (await playClip(URL.createObjectURL(blob), run, at, (d) => { (view.durs ??= {})[p.i] = d; }) === 'blocked') {
           // The browser wants a tap first: ask for one, on the reply itself.
           stopTalkVoice(); view.btn.textContent = '▶ Tap to hear the reply'; view.btn.classList.add('wants-tap');
           return false;
@@ -2004,7 +2033,8 @@ async function playFrom(view, i) {
         useEl = false; continue;
       }
     } else {
-      const len = view.spoken[p.i].length || 1;
+      // The phone's voice cannot start part-way into a sentence: a skip into one starts it from its beginning.
+      offset = 0; const len = view.spoken[p.i].length || 1;
       await sayPhone(view.spoken[p.i], plan.phone ?? null, run, (c) => { p.part = c / len; followTalk(); });
     }
     if (run.stop || p.state === 'paused') return false; // paused: stay on this sentence
@@ -2239,13 +2269,28 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
 // The summary of a conversation: what it is about, the key points, the perspectives offered, and the sources. Kept up
 // to date by the server after each exchange; here it opens and closes, and refreshes when a new reply has come in.
 const PERSP_LABEL = { philosophy: 'Philosophy', psychology: 'Psychology', tradition: 'Tradition', science: 'Science', law: 'Law', other: 'Other' };
+// The names of the thinkers, traditions and episodes the conversation reached for, set in italics wherever they come up,
+// so they stand out as things to come back to.
+function marked(text, names) {
+  const list = [...new Set(names.filter((n) => n && n.length > 2))].sort((a, b) => b.length - a.length);
+  if (!list.length) return [text];
+  const re = new RegExp(`(${list.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+  return text.split(re).map((part, k) => (k % 2 ? h('em', { class: 'sum-mention' }, part) : part));
+}
 function summaryView(s) {
-  const ideas = s.sources?.ideas ?? []; const pages = s.sources?.pages ?? [];
+  const ideas = s.sources?.ideas ?? []; const pages = s.sources?.pages ?? []; const threads = s.connections ?? [];
+  const names = [...threads.flatMap((c) => [c.name, c.name.split(/ on | and |: /)[0]]), ...s.perspectives.map((p) => p.name.replace(/\s*\(.*\)$/, '')), ...ideas.map((r) => r.thinker)];
+  const pickUp = (c) => () => { stopTalkVoice(); if (s.id) store.set(TALK_KEY, String(s.id)); showTalk({ seed: `Let's go back to ${c.name}. ${c.ask}`, draft: true }); };
   return [
     h('h3', { class: 'sum-title' }, s.title || 'This conversation'),
-    s.points.length ? h('ul', { class: 'sum-points' }, s.points.map((p) => h('li', {}, p))) : h('p', { class: 'muted small' }, 'Nothing to sum up yet.'),
+    s.points.length ? h('ul', { class: 'sum-points' }, s.points.map((p) => h('li', {}, ...marked(p, names)))) : h('p', { class: 'muted small' }, 'Nothing to sum up yet.'),
+    threads.length > 0 && h('div', {}, h('div', { class: 'eyebrow' }, 'Threads to pick up'),
+      h('ul', { class: 'sum-threads' }, threads.map((c) => h('li', {},
+        h('div', { class: 'sum-thread-name' }, h('em', {}, c.name), c.when && h('span', { class: 'sum-when' }, c.when)),
+        h('p', { class: 'sum-link' }, c.link),
+        h('button', { type: 'button', class: 'link sum-ask', onclick: pickUp(c) }, `${c.ask} →`))))),
     s.perspectives.length > 0 && h('div', {}, h('div', { class: 'eyebrow' }, 'Perspectives'),
-      h('ul', { class: 'sum-persp' }, s.perspectives.map((p) => h('li', {}, h('span', { class: 'sum-kind' }, PERSP_LABEL[p.kind] ?? p.kind), ' ', h('strong', {}, p.name), `: ${p.gist}`)))),
+      h('ul', { class: 'sum-persp' }, s.perspectives.map((p) => h('li', {}, h('span', { class: 'sum-kind' }, PERSP_LABEL[p.kind] ?? p.kind), ' ', h('em', { class: 'sum-mention' }, p.name), `: ${p.gist}`)))),
     (ideas.length > 0 || pages.length > 0) && h('div', {}, h('div', { class: 'eyebrow' }, 'Sources'),
       h('ul', { class: 'sum-src' },
         ideas.map((r) => h('li', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); walkTo(r.id, []); } }, r.title),

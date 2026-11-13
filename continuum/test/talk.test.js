@@ -181,7 +181,7 @@ test('talk: each message keeps how it was said; a running summary with perspecti
     if (schema?.properties?.perspectives) {
       summaries.push(params.messages[0].content);
       const n = summaries.length;
-      return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ title: 'Anger at work', points: n === 1 ? ['You said your boss makes you furious.'] : ['You said your boss makes you furious.', 'You asked whether anger is ever useful.'], perspectives: [{ kind: 'philosophy', name: 'Epictetus', gist: 'Anger comes from our judgement, not the event.' }] }) }] };
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ title: 'Anger at work', points: n === 1 ? ['You said your boss makes you furious.'] : ['You said your boss makes you furious.', 'You asked whether anger is ever useful.'], perspectives: [{ kind: 'philosophy', name: 'Epictetus', gist: 'Anger comes from our judgement, not the event.' }], connections: [{ name: 'Epictetus on judgement', when: 'Nicopolis, 2nd century', link: 'Your fury at your boss is a judgement you can examine.', ask: 'Which part of the situation is actually up to you?' }] }) }] };
     }
     return { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"items":[]}' }] };
   };
@@ -204,6 +204,8 @@ test('talk: each message keeps how it was said; a running summary with perspecti
     assert.equal(s.points.length, 2);
     assert.equal(s.perspectives[0].name, 'Epictetus');
     assert.equal(s.sources.ideas[0].id, 'epictetus_up_to_us');
+    assert.equal(s.connections[0].when, 'Nicopolis, 2nd century');
+    assert.match(summaries[1], /Epictetus on judgement/); // the talking points so far go into the next update
     assert.equal(s.pending, false);
     const list = (await (await call('/api/talks')).json()).talks;
     assert.equal(list[0].id, id); assert.equal(list[0].title, 'Anger at work');

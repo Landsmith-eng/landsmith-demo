@@ -276,8 +276,11 @@ export const TALK_SUMMARY_SCHEMA = {
     perspectives: { type: 'array', items: { type: 'object', properties: {
       kind: { type: 'string', enum: ['philosophy', 'psychology', 'tradition', 'science', 'law', 'other'] },
       name: { type: 'string' }, gist: { type: 'string' } }, required: ['kind', 'name', 'gist'], additionalProperties: false } },
+    connections: { type: 'array', items: { type: 'object', properties: {
+      name: { type: 'string' }, when: { type: 'string' }, link: { type: 'string' }, ask: { type: 'string' } },
+    required: ['name', 'when', 'link', 'ask'], additionalProperties: false } },
   },
-  required: ['title', 'points', 'perspectives'],
+  required: ['title', 'points', 'perspectives', 'connections'],
   additionalProperties: false,
 };
 export async function summarizeTalk(talk, { previous = null, turns }) {
@@ -287,7 +290,7 @@ export async function summarizeTalk(talk, { previous = null, turns }) {
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     output_config: { effort: 'low', format: { type: 'json_schema', schema: TALK_SUMMARY_SCHEMA } },
-    system: 'You keep a short running summary of one conversation in Continuum, a philosophy app, for its user to look back on. Update the summary so far with the new turns. title: what the conversation is about, in three to eight words. points: the key points so far, at most seven, each one plain sentence, in the order they came up; keep earlier ones unless the new turns changed them, and attribute what the user said to "you" ("You argued that…"). perspectives: each distinct perspective the replies offered (a philosophical idea or thinker, a school of psychology, a religious or wisdom tradition, a scientific finding, a legal view), with its name and its gist for this conversation in one sentence; at most eight, merging repeats. Use only what is in the conversation; never add sources, quotations or facts that were not there. Ideas written as [[id]] are links to ideas in the app: write their names in plain words.',
+    system: 'You keep a short running summary of one conversation in Continuum, a philosophy app, for its user to look back on. Update the summary so far with the new turns. title: what the conversation is about, in three to eight words. points: the key points so far, at most seven, each one plain sentence, in the order they came up; keep earlier ones unless the new turns changed them, and attribute what the user said to "you" ("You argued that…"). perspectives: each distinct perspective the replies offered (a philosophical idea or thinker, a school of psychology, a religious or wisdom tradition, a scientific finding, a legal view), with its name and its gist for this conversation in one sentence; at most eight, merging repeats. connections: the philosophical, historical, religious, literary or scientific connections the replies drew between the user\'s situation and someone or something in history (a thinker, a text, a school, a tradition, an episode, an experiment), each kept as a talking point and memory trigger for a later conversation: name (short, e.g. "Seneca on anger" or "The Milgram experiments"), when (place and period, e.g. "Rome, 1st century" or "Yale, 1961"), link (one sentence: how it connected to what the user said), ask (one open question that would pick it up again next time). At most six; keep earlier ones unless the new turns replaced them. Use only what is in the conversation; never add sources, quotations or facts that were not there. Ideas written as [[id]] are links to ideas in the app: write their names in plain words.',
     messages: [{ role: 'user', content: `${previous ? `The summary so far:\n${JSON.stringify(previous)}\n\n` : ''}The new turns:\n${turns.map((t) => `${t.who === 'you' ? 'User' : 'Continuum'}: ${t.text}`).join('\n\n')}` }],
   });
   if (msg.stop_reason !== 'end_turn') return null;

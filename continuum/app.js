@@ -1507,7 +1507,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const ideas = Object.entries(talkRefs(states, referencedIds(turns.filter((x) => x.who === 'map').map((x) => x.text).join(' '))))
       .map(([id, r]) => ({ id, title: r.title, thinker: r.thinker, citation: r.citation, url: r.url }));
     return {
-      id: t.id, title: s?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: s?.points ?? [], perspectives: s?.perspectives ?? [],
+      id: t.id, title: s?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: s?.points ?? [], perspectives: s?.perspectives ?? [], connections: s?.connections ?? [],
       sources: { ideas, pages: JSON.parse(t.sources ?? '[]') }, upto: s?.upto ?? 0, turns: turns.length, updated: t.updated_at,
       pending: summarizing.has(t.id) || (s?.upto ?? 0) < turns.length,
     };
@@ -1522,10 +1522,10 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       if (!fresh.length) return;
       let next = null;
       if (talk) {
-        try { next = await summarizeTalk(talk, { previous: prev && { title: prev.title, points: prev.points, perspectives: prev.perspectives }, turns: fresh }); } catch (e) { console.warn(`Talk summary: Claude failed (${e.status ?? ''} ${e.name ?? 'error'})`); }
+        try { next = await summarizeTalk(talk, { previous: prev && { title: prev.title, points: prev.points, perspectives: prev.perspectives, connections: prev.connections ?? [] }, turns: fresh }); } catch (e) { console.warn(`Talk summary: Claude failed (${e.status ?? ''} ${e.name ?? 'error'})`); }
       }
       // Without Claude (or if it fails): what the user said, in order, so the summary is never empty.
-      if (!next) next = { title: prev?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: [...(prev?.points ?? []), ...fresh.filter((x) => x.who === 'you').map((x) => `You said: ${clip(x.text, 140)}`)].slice(-7), perspectives: prev?.perspectives ?? [] };
+      if (!next) next = { title: prev?.title ?? clip(turns.find((x) => x.who === 'you')?.text, 60), points: [...(prev?.points ?? []), ...fresh.filter((x) => x.who === 'you').map((x) => `You said: ${clip(x.text, 140)}`)].slice(-7), perspectives: prev?.perspectives ?? [], connections: prev?.connections ?? [] };
       tq.setSummary.run(JSON.stringify({ ...next, upto: turns.length }), id, uid);
     })().catch((e) => console.warn(`Talk summary: the update failed (${e.status ?? ''} ${e.name ?? 'error'})`)) // no content in the log
       .finally(() => summarizing.delete(id));

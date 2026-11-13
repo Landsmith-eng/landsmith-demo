@@ -1015,11 +1015,19 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .line-about .plain { font-size: .98rem; line-height: 1.55; opacity: .9; }
 
 /* Talk: reading a reply aloud */
-.talk-bar { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 58px);
-  display: flex; gap: 6px; padding: 6px; border-radius: 999px; background: rgba(8, 13, 10, .82); backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.talk-bar { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: 170px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .talk-bar[hidden] { display: none; }
-.talk-bar .chip { color: #f2f6f3; border-color: rgba(255,255,255,.3); white-space: nowrap; }
-.talk-bar .chip.stop { background: rgba(255,255,255,.14); }
+.tb-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px; background: rgba(8, 13, 10, .86);
+  backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+.tb-btn { width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08); color: #f2f6f3;
+  display: inline-flex; align-items: center; justify-content: center; flex-direction: column; font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0; }
+.tb-btn small { font-size: .62rem; margin-top: 1px; opacity: .85; }
+.tb-skip { font-size: 1.35rem; }
+.tb-main { width: 62px; height: 62px; font-size: 1.3rem; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tb-stop { width: 44px; height: 44px; font-size: .9rem; }
+.tb-btn:active { transform: scale(.94); }
+.tb-follow { color: #f2f6f3; background: rgba(8, 13, 10, .86); border-color: rgba(255,255,255,.3); }
 .chip.wants-tap { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); animation: wants-tap 1.6s ease-in-out infinite; }
 @keyframes wants-tap { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
 .talk-turn .say.now { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent); }
@@ -1033,3 +1041,12 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .sum-kind { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; opacity: .75; }
 .sum-src a { color: var(--accent); word-break: break-word; }
 .talk-history li { margin-bottom: 14px; }
+/* Summary: the connections, set apart as talking points */
+.sum-mention { font-family: var(--display); font-style: italic; color: color-mix(in srgb, var(--accent) 55%, currentColor); }
+.sum-threads { list-style: none; margin: 6px 0 12px; padding: 0; display: grid; gap: 10px; }
+.sum-threads li { padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 4px 10px 10px 4px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sum-thread-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.sum-thread-name em { font-family: var(--display); font-size: 1.12rem; color: color-mix(in srgb, var(--accent) 60%, currentColor); }
+.sum-when { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+.sum-link { margin: 4px 0 6px; font-size: .95rem; }
+.sum-ask { padding: 0; text-align: left; font-style: italic; color: var(--accent); }
