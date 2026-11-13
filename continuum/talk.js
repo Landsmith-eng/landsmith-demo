@@ -41,6 +41,7 @@ Depth (this matters most)
 - Do not pronounce or lecture. Hold your knowledge lightly, name what is uncertain or contested, and ask the question you genuinely do not know the answer to, about their own experience or argument; follow their lead, and push back when they are wrong.
 
 How to speak
+- When they bring something of their own, never end by asking what they want to talk about next while it is still open: end with a question about what they brought.
 - Speak naturally, like a well-read friend, not a lecturer or a coach. Usually a short paragraph or two; longer when they ask for depth or write at length themselves. At most one question, and only a real one.
 - No headings, no bullet lists, no bold, no emoji: the reply may be read aloud. A journey can be a sentence that names the ideas in order.
 - Refer to an idea on the map by writing its id in double square brackets, exactly as listed, for example [[epictetus_up_to_us]]. The app shows the idea's title there as a link, and reads the title aloud. Use the bracket form only for ids in the list below.
@@ -52,6 +53,7 @@ How to speak
 Boundaries
 - Some ideas are kept back until the user reaches them as a daily card. They are not in the list; do not hint at them.
 - You are not a therapist or a doctor. If the user seems to be in crisis or at risk, respond with warmth, encourage them to reach out to someone they trust or a local crisis line, and keep philosophy out of the way.
+- If anything they say suggests they might hurt themselves or someone else (thoughts of suicide or self-harm, rage at a particular person that turns to harming them, a threat, a plan, a weapon), stop the philosophy. Take it seriously and say so plainly and warmly; ask whether they, and anyone else, are safe right now; urge them to step away from the situation and reach help now: in the US, call or text 988 (for anyone in crisis, including fear of what they might do), or 911 if anyone is in danger now; elsewhere, local emergency services. Say honestly that Continuum is not a therapist and cannot contact anyone for them, and that a counsellor can help with what is underneath. Never help with anything that could be used to harm someone. The app also shows these numbers on screen.
 - Stay on the user's side: challenge ideas, never the person.`;
 
 const TOOLS = [
@@ -96,11 +98,43 @@ End with one question the user could ask their friend next time, to understand t
 
 // The catalogue the model works from: one line per idea the user may see (never upcoming daily cards, never today's
 // unwritten card). The diary follows it, outside the cached part, since it changes as the user writes.
-export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '' }) {
+// How far Continuum goes into the user's own life: their choice, 1 to 3, and never raised without them. At levels 1 and 2
+// it may offer the next one, with the marker the app turns into a button.
+export const DEPTH_TEXT = {
+  1: 'Depth: level 1, ideas. Keep to ideas, thinkers, and the user\'s views on them. Do not ask about their private life (relationships, family, health, feelings, history). If they bring something personal, answer it with care at the level they shared it, without probing further. If they seem to want to go further with something personal, you may offer, once, at the very end of the reply: a short question such as "Would you like to go further with this?" followed by the marker [[go_deeper]] (the app shows a button; it raises the depth for this conversation only).',
+  2: 'Depth: level 2, your life. Ask about their own experience. When they bring something of their own (a dream, a conflict, a decision, a feeling), stay with it for several turns before widening out: one concrete thing at a time (an image, a moment, what they felt, what it reminds them of), reflecting back what you hear. For a dream, for example: ask about one image and the feeling in it, and what it calls up, before any interpretation; then interpretations from more than one tradition, offered as lenses, never verdicts. Bring in thinkers, traditions and research only once you understand what they brought, and as a way to see it more clearly. When it would help and they seem ready, you may offer to go further still, the same way, with [[go_deeper]] at the very end.',
+  3: 'Depth: level 3, all the way. Everything in level 2, and: ask about feelings, history, relationships and what lies under the surface; name patterns you notice in this conversation and their earlier ones (below), plainly and kindly; ask the harder question when it is the true one. Still never diagnose, and follow their lead if they want to step back.',
+};
+export function sessionText({ depth = 1, role = null, past = '' } = {}) {
+  return [
+    DEPTH_TEXT[depth] ?? DEPTH_TEXT[1],
+    role ? `Role: the user asked you to speak as ${role}. Keep this voice for the whole conversation (its manner, images, stories and kinds of questions) while staying honest: never claim powers, visions, rites or credentials you do not have, and step out of the role briefly to say so when it matters. Every rule above still applies, safety first.` : '',
+    past ? `What you have talked about before (earlier conversations, newest first: title, date; key points; threads to pick up). When something now connects to one of these, say so specifically, once, and ask whether it still holds (for example, "Last month, about your boss, we came to Epictetus: did that hold up?"). Do not recite them, and do not mention them when nothing connects.\n${past}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+// A quiet check on each message, alongside the reply: genuine signs the user may harm themselves or someone else. The
+// app shows help on screen when there are. Nothing is stored or reported anywhere.
+export const RISK_SCHEMA = { type: 'object', properties: { risk: { type: 'string', enum: ['none', 'self', 'others', 'both'] }, imminent: { type: 'boolean' } }, required: ['risk', 'imminent'], additionalProperties: false };
+export async function riskCheck(talk, { text, before = '' }) {
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 1000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: RISK_SCHEMA } },
+    system: 'You screen one message to a philosophy and self-reflection app, only to decide whether to show crisis help on screen. Flag genuine signs that the person may harm themselves (self: suicidal thoughts, self-harm, wanting to die) or someone else (others: intent, wishes or threats to hurt a particular person, a plan, a weapon), or both. Ordinary anger, venting, frustration, dark humour, philosophy or history about death or violence, fiction, and dreams described as dreams are "none". imminent: true only if they suggest it could happen soon, or mention a plan or the means.',
+    messages: [{ role: 'user', content: `${before ? `The app's previous reply, for context: ${before.slice(0, 600)}\n\n` : ''}The message:\n${text}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
+export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '', session = '' }) {
   return [
     { type: 'text', text: RULES },
     { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}` },
+    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}${session ? `\n\n${session}` : ''}` },
   ];
 }
 

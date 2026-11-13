@@ -15,7 +15,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
@@ -342,11 +342,39 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const l = lure.today(uid, date);
     const first = (req.user.name ?? '').split(' ')[0];
     const nudge = lure.unseenNudge(uid); lure.seeNudges(uid);
+    // Now and then, a thread from an earlier conversation comes back, so what was learned is not lost.
+    const revisit = t.state === 'write' && !nudge ? revisitFor(uid, date) : null;
     lure.maybeSynthesize(uid, date); // in the background: ready for next time if it is due
     res.json({ ...t, opener: t.state === 'write' ? (nudge?.text ?? lure.opener(uid, date, first)) : null,
       reaction: t.state === 'done_today' && l?.reaction ? { text: l.reaction, ack: l.ack ?? '' } : null,
-      synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
+      revisit, synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
   });
+  // A thread to pick up from a conversation three to forty-five days old, at most every four days, each thread once.
+  const rvq = {
+    last: db.prepare('SELECT MAX(local_date) AS d FROM revisits WHERE user_id = ?'),
+    seen: db.prepare('SELECT 1 FROM revisits WHERE user_id = ? AND talk_id = ? AND name = ?'),
+    add: db.prepare('INSERT OR IGNORE INTO revisits (user_id, talk_id, name, local_date) VALUES (?, ?, ?, ?)'),
+    today: db.prepare('SELECT talk_id, name FROM revisits WHERE user_id = ? AND local_date = ?'),
+  };
+  function revisitFor(uid, date) {
+    const shown = rvq.today.get(uid, date);
+    const last = rvq.last.get(uid)?.d;
+    if (!shown && last && last > shiftDay(date, -4)) return null;
+    for (const t of tq.list.all(uid)) {
+      if (!t.summary) continue;
+      const day = t.updated_at.slice(0, 10);
+      if (!shown && (day > shiftDay(date, -3) || day < shiftDay(date, -45))) continue;
+      const sum = JSON.parse(t.summary);
+      for (const c of sum.connections ?? []) {
+        const match = shown ? shown.talk_id === t.id && shown.name === c.name : !rvq.seen.get(uid, t.id, c.name);
+        if (!match) continue;
+        rvq.add.run(uid, t.id, c.name, date);
+        return { talk: t.id, title: sum.title, date: day, name: c.name, when: c.when, link: c.link, ask: c.ask };
+      }
+    }
+    return null;
+  }
+
   // Something else on their mind: today's line goes there instead (until they have answered today's).
   app.post('/api/lure/topic', auth, async (req, res) => {
     const date = localDate(req.body?.date); const uid = req.user.id;
@@ -418,6 +446,52 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (kind !== 'flip') return res.status(400).json({ error: 'bad_kind' });
     q.insertEvent.run(req.user.id, kind, typeof nodeId === 'string' ? nodeId : null, localDate(req.body?.date));
     res.json({ ok: true });
+  });
+
+  // ── Their data, theirs to take or erase ──
+  // Every table that holds a user's rows (found from the schema, so a table added later is never missed).
+  const userTables = () => db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name)
+    .filter((t) => t !== 'users' && db.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?').get(t, 'user_id'));
+  const SECRET_COLUMNS = { push_subs: ['keys', 'endpoint'] };
+  app.get('/api/me/export', auth, (req, res) => {
+    const uid = req.user.id; const out = { exported_at: new Date().toISOString(), you: { name: req.user.name, since: req.user.created_at } };
+    for (const t of userTables()) {
+      const rows = db.prepare(`SELECT * FROM ${t} WHERE user_id = ?`).all(uid);
+      if (!rows.length) continue;
+      out[t] = rows.map((r) => {
+        const x = { ...r }; delete x.user_id; for (const c of SECRET_COLUMNS[t] ?? []) delete x[c];
+        if (t === 'talks') { x.conversation = transcript(JSON.parse(x.messages)); delete x.messages; x.summary = x.summary && JSON.parse(x.summary); }
+        return x;
+      });
+    }
+    out.case_sessions = db.prepare('SELECT s.* FROM case_sessions s JOIN cases c ON c.id = s.case_id WHERE c.user_id = ?').all(uid);
+    res.set('content-disposition', `attachment; filename="continuum-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.type('application/json').send(JSON.stringify(out, null, 2));
+  });
+  // Delete everything: every row of theirs, then the account. A group they started passes to another member (or goes, if
+  // they were its only one). Nothing is kept, except in the nightly backups, which roll off within fourteen days.
+  app.post('/api/me/delete', auth, (req, res) => {
+    if (String(req.body?.confirm ?? '').trim().toLowerCase() !== 'delete') return res.status(400).json({ error: 'confirm_required' });
+    const uid = req.user.id;
+    db.exec('BEGIN');
+    try {
+      for (const g of db.prepare('SELECT id FROM groups WHERE created_by = ?').all(uid)) {
+        const heir = db.prepare('SELECT user_id FROM group_members WHERE group_id = ? AND user_id != ? ORDER BY joined_at LIMIT 1').get(g.id, uid);
+        if (heir) db.prepare('UPDATE groups SET created_by = ? WHERE id = ?').run(heir.user_id, g.id);
+        else {
+          db.prepare('DELETE FROM posts WHERE topic_id IN (SELECT id FROM topics WHERE group_id = ?)').run(g.id);
+          db.prepare('DELETE FROM topics WHERE group_id = ?').run(g.id);
+          db.prepare('DELETE FROM group_members WHERE group_id = ?').run(g.id);
+          db.prepare('DELETE FROM groups WHERE id = ?').run(g.id);
+        }
+      }
+      db.prepare('UPDATE topics SET created_by = (SELECT created_by FROM groups WHERE groups.id = topics.group_id) WHERE created_by = ?').run(uid);
+      db.prepare('DELETE FROM case_sessions WHERE case_id IN (SELECT id FROM cases WHERE user_id = ?)').run(uid);
+      for (const t of userTables()) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(uid);
+      db.prepare('DELETE FROM users WHERE id = ?').run(uid);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); console.warn(`Delete account failed: ${e.message}`); return res.status(500).json({ error: 'delete_failed' }); }
+    res.json({ deleted: true });
   });
 
   // The user's own details: only their name is kept. They can correct it here (it shows in greetings and the Parthenon).
@@ -1383,7 +1457,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   };
   const tq = {
     create: db.prepare('INSERT INTO talks (user_id) VALUES (?)'),
-    get: db.prepare('SELECT id, messages, vias, sources, summary, updated_at FROM talks WHERE id = ? AND user_id = ?'),
+    get: db.prepare('SELECT id, messages, vias, sources, summary, updated_at, depth, role FROM talks WHERE id = ? AND user_id = ?'),
+    setTalk: db.prepare('UPDATE talks SET depth = ?, role = ? WHERE id = ? AND user_id = ?'),
+    userDepth: db.prepare('SELECT depth FROM users WHERE id = ?'),
+    setUserDepth: db.prepare('UPDATE users SET depth = ? WHERE id = ?'),
+    past: db.prepare("SELECT id, summary, updated_at FROM talks WHERE user_id = ? AND id != ? AND summary IS NOT NULL ORDER BY updated_at DESC LIMIT 8"),
     save: db.prepare("UPDATE talks SET messages = ?, vias = ?, sources = ?, updated_at = datetime('now') WHERE id = ?"),
     setSummary: db.prepare('UPDATE talks SET summary = ? WHERE id = ? AND user_id = ?'),
     list: db.prepare("SELECT id, messages, summary, updated_at FROM talks WHERE user_id = ? AND messages != '[]' ORDER BY updated_at DESC, id DESC LIMIT 50"),
@@ -1489,9 +1567,38 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const id = Number(req.query.id) || tq.latest.get(req.user.id)?.id;
     const t = id && tq.get.get(id, req.user.id);
     const turns = t ? withVias(transcript(JSON.parse(t.messages)), t.vias) : [];
-    res.json({ enabled: Boolean(talk), id: t?.id ?? null, turns, refs: talkRefs(talkStates(req.user.id, date), referencedIds(turns.map((x) => x.text).join(' '))) });
+    const dflt = tq.userDepth.get(req.user.id)?.depth ?? 1;
+    res.json({ enabled: Boolean(talk), id: t?.id ?? null, turns, depth: t?.depth ?? dflt, depth_default: dflt, depth_here: t?.depth ?? null, role: t?.role ?? null, refs: talkRefs(talkStates(req.user.id, date), referencedIds(turns.map((x) => x.text).join(' '))) });
   });
   app.post('/api/talk/new', auth, (req, res) => res.json({ id: Number(tq.create.run(req.user.id).lastInsertRowid) }));
+
+  // How deep Continuum goes, and in what voice. The level is the user's (their default, or raised for one conversation
+  // when they accept an offer); a role (e.g. "a shaman") belongs to one conversation.
+  const depthOf = (uid, t) => t?.depth ?? tq.userDepth.get(uid)?.depth ?? 1;
+  app.post('/api/talk/settings', auth, (req, res) => {
+    const uid = req.user.id; const b = req.body ?? {};
+    const level = Number(b.depth);
+    if (b.depth != null && ![1, 2, 3].includes(level)) return res.status(400).json({ error: 'bad_depth' });
+    let t = Number(b.id) ? tq.get.get(Number(b.id), uid) : null;
+    if (b.id && !t) return res.status(404).json({ error: 'not_found' });
+    if (b.depth != null && b.scope === 'default') { tq.setUserDepth.run(level, uid); if (t) { tq.setTalk.run(null, t.role, t.id, uid); t = tq.get.get(t.id, uid); } }
+    const needTalk = (b.depth != null && b.scope === 'talk') || 'role' in b;
+    if (needTalk && !t) t = tq.get.get(Number(tq.create.run(uid).lastInsertRowid), uid);
+    if (t && needTalk) {
+      const role = 'role' in b ? (typeof b.role === 'string' ? b.role.replace(/\s+/g, ' ').trim().slice(0, 80) || null : null) : t.role;
+      tq.setTalk.run(b.depth != null && b.scope === 'talk' ? level : t.depth, role, t.id, uid); t = tq.get.get(t.id, uid);
+    }
+    const dflt = tq.userDepth.get(uid)?.depth ?? 1;
+    res.json({ id: t?.id ?? null, depth: depthOf(uid, t), depth_default: dflt, depth_here: t?.depth ?? null, role: t?.role ?? null });
+  });
+  // Earlier conversations, as Continuum sees them: their summaries (title, key points, threads to pick up).
+  function pastText(uid, exceptId) {
+    return tq.past.all(uid, exceptId ?? 0).map((t) => {
+      const s = JSON.parse(t.summary);
+      const threads = (s.connections ?? []).map((c) => `${c.name} (${c.link}) next time: ${c.ask}`).join('; ');
+      return `- ${s.title} · ${t.updated_at.slice(0, 10)}. ${(s.points ?? []).join(' ')}${threads ? ` Threads: ${threads}` : ''}`;
+    }).join('\n');
+  }
 
   // How each of the user's messages was given (voice or typed), in order.
   const withVias = (turns, vias) => { const v = JSON.parse(vias ?? '[]'); let k = 0; return turns.map((x) => (x.who === 'you' ? { ...x, via: v[k++] ?? 'typed' } : x)); };
@@ -1571,7 +1678,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     let reply = '';
     try {
       const states = talkStates(uid, date);
-      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date) });
+      const depth = depthOf(uid, t);
+      const session = keep ? sessionText({ depth, role: t.role ?? null, past: pastText(uid, t.id) }) : '';
+      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session });
+      // Alongside the reply, a quiet check for signs of danger to themselves or others: help goes on screen. Nothing is
+      // stored, logged or sent anywhere else.
+      const lastReply = transcript(messages.slice(0, -1)).filter((x) => x.who === 'map').at(-1)?.text ?? '';
+      const risk = riskCheck(talk, { text, before: lastReply }).catch(() => null);
       const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
       if (keep) {
         const pages = JSON.parse(t.sources ?? '[]');
@@ -1580,7 +1693,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         updateSummary(uid, t.id);
         noteFrom(uid, date, text, `In a conversation${mode ? ` (${mode})` : ''}; the reply began: ${reply.slice(0, 300)}`, 'talk');
       }
-      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources });
+      const r = await risk;
+      if (r && r.risk !== 'none') send({ t: 'safety', risk: r.risk, imminent: Boolean(r.imminent) });
+      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources, offer: keep && depth < 3 && reply.includes('[[go_deeper]]') ? depth + 1 : null });
     } catch (e) {
       console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);
       send({ t: 'error', error: e.status === 401 ? 'The Anthropic key did not work. The server window says more.' : 'Something went wrong reaching Claude. Try again in a moment.' });

@@ -1908,7 +1908,10 @@ function showJournal() {
       h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
       h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
     const road = await roadSection();
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails());
+    const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
+      h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2097,6 +2100,13 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     }
     let convoId = state.id;
     let current = mode;
+    let depth = state.depth ?? 1; let role = state.role ?? null;
+    const settings = async (body) => {
+      const r = await api('/api/talk/settings', { method: 'POST', body: { id: convoId, ...body } });
+      if (r.id && r.id !== convoId) { convoId = r.id; store.set(TALK_KEY, String(r.id)); }
+      depth = r.depth; role = r.role; drawDepth(); drawRole();
+      return r;
+    };
     const refs = { ...state.refs };
     const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
     const bubble = (who, text, done = true, via = null) => {
@@ -2167,6 +2177,37 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
 
     const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '4000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
+    // How deep, the user's to choose (and raise for one conversation when Continuum offers); and a voice to speak in.
+    const depthBox = h('div', { class: 'depth-dial' });
+    function drawDepth() {
+      const pick = (k) => h('button', { type: 'button', class: `chip ${depth === k ? 'on' : ''}`, 'aria-pressed': String(depth === k), onclick: () => settings({ depth: k, scope: 'default' }).catch(() => notice('Could not change that. Try again.')) }, DEPTH_LABEL[k]);
+      depthBox.replaceChildren(h('div', { class: 'eyebrow' }, 'How deep Continuum goes'),
+        h('div', { class: 'size-chips', role: 'group', 'aria-label': 'How deep' }, [1, 2, 3].map(pick)),
+        h('p', { class: 'muted small' }, DEPTH_NOTE[depth], ' ', depth === 3 && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go')));
+    }
+    const roleTag = h('div', { class: 'role-tag', hidden: true });
+    const roleInput = h('input', { type: 'text', class: 'search', maxlength: '80', placeholder: 'Speak as… (a shaman, a Stoic teacher, a grandmother)', 'aria-label': 'Speak as' });
+    function drawRole() {
+      roleTag.hidden = !role;
+      roleTag.replaceChildren(`Speaking as ${role ?? ''}`, ' · ', h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => settings({ role: null }) }, 'drop it'));
+      roleInput.value = role ?? '';
+    }
+    drawDepth(); drawRole();
+    const roleRow = h('div', { class: 'row', style: 'gap:8px' }, roleInput,
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => settings({ role: roleInput.value }).catch(() => notice('Could not set that. Try again.')) }, 'Set'));
+    // Continuum offered to go further: a yes raises the level for this conversation only.
+    function offerDeeper(level) {
+      const b = h('button', { type: 'button', class: 'chip offer-deeper' }, `Yes, go further (level ${level})`);
+      const box = h('div', { class: 'talk-controls' }, b);
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await settings({ depth: level, scope: 'talk' });
+          box.replaceChildren(h('p', { class: 'muted small' }, `Level ${level} for this conversation. Say more whenever you are ready.`, ' ', level === 3 && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go')));
+        } catch { b.disabled = false; notice('Could not change that. Try again.'); }
+      });
+      return box;
+    }
     // Talk, or one of the modes (weigh, teach, settle, news, goal, work it out): what the next message asks for. Act (from a practice) is its own page.
     const modeChips = current !== 'act' && h('div', { class: 'size-chips talk-modes', role: 'group', 'aria-label': 'Mode' },
       Object.entries(TALK_MODES).map(([k, m]) => {
@@ -2203,7 +2244,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text, true, spoken ? 'voice' : 'typed');
       const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
       keepInView(out);
-      let reply = ''; let view = null;
+      let reply = ''; let view = null; let safety = null;
       try {
         const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), via: spoken ? 'voice' : 'typed', ...(sendAs ? { mode: sendAs } : {}) }) });
         if (!res.ok) {
@@ -2225,8 +2266,11 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
               reply += m.d; out.classList.remove('thinking'); out.replaceChildren(...replyNodes(reply.trimStart(), refs, false));
               keepInView(out);
             }
+            else if (m.t === 'safety') safety = m;
             else if (m.t === 'done') {
               Object.assign(refs, m.refs); view = finishReply(out, reply.trim(), m.sources);
+              if (safety) out.prepend(helpCard(safety));
+              if (m.offer) out.append(offerDeeper(m.offer));
               const walk = journeyOffer(reply, sendAs ?? current); if (walk) out.append(walk);
               keepInView(out);
             }
@@ -2272,7 +2316,11 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
       modeChips,
       h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && fresh, current !== 'act' && pastBtn,
-        h('button', { type: 'button', class: 'chip', onclick: () => chooseVoice() }, 'Microphone and voice')));
+        h('button', { type: 'button', class: 'chip', onclick: () => chooseVoice() }, 'Microphone and voice')),
+      current !== 'act' && depthBox,
+      current !== 'act' && h('div', {}, h('div', { class: 'eyebrow' }, 'A voice for this conversation'), roleRow),
+      h('p', { class: 'small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go'), ' · ',
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy('help') }, 'Need help now?')));
     const folded = state.turns.length > 0 && current !== 'act';
     const head = h('details', { class: 'talk-head', ...(folded ? {} : { open: '' }) },
       h('summary', {}, h('span', { class: 'talk-head-title' }, current === 'act' ? 'Act on it near you' : TALK_MODES[current]?.label ?? 'Talk'), h('span', { class: 'muted small' }, ' · options')),
@@ -2280,6 +2328,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     render(
       head,
       current !== 'act' && h('div', { class: 'talk-tools chrome' }, summary.button),
+      roleTag,
       summary.box,
       log,
       compose,
@@ -2291,6 +2340,78 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     else if (seed) { ta.value = seed; submit(); }
     if (log.lastElementChild) keepInView(log.lastElementChild);
   });
+}
+
+const DEPTH_LABEL = { 1: '1 · Ideas', 2: '2 · Your life', 3: '3 · All the way' };
+const DEPTH_NOTE = {
+  1: 'Ideas, thinkers and your views on them. It will not ask about your private life, though it may offer to go further.',
+  2: 'It asks about your own experience, and stays with what you bring before widening out.',
+  3: 'Feelings, history, relationships, dreams: it names patterns it notices across your conversations and asks the harder question. It is still not a therapist.',
+};
+// Help on screen when a message shows signs of danger: numbers to call, tappable, and what Continuum cannot do.
+function helpCard({ risk, imminent }) {
+  const call = (n, label) => h('a', { class: 'help-call', href: `tel:${n}` }, label);
+  const others = risk === 'others' || risk === 'both'; const self = risk === 'self' || risk === 'both';
+  return h('div', { class: 'help-card', role: 'alert' },
+    h('p', {}, h('strong', {}, imminent ? 'If anyone is in danger right now, call 911.' : 'This sounds serious, and you do not have to carry it alone.')),
+    self && h('p', {}, 'If you are thinking about ending your life or hurting yourself: call or text 988, the Suicide & Crisis Lifeline, any time.'),
+    others && h('p', {}, 'If you are afraid of what you might do to someone: step away from them now. 988 is there for that too: call or text, any time.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, call('911', 'Call 911'), call('988', 'Call 988'), h('a', { class: 'help-call', href: 'sms:988' }, 'Text 988')),
+    h('p', { class: 'muted small' }, 'Outside the US, call your local emergency number. Continuum is not a therapist and cannot contact anyone for you.'));
+}
+
+// Where your words go: what is kept, where, who sees it, what is sent elsewhere to make the app work, and the buttons to
+// take it all or erase it. Also: what Continuum is not.
+function showPrivacy(focus = null) {
+  setNav('');
+  const sec = (title, ...body) => h('section', { class: 'diary-block privacy' }, h('h2', {}, title), ...body);
+  const p = (...t) => h('p', {}, ...t);
+  const del = h('button', { type: 'button', class: 'btn ghost danger' }, 'Delete everything');
+  del.addEventListener('click', () => {
+    const typed = h('input', { type: 'text', class: 'search', placeholder: 'Type DELETE', 'aria-label': 'Type DELETE to confirm' });
+    const go = h('button', { type: 'button', class: 'btn danger' }, 'Delete for good');
+    const st = h('p', { class: 'muted small', role: 'status' });
+    go.addEventListener('click', async () => {
+      if (typed.value.trim().toLowerCase() !== 'delete') { st.textContent = 'Type DELETE to confirm.'; return; }
+      go.disabled = true;
+      try {
+        await api('/api/me/delete', { method: 'POST', body: { confirm: 'delete' } });
+        try { localStorage.clear(); } catch { /* nothing kept */ }
+        render(h('h1', {}, 'Deleted'), h('p', {}, 'Everything you kept in Continuum has been erased, and your link no longer works. Thank you for the conversations.'));
+      } catch { go.disabled = false; st.textContent = 'Could not delete. Try again.'; }
+    });
+    del.replaceWith(h('div', {}, h('p', {}, 'This erases your answers, notes, conversations, summaries and everything else, and your personal link stops working. It cannot be undone.'),
+      h('div', { class: 'row', style: 'gap:8px' }, typed, go), st));
+  });
+  const download = h('a', { class: 'btn ghost', href: '#', onclick: async (e) => {
+    e.preventDefault();
+    const r = await fetch('/api/me/export', { headers: { 'x-continuum-token': token() } }).catch(() => null);
+    if (!r?.ok) return notice('Could not download. Try again.');
+    const url = URL.createObjectURL(await r.blob());
+    const a = h('a', { href: url, download: `continuum-${today()}.json` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } }, 'Download everything');
+  const help = sec('Need help now?',
+    p('Continuum is not a therapist or a crisis service. It does not watch your conversations, and it cannot contact anyone for you: not a therapist, not emergency services, not the police. When something you say suggests you or someone else may be in danger, it shows these numbers on screen. That is all it does.'),
+    p(h('strong', {}, 'If anyone is in danger right now: call 911.'), ' If you are struggling, thinking of hurting yourself, or afraid of what you might do to someone: call or text 988, any time (US). Elsewhere: your local emergency number.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, h('a', { class: 'help-call', href: 'tel:911' }, 'Call 911'), h('a', { class: 'help-call', href: 'tel:988' }, 'Call 988'), h('a', { class: 'help-call', href: 'sms:988' }, 'Text 988')));
+  render(
+    h('h1', {}, 'Where your words go'),
+    h('p', { class: 'muted' }, 'In plain words: what Continuum keeps, where, who can see it, and how to take it or erase it.'),
+    focus === 'help' && help,
+    sec('What is kept',
+      p('Your name; what you write and say here (daily answers, notes, conversations and their summaries, problems you work through, survey answers); and what you do (which ideas you open, the days you visit), so Continuum can choose what comes next and pick up where you left off.')),
+    sec('Where, and who can see it',
+      p('In one database on Continuum\'s own server, run by Render in Oregon, USA, with a nightly copy kept for fourteen days in case something breaks. You reach it through your personal link, which works like a password: keep it private. The people who run Continuum can reach the server to keep it working; they do not read what people write.')),
+    sec('What is sent elsewhere, to make it work',
+      p(h('strong', {}, 'Anthropic (Claude)'), ' writes Continuum\'s replies, questions and summaries, so what you write in Talk and in "Work through a problem" is sent to it. Anthropic does not use it to train its models.'),
+      p(h('strong', {}, 'ElevenLabs'), ' makes the reading voice, and writes down what you say when you speak instead of type (only while the microphone is on).'),
+      p(h('strong', {}, 'Web searches'), ' run through Claude when you ask about the news, a law, or help near you; the search itself is all that goes out.'),
+      p(h('strong', {}, 'Your phone\'s notification service'), ' carries the short notes Continuum sends, if you said yes to them.'),
+      p('Nothing is sold. There are no ads, and no tracking or analytics code in the app.')),
+    sec('Your choices',
+      p('How deep Continuum goes is yours to set in Talk (level 1, ideas; 2, your life; 3, all the way), and it never goes deeper without asking. You can take everything, or erase everything, at any time.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, download, del)),
+    focus !== 'help' && help);
 }
 
 // The summary of a conversation: what it is about, the key points, the perspectives offered, and the sources. Kept up
@@ -3272,8 +3393,13 @@ function lineView(o) {
       if (stale) setTimeout(arrive, 1200);
     }
   });
+  // Coming back to a thread from an earlier conversation, in place of the friend's opener.
+  const rv = o.revisit;
+  const back = rv && h('div', { class: 'opener revisit' },
+    h('div', {}, `Coming back to something from ${rv.date}: `, h('em', {}, rv.name), rv.when ? ` (${rv.when}).` : '.', ` ${rv.ask}`),
+    h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(rv.talk)); showTalk({ seed: `Coming back to ${rv.name}. ${rv.ask} `, draft: true }); } }, 'Pick it up in Talk →'));
   render(
-    o.opener && h('p', { class: 'opener' }, o.opener),
+    back || (o.opener && h('p', { class: 'opener' }, o.opener)),
     h('h1', { class: 'line-prompt' }, n.prompt),
     // What it is about and where to read it, at once; the summary itself just under the answer box.
     h('p', { class: 'muted small line-src' }, [n.title, n.thinker].filter(Boolean).join(' · '), ' ', sourceLink(n.source_url, n.source_citation)),

@@ -322,6 +322,14 @@ CREATE TABLE IF NOT EXISTS push_subs (
   tz TEXT,                             -- the phone's time zone, to write only in the daytime
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Threads from earlier conversations brought back on the opening screen, so each comes back once.
+CREATE TABLE IF NOT EXISTS revisits (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  talk_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  PRIMARY KEY (user_id, talk_id, name)
+);
 CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
@@ -331,7 +339,8 @@ CREATE TABLE IF NOT EXISTS settings (
 // Columns added after the first testers' databases were created. SQLite has no ADD COLUMN IF NOT EXISTS.
 const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT'], ['nodes', 'room', 'TEXT'],
   ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT'],
-  ['talks', 'vias', 'TEXT'], ['talks', 'sources', 'TEXT'], ['talks', 'summary', 'TEXT']];
+  ['talks', 'vias', 'TEXT'], ['talks', 'sources', 'TEXT'], ['talks', 'summary', 'TEXT'],
+  ['users', 'depth', 'INTEGER'], ['talks', 'depth', 'INTEGER'], ['talks', 'role', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });

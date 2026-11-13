@@ -1070,3 +1070,19 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .talk-head-body { padding: 4px 0 6px; }
 .talk-tools { display: flex; justify-content: flex-end; margin: -6px 0 4px; }
 .talk-sources summary { cursor: pointer; }
+
+/* Talk: depth, role, offers, help */
+.depth-dial { margin: 10px 0 6px; }
+.depth-dial .muted { margin: 6px 0 0; }
+.role-tag { font-size: .85rem; opacity: .85; margin: 0 0 8px; font-style: italic; }
+.role-tag[hidden] { display: none; }
+.offer-deeper { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.help-card { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 2px solid #e0a23a; background: rgba(224, 162, 58, .14); font-family: var(--sans); }
+.help-card p { margin: 0 0 8px; }
+.help-call { display: inline-block; padding: 8px 14px; border-radius: 999px; background: #e0a23a; color: #1a1205; font-weight: 700; text-decoration: none; }
+.revisit em { font-family: var(--display); font-style: italic; }
+.revisit .link { margin-top: 6px; display: inline-block; }
+.privacy p { line-height: 1.55; }
+.btn.danger, .btn.ghost.danger { border-color: #c2553d; color: #f0a08e; }
+.btn.danger:not(.ghost) { background: #c2553d; color: #fff; }
+.talk-head-body .row { flex-wrap: nowrap; } .talk-head-body .row input { flex: 1; min-width: 0; }
