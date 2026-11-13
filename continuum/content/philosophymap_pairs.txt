@@ -1,0 +1,29 @@
+# Influence pairs from thephilosophymap.com between thinkers already in Continuum, not yet edges.
+# Suggestions only (no licence on the source; verify against a text before adding). A -> B means B was influenced by A.
+Aristotle -> Augustine of Hippo
+Aristotle -> Boethius
+Aristotle -> Epicurus
+Aristotle -> René Descartes
+Aristotle -> Zeno of Citium
+Augustine of Hippo -> Al-Ghazālī
+Augustine of Hippo -> Maimonides
+Augustine of Hippo -> René Descartes
+Avicenna (Ibn Sina) -> Averroes (Ibn Rushd)
+Baruch Spinoza -> Friedrich Nietzsche
+Baruch Spinoza -> G.W.F. Hegel
+Boethius -> Thomas Aquinas
+David Hume -> John Stuart Mill
+David Hume -> Robert Nozick
+Friedrich Nietzsche -> Jean-Paul Sartre
+G.W.F. Hegel -> Hannah Arendt
+Immanuel Kant -> Arthur Schopenhauer
+Immanuel Kant -> G.W.F. Hegel
+Immanuel Kant -> John Stuart Mill
+Immanuel Kant -> Robert Nozick
+Immanuel Kant -> Søren Kierkegaard
+Nāgārjuna -> Arthur Schopenhauer
+Plato -> Aristotle
+Plato -> Augustine of Hippo
+Plato -> Boethius
+Søren Kierkegaard -> Friedrich Nietzsche
+Zeno of Citium -> Marcus Aurelius
