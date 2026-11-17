@@ -1908,10 +1908,15 @@ function showJournal() {
       h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
       h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
     const road = await roadSection();
+    const pathNow = await api(`/api/paths?date=${today()}`).catch(() => null);
+    const pathBlock = pathNow && (pathNow.current || pathNow.past.length) && h('section', { class: 'diary-block' }, h('h2', {}, 'Your path'),
+      pathNow.current && h('p', {}, `${pathNow.current.name}: day ${pathNow.current.day} of ${pathNow.current.days}.`),
+      pathNow.past.slice(0, 3).map((r) => h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPathOutcome(r.run) }, `${r.name}`), ` · ${r.started} · ${r.practised} days${r.status === 'done' ? ', finished' : ''}`)),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showPaths() }, pathNow.current ? 'Today on your path' : 'Choose a path'));
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2412,6 +2417,105 @@ function showPrivacy(focus = null) {
       p('How deep Continuum goes is yours to set in Talk (level 1, ideas; 2, your life; 3, all the way), and it never goes deeper without asking. You can take everything, or erase everything, at any time.'),
       h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, download, del)),
     focus !== 'help' && help);
+}
+
+// ── Paths: a practice to commit to ──
+// Three sizes, from "What It All Sums To": a light two weeks, a month of the morning and evening practice, and the long
+// course. Choosing shows what each can look like (examples, not promises) and the ideas on the map that show why. Under
+// way: today's questions, morning and evening, each with the line from the tradition that found it, and the idea of
+// the day from the people behind the practice in focus.
+function showPaths({ choose = false } = {}) {
+  setNav('think');
+  return guarded(async () => {
+    const d = await api(`/api/paths?date=${today()}`);
+    pageBg = PAGE_BG.problem ?? pageBg;
+    if (d.current && !choose) return pathDayView(d.current);
+    const whyChips = h('div', { class: 'theme-chips' }, d.why.map((w) => h('button', { type: 'button', class: 'chip', onclick: () => walkTo(w.id, []) }, w.title)));
+    render(
+      d.current && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showPaths() }, `← ${d.current.name}`)),
+      h('h1', {}, 'A path to practise'),
+      h('blockquote', { class: 'thesis' }, h('p', {}, d.thesis.text), h('cite', {}, d.thesis.source)),
+      h('p', { class: 'muted small' }, 'Seven practices, found again and again by people who never heard of each other, and backed by modern evidence: tend the body, examine yourself daily, control your response, invest in a few close people, work at something that outlasts you, hold beliefs loosely, keep death in view. Pick how far to go.'),
+      h('div', { class: 'path-cards' }, d.paths.map((p) => h('section', { class: 'path-card' },
+        h('div', { class: 'eyebrow' }, `${p.days} days · ${p.effort}`),
+        h('h2', {}, p.name),
+        h('p', {}, p.promise),
+        h('div', { class: 'eyebrow' }, 'What this can look like'),
+        h('ul', { class: 'path-examples' }, p.examples.map((x) => h('li', {}, x))),
+        h('button', { type: 'button', class: 'btn', onclick: async (e) => {
+          if (d.current && !confirm(`Leave ${d.current.name} (day ${d.current.day}) and start ${p.name}?`)) return;
+          e.currentTarget.disabled = true;
+          try { const r = await api('/api/paths/start', { method: 'POST', body: { path: p.id, date: today() } }); pathDayView(r.current); } catch { notice('Could not start it. Try again.'); e.currentTarget.disabled = false; }
+        } }, d.current?.id === p.id ? 'Start it again' : `Start ${p.name.toLowerCase()}`)))),
+      h('p', { class: 'muted small' }, 'Examples, not promises: what it can look like when it takes. Missing a day never breaks a path; it waits for you.'),
+      h('div', { class: 'eyebrow' }, 'Why it works: open any of these'),
+      whyChips,
+      d.past.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'Paths so far'),
+        d.past.map((r) => h('p', {}, h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPathOutcome(r.run) }, r.name), h('span', { class: 'muted small' }, ` · ${r.started} · ${r.practised} days${r.status === 'done' ? ', finished' : ''}`)))));
+  });
+}
+function pathDayView(c) {
+  const anchorCard = (a) => {
+    const ta = h('textarea', { rows: '2', maxlength: '4000', placeholder: 'A line or two.', 'aria-label': a.label });
+    const save = h('button', { type: 'button', class: 'btn ghost' }, 'Keep');
+    const box = h('div', { class: `anchor ${a.answer ? 'done' : ''}` });
+    const shown = () => box.replaceChildren(head(), h('p', { class: 'anchor-answer' }, a.answer), h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => edit() }, 'Change'));
+    const head = () => h('div', {}, h('div', { class: 'anchor-label' }, a.label), h('p', { class: 'anchor-prompt' }, a.prompt),
+      a.id === 'body_pm' && c.named && h('p', { class: 'muted small' }, `This morning you named: ${c.named}`),
+      a.id === 'monthly' && c.views?.length > 0 && h('details', { class: 'small' }, h('summary', {}, 'What you said this month'), h('ul', {}, c.views.map((v) => h('li', {}, `${v.date} · ${v.topic}: ${v.body}`)))),
+      h('p', { class: 'anchor-line' }, h('em', {}, a.line), ` ${a.source}`));
+    const edit = () => {
+      ta.value = a.answer ?? '';
+      box.replaceChildren(head(), ta, h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, dictation(ta, { label: 'Speak' })?.button ?? h('span'), save));
+    };
+    save.addEventListener('click', async () => {
+      if (!ta.value.trim()) return;
+      save.disabled = true;
+      try {
+        const r = await api('/api/paths/entry', { method: 'POST', body: { anchor: a.id, body: ta.value, date: today() } });
+        if (r.finished) return pathFinished(r.finished);
+        // Redraw the day (the evening may echo what the morning named), where the reader was.
+        const y = scrollY; pathDayView(r.current); scrollTo(0, y);
+        if (r.current?.done.all) notice('Done for today.');
+      } catch { notice('Could not keep that. Try again.'); } finally { save.disabled = false; }
+    });
+    if (a.answer) shown(); else edit();
+    return box;
+  };
+  const progress = h('div', { class: 'path-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(c.days), 'aria-valuenow': String(c.day) },
+    h('span', { style: `width:${Math.round((100 * (c.day - (c.done.all ? 0 : 1))) / c.days)}%` }));
+  render(
+    h('div', { class: 'eyebrow' }, `${c.name} · day ${c.day} of ${c.days}`),
+    progress,
+    h('h1', {}, c.done.all ? 'Done for today' : 'Today on your path'),
+    c.focus && h('p', {}, 'In focus: ', h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPractice({ practice: c.focus.id, size: c.focus.full ? 'full' : null }) }, c.focus.title),
+      c.focus.full ? ' (today at full size)' : ''),
+    c.idea && h('p', { class: 'muted small' }, 'Today\'s idea comes from the people behind it: ', h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showToday() }, `"${c.idea.title}"${c.idea.thinker ? `, ${c.idea.thinker}` : ''}`)),
+    c.morning.length > 0 && h('section', { class: 'path-part' }, h('h2', {}, 'Morning: set the day'), c.morning.map(anchorCard)),
+    c.evening.length > 0 && h('section', { class: 'path-part' }, h('h2', {}, 'Evening: review the day'), c.evening.map(anchorCard)),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;margin-top:18px' },
+      h('button', { type: 'button', class: 'chip', onclick: () => showPaths({ choose: true }) }, 'The paths'),
+      h('button', { type: 'button', class: 'chip', onclick: async () => { if (!confirm(`Stop ${c.name}? What you wrote stays in your diary.`)) return; await api('/api/paths/stop', { method: 'POST', body: { date: today() } }).catch(() => {}); showPaths(); } }, 'Stop this path')));
+}
+function pathFinished(o) {
+  notice(`${o.name}: finished.`);
+  showPathOutcome(null, o);
+}
+// What a path came to, in the user's own words: every answer, by anchor.
+function showPathOutcome(run, data = null) {
+  setNav('think');
+  return guarded(async () => {
+    const o = data ?? await api(`/api/paths/${run}`);
+    render(
+      h('div', { class: 'eyebrow' }, `${o.started}${o.ended ? ` to ${o.ended}` : ''}`),
+      h('h1', {}, o.status === 'done' ? `${o.name}: done` : o.name),
+      h('p', {}, `${o.practised} ${o.practised === 1 ? 'day' : 'days'} practised, ${o.answers} ${o.answers === 1 ? 'answer' : 'answers'}. This is what you wrote, gathered by question: read it the way you would someone else's diary, and look for what repeats.`),
+      o.anchors.map((a) => h('details', { class: 'path-answers' }, h('summary', {}, `${a.label}${a.when ? ` · ${a.when}` : ''} · ${a.list.length}`),
+        h('ul', {}, a.list.map((x) => h('li', {}, h('span', { class: 'muted small' }, `Day ${x.day} · `), x.body))))),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;margin-top:16px' },
+        h('button', { type: 'button', class: 'btn', onclick: () => showPaths({ choose: true }) }, 'Choose a path'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `I just finished ${o.name}. Here is what I noticed: `, draft: true }) }, 'Talk it over')));
+  });
 }
 
 // The summary of a conversation: what it is about, the key points, the perspectives offered, and the sources. Kept up
@@ -3248,6 +3352,7 @@ function showThink() {
         big('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
         big('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
         big('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
+        big('A path to practise', 'Commit to two weeks, a month, or the long course: the seven practices people everywhere found for living well, a few minutes a day.', () => showPaths()),
         big('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
         big('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
         big('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
@@ -3286,7 +3391,7 @@ function nudgeSetting() {
 // over the road so far. Everything else is in the menu below.
 const GREETED_KEY = 'continuum.greeted'; const NUDGE_ASKED_KEY = 'continuum.nudges.asked';
 // A shortcut from the home-screen icon (press and hold it) goes straight to its place.
-const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal() };
+const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal(), path: () => showPaths() };
 function arrive() {
   const go = SHORTCUTS[params.get('go')];
   if (go) { store.set(GREETED_KEY, today()); go(); return; }
@@ -3341,6 +3446,10 @@ function quietLinks(o, { onTopic }) {
   const waiting = o.session ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.session.id) }, `Waiting: session ${o.session.n} of ${o.session.of}, ${o.session.name}`)
     : o.checkin ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.checkin.id) }, `Check in: ${o.checkin.title}`) : null;
   if (waiting) box.append(waiting);
+  // A path under way: the part of today still to do.
+  const pth = o.path;
+  if (pth && !(pth.morning && pth.evening)) box.append(h('button', { type: 'button', class: 'link', onclick: () => showPaths() },
+    `${pth.name}, day ${pth.day} of ${pth.days}: ${!pth.morning ? 'the morning questions' : 'the evening review'}`));
   if (lastLine) box.append(h('button', { type: 'button', class: 'link', onclick: () => resume(last) }, `Pick up where you left off: ${lastLine}`));
   return box;
 }

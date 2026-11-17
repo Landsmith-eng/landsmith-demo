@@ -1086,3 +1086,23 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .btn.danger, .btn.ghost.danger { border-color: #c2553d; color: #f0a08e; }
 .btn.danger:not(.ghost) { background: #c2553d; color: #fff; }
 .talk-head-body .row { flex-wrap: nowrap; } .talk-head-body .row input { flex: 1; min-width: 0; }
+
+/* Paths */
+.thesis { margin: 6px 0 12px; padding: 10px 14px; border-left: 3px solid var(--accent); font-family: var(--display); font-size: 1.12rem; }
+.thesis p { margin: 0 0 4px; } .thesis cite { font-family: var(--sans); font-size: .8rem; opacity: .75; font-style: normal; }
+.path-cards { display: grid; gap: 14px; margin: 12px 0; }
+.path-card { padding: 14px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); background: color-mix(in srgb, currentColor 6%, transparent); }
+.path-card h2 { margin: 4px 0 6px; }
+.path-examples { margin: 4px 0 12px; padding-left: 1.1em; font-style: italic; }
+.path-examples li { margin: 4px 0; }
+.path-progress { height: 6px; border-radius: 3px; background: color-mix(in srgb, currentColor 15%, transparent); margin: 6px 0 12px; overflow: hidden; }
+.path-progress span { display: block; height: 100%; background: var(--accent); }
+.path-part { margin-top: 18px; }
+.anchor { padding: 10px 0 12px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.anchor textarea { width: 100%; margin: 6px 0; }
+.anchor-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.anchor.done .anchor-label::after { content: ' ✓'; color: var(--accent); }
+.anchor-prompt { margin: 4px 0 6px; font-family: var(--display); font-size: 1.08rem; }
+.anchor-line { margin: 0 0 6px; font-size: .85rem; opacity: .8; }
+.anchor-answer { margin: 4px 0; padding-left: 10px; border-left: 2px solid var(--accent); }
+.path-answers { margin: 8px 0; } .path-answers summary { cursor: pointer; font-weight: 600; }

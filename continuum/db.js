@@ -322,6 +322,26 @@ CREATE TABLE IF NOT EXISTS push_subs (
   tz TEXT,                             -- the phone's time zone, to write only in the daytime
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Paths: a practice the user commits to (light, a month, or the long course). A day counts when they show up.
+CREATE TABLE IF NOT EXISTS path_runs (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  path_id TEXT NOT NULL,
+  started TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active', -- active|done|left
+  ended TEXT
+);
+CREATE TABLE IF NOT EXISTS path_entries (
+  run_id INTEGER NOT NULL REFERENCES path_runs(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  day INTEGER NOT NULL,
+  anchor TEXT NOT NULL,
+  body TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (run_id, day, anchor)
+);
+
 -- Threads from earlier conversations brought back on the opening screen, so each comes back once.
 CREATE TABLE IF NOT EXISTS revisits (
   user_id INTEGER NOT NULL REFERENCES users(id),

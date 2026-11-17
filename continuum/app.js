@@ -11,6 +11,7 @@ import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_ste
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { createLure } from './lure.js';
+import { PATHS, ANCHORS, WHY_IDEAS, THESIS, planFor, pathById } from './content/paths.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
@@ -201,6 +202,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const route = JSON.parse(c.route); const k = route.findIndex((r) => inPool.has(r.id) && fresh.some((n) => n.id === r.id));
       if (k >= 0) return { id: route[k].id, move: 'route', why: `For what you are working through ("${c.title}"), step ${k + 1} of ${route.length}: ${route[k].why}` };
     }
+    // A path they have committed to: on its idea days, one of the ideas that land on the practice in focus.
+    const pathPick = pathIdea(uid, date, inPool, fresh);
+    if (pathPick) return pathPick;
     // What they have been talking about lately comes first: an idea that bears on a view, goal or question they
     // voiced in the last week, not yet written on (fresh ones first).
     for (const v of vq.since.all(uid, shiftDay(date, -7))) {
@@ -248,6 +252,67 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const list = fresh.length ? fresh : pool;
     return { id: list[hash(`${uid}|${date}`) % list.length].id, why: null };
   }
+
+  // ── Paths ──
+  const paq = {
+    active: db.prepare("SELECT * FROM path_runs WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"),
+    runs: db.prepare('SELECT * FROM path_runs WHERE user_id = ? ORDER BY id DESC LIMIT 10'),
+    run: db.prepare('SELECT * FROM path_runs WHERE id = ? AND user_id = ?'),
+    start: db.prepare("INSERT INTO path_runs (user_id, path_id, started) VALUES (?, ?, ?)"),
+    end: db.prepare('UPDATE path_runs SET status = ?, ended = ? WHERE id = ?'),
+    days: db.prepare('SELECT DISTINCT local_date FROM path_entries WHERE run_id = ? ORDER BY local_date'),
+    entries: db.prepare('SELECT day, anchor, body, local_date FROM path_entries WHERE run_id = ? ORDER BY day, rowid'),
+    on: db.prepare('SELECT anchor, body FROM path_entries WHERE run_id = ? AND day = ?'),
+    put: db.prepare(`INSERT INTO path_entries (run_id, user_id, day, anchor, body, local_date) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (run_id, day, anchor) DO UPDATE SET body = excluded.body`),
+    landing: db.prepare("SELECT n.id, n.year FROM edges e JOIN nodes n ON n.id = e.from_id WHERE e.to_id = ? AND e.relation = 'lands_on' AND n.prompt IS NOT NULL AND n.prompt != '' ORDER BY n.year, n.id"),
+  };
+  // Which day of the path it is: the days already practised, plus today if nothing is written yet today. Days
+  // when they did not come are not counted, so a path never fails; it waits.
+  function pathDay(run, date) {
+    const days = paq.days.all(run.id).map((r) => r.local_date);
+    const done = days.filter((d) => d < date).length;
+    return Math.min(done + 1, pathById(run.path_id)?.days ?? done + 1);
+  }
+  function pathIdea(uid, date, inPool, fresh) {
+    const run = paq.active.get(uid); if (!run) return null;
+    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    if (!plan.idea) return null;
+    const freshIds = new Set(fresh.map((n) => n.id));
+    // Through the ideas that land on the practice, oldest first: from the first people who found it to the evidence.
+    const cands = paq.landing.all(plan.focus).filter((n) => inPool.has(n.id));
+    const n = cands.find((x) => freshIds.has(x.id)) ?? cands[0];
+    const practice = q.node.get(plan.focus);
+    return n && { id: n.id, move: 'path', why: `${path.name}, day ${day} of ${path.days}: one of the people behind "${practice?.title}".` };
+  }
+  function pathToday(uid, date) {
+    const run = paq.active.get(uid); if (!run) return null;
+    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    const said = Object.fromEntries(paq.on.all(run.id, day).map((e) => [e.anchor, e.body]));
+    const anchor = (id) => ({ id, ...ANCHORS[id], answer: said[id] ?? null });
+    const pick = q.pickFor.get(uid, date); const idea = pick && lq2.move(uid, date) === 'path' ? q.node.get(pick.node_id) : null;
+    const focus = q.node.get(plan.focus);
+    const views = plan.evening.includes('monthly') ? vq.since.all(uid, shiftDay(date, -31)).map((v) => ({ topic: v.topic, body: v.body, date: v.local_date })) : [];
+    const all = [...plan.morning, ...plan.evening];
+    return {
+      run: run.id, id: path.id, name: path.name, days: path.days, day, started: run.started,
+      practised: paq.days.all(run.id).length,
+      morning: plan.morning.map(anchor), evening: plan.evening.map(anchor),
+      done: { morning: plan.morning.every((a) => said[a]), evening: plan.evening.every((a) => said[a]), all: all.every((a) => said[a]) },
+      focus: focus && { id: focus.id, title: focus.title, full: Boolean(plan.full) },
+      idea: idea && { id: idea.id, title: idea.title, thinker: idea.thinker },
+      named: said.body_am ?? null, views,
+    };
+  }
+  // What a path came to, from the user's own entries: the days, the answers by anchor, what changed their mind.
+  function pathOutcome(run) {
+    const path = pathById(run.path_id); const entries = paq.entries.all(run.id);
+    const by = {}; for (const e of entries) (by[e.anchor] ??= []).push({ day: e.day, body: e.body, date: e.local_date });
+    return { id: path.id, name: path.name, days: path.days, started: run.started, status: run.status, ended: run.ended,
+      practised: paq.days.all(run.id).length, answers: entries.length,
+      anchors: Object.entries(by).map(([id, list]) => ({ id, label: ANCHORS[id]?.label ?? id, when: ANCHORS[id]?.when, list })) };
+  }
+  const lq2 = { move: (uid, date) => db.prepare('SELECT move FROM lures WHERE user_id = ? AND local_date = ?').get(uid, date)?.move ?? null };
 
   const card = (n) => ({ id: n.id, type: n.type, field: n.field, title: n.title, thinker: n.thinker, year: n.year, prompt: n.prompt, daily: n.seq != null });
 
@@ -347,7 +412,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     lure.maybeSynthesize(uid, date); // in the background: ready for next time if it is due
     res.json({ ...t, opener: t.state === 'write' ? (nudge?.text ?? lure.opener(uid, date, first)) : null,
       reaction: t.state === 'done_today' && l?.reaction ? { text: l.reaction, ack: l.ack ?? '' } : null,
-      revisit, synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
+      revisit, path: (() => { const p = pathToday(uid, date); return p && { name: p.name, day: p.day, days: p.days, morning: p.done.morning, evening: p.done.evening }; })(),
+      synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
   });
   // A thread to pick up from a conversation three to forty-five days old, at most every four days, each thread once.
   const rvq = {
@@ -374,6 +440,46 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     }
     return null;
   }
+
+  // Paths: what there is to commit to (with examples of what it can look like, and the ideas that show why), the one
+  // under way and today's part of it, and the ones done.
+  app.get('/api/paths', auth, (req, res) => {
+    const date = localDate(req.query.date); const uid = req.user.id;
+    const why = WHY_IDEAS.map((id) => q.node.get(id)).filter(Boolean).map((n) => ({ id: n.id, title: n.title, thinker: n.thinker }));
+    res.json({ thesis: THESIS, paths: PATHS, why, current: pathToday(uid, date),
+      past: paq.runs.all(uid).filter((r) => r.status !== 'active').map((r) => ({ run: r.id, id: r.path_id, name: pathById(r.path_id)?.name, started: r.started, status: r.status, ended: r.ended, practised: paq.days.all(r.id).length })) });
+  });
+  app.post('/api/paths/start', auth, (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id; const path = pathById(req.body?.path);
+    if (!path) return res.status(400).json({ error: 'bad_path' });
+    const was = paq.active.get(uid); if (was) paq.end.run('left', date, was.id);
+    paq.start.run(uid, path.id, date);
+    // Today's idea may change to the path's (only if today's card is not yet written).
+    if (!q.writtenOn.get(uid, date)) q.dropPick.run(uid, date);
+    res.json({ current: pathToday(uid, date) });
+  });
+  app.post('/api/paths/entry', auth, (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id;
+    const run = paq.active.get(uid); if (!run) return res.status(404).json({ error: 'no_path' });
+    const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    const anchor = String(req.body?.anchor ?? ''); const body = typeof req.body?.body === 'string' ? req.body.body.trim().slice(0, 4000) : '';
+    if (![...plan.morning, ...plan.evening].includes(anchor)) return res.status(400).json({ error: 'not_today' });
+    if (!body) return res.status(400).json({ error: 'empty' });
+    paq.put.run(run.id, uid, day, anchor, body, date);
+    let finished = null;
+    const now = pathToday(uid, date);
+    if (day >= pathById(run.path_id).days && now.done.all) { paq.end.run('done', date, run.id); finished = pathOutcome(paq.run.get(run.id, uid)); }
+    res.json({ current: finished ? null : now, finished });
+  });
+  app.post('/api/paths/stop', auth, (req, res) => {
+    const run = paq.active.get(req.user.id); if (run) paq.end.run('left', localDate(req.body?.date), run.id);
+    res.json({ ok: true });
+  });
+  app.get('/api/paths/:run', auth, (req, res) => {
+    const run = paq.run.get(Number(req.params.run), req.user.id);
+    if (!run) return res.status(404).json({ error: 'not_found' });
+    res.json(pathOutcome(run));
+  });
 
   // Something else on their mind: today's line goes there instead (until they have answered today's).
   app.post('/api/lure/topic', auth, async (req, res) => {
@@ -487,6 +593,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       }
       db.prepare('UPDATE topics SET created_by = (SELECT created_by FROM groups WHERE groups.id = topics.group_id) WHERE created_by = ?').run(uid);
       db.prepare('DELETE FROM case_sessions WHERE case_id IN (SELECT id FROM cases WHERE user_id = ?)').run(uid);
+      db.prepare('DELETE FROM path_entries WHERE run_id IN (SELECT id FROM path_runs WHERE user_id = ?)').run(uid);
       for (const t of userTables()) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(uid);
       db.prepare('DELETE FROM users WHERE id = ?').run(uid);
       db.exec('COMMIT');
