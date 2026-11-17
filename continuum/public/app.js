@@ -3452,9 +3452,9 @@ function dareFollowUp(d) {
     try { const r = await api(`/api/trainer/dare/${d.id}`, { method: 'POST', body: { did, answer: ta.value, date: today() } }); box.replaceChildren(h('p', { class: 'ack' }, r.ack)); }
     catch { notice('Could not save that. Try again.'); }
   };
-  box.append(ta, h('div', { class: 'trainer-choices' },
-    h('button', { type: 'button', class: 'btn ghost', onclick: send(true) }, 'I did it'),
-    h('button', { type: 'button', class: 'btn ghost', onclick: send(false) }, 'I did not')));
+  box.append(ta, h('div', { class: 'trainer-words' },
+    h('button', { type: 'button', class: 'trainer-word', onclick: send(true) }, 'I did it'),
+    h('button', { type: 'button', class: 'trainer-word', onclick: send(false) }, 'I did not')));
   return box;
 }
 async function trainerNext(params) {
@@ -3481,9 +3481,14 @@ function trainerStoryView(s, { greet = null } = {}) {
     if (c.go === 'talk') return showTalk({ about: { title: s.title } });
     if (c.go === 'room') return showGallery('rooms', { focus: s.id });
   };
-  const choiceRow = h('div', { class: 'trainer-choices' }, s.choices.map((c) => h('button', { type: 'button', class: `btn ${c.go === 'respond' ? '' : 'ghost'}`, onclick: act(c) }, c.label)));
+  // Three words, not buttons: your thoughts, a conversation, or more.
+  const word = (label, fn) => h('button', { type: 'button', class: 'trainer-word', onclick: fn }, label);
+  const choiceRow = h('div', { class: 'trainer-words' },
+    word('Thoughts', () => respondTo('Thoughts', null)),
+    word('Talk', act({ go: 'talk' })),
+    word('More, please', act({ go: 'more' })));
   const pushBox = s.push && (s.push.kind === 'invite' ? inviteBox(s.push) : s.push.kind === 'dare' ? dareBox(s.push)
-    : h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('button', { type: 'button', class: 'btn ghost', onclick: act(s.push) }, s.push.label)));
+    : h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: act(s.push) }, s.push.label))));
   // The invitation: their own pattern, then a question. Whatever they pick, the path starts where they chose.
   function inviteBox(pu) {
     const box = h('div', { class: 'trainer-push invite' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.ask));
@@ -3493,20 +3498,20 @@ function trainerStoryView(s, { greet = null } = {}) {
         catch { notice('Could not start it. Try again.'); }
       };
       box.replaceChildren(h('p', {}, `"${o.title}". Your call, and a good one. Want to give it two weeks, a minute or two a day, starting there? Or a month, if you want it to stick.`),
-        h('div', { class: 'trainer-choices' },
-          h('button', { type: 'button', class: 'btn', onclick: start('light') }, 'Two weeks, starting there'),
-          h('button', { type: 'button', class: 'btn ghost', onclick: start('month') }, 'A month'),
-          h('button', { type: 'button', class: 'btn ghost', onclick: () => box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It will keep. You know where the paths are: Campus, the practice yard.')) }, 'Not now')));
+        h('div', { class: 'trainer-words' },
+          h('button', { type: 'button', class: 'trainer-word', onclick: start('light') }, 'Two weeks, starting there'),
+          h('button', { type: 'button', class: 'trainer-word', onclick: start('month') }, 'A month'),
+          h('button', { type: 'button', class: 'trainer-word', onclick: () => box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It will keep. You know where the paths are: Campus, the practice yard.')) }, 'Not now')));
     };
-    box.append(h('div', { class: 'trainer-choices' }, ...pu.options.map((o) => h('button', { type: 'button', class: 'btn ghost', onclick: pickIt(o) }, o.title)),
+    box.append(h('div', { class: 'trainer-words' }, ...pu.options.map((o) => h('button', { type: 'button', class: 'trainer-word', onclick: pickIt(o) }, o.title)),
       h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not yet')));
     return box;
   }
   // A dare: one small thing today. It is asked about next time.
   function dareBox(pu) {
     const box = h('div', { class: 'trainer-push dare' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.dare));
-    box.append(h('div', { class: 'trainer-choices' },
-      h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+    box.append(h('div', { class: 'trainer-words' },
+      h('button', { type: 'button', class: 'trainer-word', onclick: async () => {
         await api('/api/trainer/dare', { method: 'POST', body: { practice: pu.practice, date: today() } }).catch(() => {});
         box.replaceChildren(h('p', {}, 'Good. I will ask you how it went.'));
       } }, pu.label),
@@ -3515,7 +3520,7 @@ function trainerStoryView(s, { greet = null } = {}) {
   }
   // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
   function respondTo(label, pushed) {
-    const question = pushed ?? (s.prompt && /think|true|argue|seen/i.test(label) ? s.prompt : label);
+    const question = pushed ?? s.prompt ?? 'What do you think?';
     const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A word or a page. Even "huh" tells me something.', 'aria-label': question });
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
     const box = h('div', { class: 'trainer-respond' }, h('p', { class: 'trainer-q' }, question), ta,
@@ -3528,11 +3533,9 @@ function trainerStoryView(s, { greet = null } = {}) {
           ? await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: ta.value, date: today() } })
           : await api('/api/trainer/respond', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } });
         if (s.today) trainerLog(s, 'respond');
-        const onward = s.choices.filter((c) => c.go !== 'respond');
-        if (!onward.some((c) => ['more', 'near', 'far'].includes(c.go))) onward.push({ label: 'Another', go: 'more' });
         box.replaceWith(h('div', { class: 'trainer-after' }, h('blockquote', { class: 'kept' }, ta.value.trim()),
           r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
-          h('div', { class: 'trainer-choices' }, onward.map((c) => h('button', { type: 'button', class: 'btn ghost', onclick: act(c) }, c.label)))));
+          h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
       } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
     });
     choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
@@ -3558,9 +3561,7 @@ function trainerStoryView(s, { greet = null } = {}) {
   // A tap on the story says "ready": the questions come at once.
   view.querySelector('.trainer-story')?.addEventListener('click', (e) => { if (!e.target.closest('a, button, textarea')) reveal(); });
   later.append(...[pushBox, choiceRow, ...(waiting ?? []), h('div', { class: 'row trainer-quiet' },
-      h('button', { type: 'button', class: 'link small', onclick: () => { trainerLog(s, 'look'); gaze(s.img); } }, 'Look at the painting'),
-      // There is always a way on, even when "another" is not among the choices.
-      !s.choices.some((c) => ['more', 'near', 'far'].includes(c.go)) && h('button', { type: 'button', class: 'link small trainer-next', onclick: () => trainerNext({ from: s.id, how: 'more', img: s.img }) }, 'Something else →')),
+      h('button', { type: 'button', class: 'link small', onclick: () => { trainerLog(s, 'look'); gaze(s.img); } }, 'Look at the painting')),
     greet && quietLinks(greet, { onTopic: async (topic, status) => {
       if (greet.state !== 'write') return showTalk({ seed: topic });
       const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });

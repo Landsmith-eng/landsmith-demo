@@ -1130,3 +1130,8 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .trainer-greet { font-family: var(--display); font-size: 1.2rem; margin: 0 0 14px; opacity: .92; }
 .trainer-later { opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity 1.6s ease, transform 1.6s ease; }
 .trainer-later.in { opacity: 1; transform: none; pointer-events: auto; }
+/* The trainer's three words */
+.trainer-words { display: flex; flex-wrap: wrap; gap: 6px 28px; margin: 22px 0 8px; }
+.trainer-word { background: none; border: 0; padding: 4px 0; color: inherit; font-family: var(--display); font-size: 1.3rem; cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
+.trainer-word:active { opacity: .6; }
