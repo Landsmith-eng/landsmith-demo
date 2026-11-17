@@ -1978,12 +1978,19 @@ function peek(ms = 3500) {
   const root = document.documentElement; if (!root.classList.contains('talk-calm')) return;
   root.classList.add('peek'); clearTimeout(peekTimer); peekTimer = setTimeout(() => root.classList.remove('peek'), ms);
 }
+// The playback controls float up for a few seconds when reading starts or the screen is touched, then fade away.
+let barTimer = 0;
+function wakeBar(ms = 3500) {
+  if (talkBar.hidden) return;
+  talkBar.classList.add('awake'); clearTimeout(barTimer); barTimer = setTimeout(() => talkBar.classList.remove('awake'), ms);
+}
+addEventListener('pointerdown', () => wakeBar(), { passive: true });
 addEventListener('pointerup', (e) => {
   if (!document.documentElement.classList.contains('talk-calm')) return;
   if (e.target.closest('textarea, input, select, .talk-head')) return;
   peek(); // a tap on the controls themselves keeps them up a little longer
 });
-const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; peek(); } };
+const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; peek(); wakeBar(); } };
 for (const ev of ['touchmove', 'wheel']) addEventListener(ev, userScrolled, { passive: true });
 addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && e.target === document.body) userScrolled(); });
 // Keep the sentence being read in view: its start a third of the way down, or for a long sentence, the part being
@@ -2017,7 +2024,7 @@ function setPlayState(view, state) {
   const was = document.documentElement.classList.contains('speaking');
   talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
   document.documentElement.classList.toggle('speaking', state === 'playing');
-  if (state === 'playing' && !was) peek(2500); // show the controls as reading starts, then let them go
+  if (state === 'playing' && !was) { peek(2500); wakeBar(2500); } // show the controls as reading starts, then let them go
   talkBarPause.textContent = state === 'paused' ? '▶' : '❚❚'; talkBarPause.setAttribute('aria-label', state === 'paused' ? 'Play' : 'Pause');
   if (state === 'idle') { talkBarFollow.hidden = true; }
   placeTalkBar();

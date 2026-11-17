@@ -1018,16 +1018,19 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 .talk-bar { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: 170px;
   display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .talk-bar[hidden] { display: none; }
-.tb-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px; background: rgba(8, 13, 10, .86);
-  backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,.4); }
-.tb-btn { width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08); color: #f2f6f3;
-  display: inline-flex; align-items: center; justify-content: center; flex-direction: column; font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0; }
+.tb-row { display: flex; align-items: center; gap: 22px; }
+/* Just the icons, floating and a little see-through, no buttons behind them. They come with a touch and fade. */
+.talk-bar { opacity: 0; pointer-events: none; transition: opacity .9s ease; }
+.talk-bar.awake { opacity: 1; pointer-events: auto; transition: opacity .25s ease; }
+.tb-btn { width: 52px; height: 52px; border: 0; background: none; color: #f2f6f3; opacity: .72;
+  text-shadow: 0 1px 6px rgba(0,0,0,.7), 0 0 2px rgba(0,0,0,.6);
+  display: inline-flex; align-items: center; justify-content: center; flex-direction: column; font-size: 1.15rem; line-height: 1; cursor: pointer; padding: 0; }
 .tb-btn small { font-size: .62rem; margin-top: 1px; opacity: .85; }
 .tb-skip { font-size: 1.35rem; }
-.tb-main { width: 62px; height: 62px; font-size: 1.3rem; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.tb-stop { width: 44px; height: 44px; font-size: .9rem; }
+.tb-main { width: 64px; height: 64px; font-size: 1.9rem; opacity: .8; }
+.tb-stop { width: 44px; height: 44px; font-size: 1rem; opacity: .6; }
 .tb-btn:active { transform: scale(.94); }
-.tb-follow { color: #f2f6f3; background: rgba(8, 13, 10, .86); border-color: rgba(255,255,255,.3); }
+.tb-follow { color: #f2f6f3; background: none; border-color: rgba(255,255,255,.35); text-shadow: 0 1px 6px rgba(0,0,0,.7); opacity: .8; }
 .chip.wants-tap { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); animation: wants-tap 1.6s ease-in-out infinite; }
 @keyframes wants-tap { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent); } }
 .talk-turn .say.now { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent); }
@@ -1053,14 +1056,13 @@ textarea.handover { font-family: ui-monospace, Menlo, Consolas, monospace; font-
 
 /* Talk, calm: the two voices first. Everything else fades, and a tap brings it back for a few seconds. */
 html.talk-calm header.bar, html.talk-calm .corner, html.talk-calm .dock, html.talk-calm .chrome,
-html.talk-calm.speaking .talk-compose, html.talk-calm.speaking .talk-bar {
+html.talk-calm.speaking .talk-compose {
   opacity: 0; pointer-events: none; transition: opacity .5s ease;
 }
 html.talk-calm.peek header.bar, html.talk-calm.peek .corner, html.talk-calm.peek .dock, html.talk-calm.peek .chrome,
-html.talk-calm.peek.speaking .talk-compose, html.talk-calm.peek.speaking .talk-bar {
+html.talk-calm.peek.speaking .talk-compose {
   opacity: 1; pointer-events: auto; transition: opacity .2s ease;
 }
-html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .talk-head { margin: 0 0 10px; }
 .talk-head > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 2px; padding: 4px 0; }
 .talk-head > summary::-webkit-details-marker { display: none; }
