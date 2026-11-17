@@ -170,3 +170,23 @@ test('nudges: a couple a week at most, backing off on silence, only in the dayti
     assert.equal((await call('/api/push', { method: 'DELETE', token, body: { endpoint: sub.endpoint } })).json.on, false);
   } finally { server.close(); }
 });
+
+test('an idea offered as the day\'s idea and left unanswered is not offered again the next day, whatever chose it', async () => {
+  const { db, server, call } = await boot();
+  try {
+    const token = 'a'; const uid = 1;
+    // They talked about something; the ideas that speak to it lead the next days.
+    const ideas = ['nussbaum_capabilities', 'sophocles_antigone', 'aquinas_unjust_law_is_no_law'];
+    db.prepare("INSERT INTO views (user_id, kind, topic, body, ideas, source, local_date) VALUES (?, 'view', 'political change', 'Wants change', ?, 'talk', ?)").run(uid, JSON.stringify(ideas), day(0));
+    const seen = [];
+    for (let n = 1; n <= 4; n++) {
+      const o = (await call(`/api/lure?date=${day(n)}`, { token })).json; // seen, never answered
+      assert.ok(!seen.includes(o.node.id), `day ${n} repeats ${o.node.id}`);
+      seen.push(o.node.id);
+    }
+    assert.deepEqual(seen.slice(0, 3), ideas);
+    // A pick saved before the rule existed is chosen again rather than repeated.
+    db.prepare('INSERT OR REPLACE INTO daily_pick (user_id, local_date, node_id, why) VALUES (?, ?, ?, ?)').run(uid, day(5), ideas[0], 'old');
+    assert.notEqual((await call(`/api/today?date=${day(5)}`, { token })).json.node.id, ideas[0]);
+  } finally { server.close(); }
+});

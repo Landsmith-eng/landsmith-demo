@@ -127,6 +127,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       FROM nodes n WHERE n.type != 'practice' AND n.prompt IS NOT NULL AND n.prompt != ''
         AND NOT EXISTS (SELECT 1 FROM journal j WHERE j.user_id = :uid AND j.node_id = n.id) ORDER BY n.id`),
     adaptiveCount: db.prepare('SELECT COUNT(*) AS n FROM journal WHERE user_id = ?'),
+    offered: db.prepare('SELECT DISTINCT node_id FROM lures WHERE user_id = ? AND local_date < ?'),
     writtenRooms: db.prepare('SELECT DISTINCT n.room FROM journal j JOIN nodes n ON n.id = j.node_id WHERE j.user_id = ? AND n.room IS NOT NULL'),
     writtenDays: db.prepare('SELECT DISTINCT local_date FROM journal WHERE user_id = ? ORDER BY local_date DESC'),
     firstDay: db.prepare('SELECT MIN(local_date) AS d FROM journal WHERE user_id = ?'),
@@ -178,7 +179,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const saved = q.pickFor.get(uid, date);
     // A remembered pick can go stale if that card was since written on another date (moving the test date back
     // and forth, or a clock change). Choose again rather than serve a card that is already answered.
-    if (saved && !q.entry.get(uid, saved.node_id)) return saved.node_id;
+    // (A pick saved before the rule against repeats, already offered on an earlier day, is chosen again too.)
+    const stale = saved && aq.offered.all(uid, date).some((r) => r.node_id === saved.node_id);
+    if (saved && !q.entry.get(uid, saved.node_id) && !stale) return saved.node_id;
     if (saved) q.dropPick.run(uid, date);
     const pick = adaptivePick(uid, date);
     if (!pick) return null;
@@ -192,7 +195,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // fifth day is a gentle challenge instead: an idea from a room they have never written in. With nothing to go on
   // yet (no debates answered, nothing written), the first days open with one of a few welcoming questions.
   function adaptivePick(uid, date) {
-    const pool = aq.pool.all({ uid });
+    // An idea already offered as the day's idea on an earlier day, and left unanswered, is not offered again: whatever
+    // chose it (a conversation, a path, a journey) moves on to its next idea instead of repeating it day after day.
+    const offered = new Set(aq.offered.all(uid, date).map((r) => r.node_id));
+    const all = aq.pool.all({ uid }); const fresher = all.filter((n) => !offered.has(n.id));
+    const pool = fresher.length ? fresher : all;
     if (!pool.length) return null;
     const d = discovery(uid, () => false);
     const fresh = pool.filter((n) => !n.walked);
