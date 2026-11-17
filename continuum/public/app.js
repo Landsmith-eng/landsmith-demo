@@ -590,9 +590,15 @@ async function voicePlan() {
   const name = choice.startsWith('phone:') ? choice.slice(6) : !el && !choice.startsWith('el:') ? choice : '';
   const phone = name && speech?.getVoices().find((v) => v.name === name);
   if (phone) return { phone };
-  if (await ttsEnabled()) return { el: null }; // the server's default ElevenLabs voice
-  return { phone: null }; // the phone's default voice
+  // The phone's own voice only when it was chosen, or when the server has no reading voice at all. If the server could
+  // not be asked just now (a restart, a dropped connection), it is still the reading voice: never a stranger's.
+  if (!el && ttsOn === null) await new Promise((r) => setTimeout(r, 1500));
+  if (el || (await ttsEnabled()) || ttsOn === null) return { el: null };
+  return { phone: null };
 }
+// One more try after a moment, for a clip that failed to arrive.
+const tryTwice = async (fn) => { try { return await fn(); } catch { await new Promise((r) => setTimeout(r, 1500)); return fn(); } };
+const VOICE_DOWN = 'The reading voice could not be reached just now. Tap to try again.';
 // What a listener should hear from one part: the substance only (titles, plain words, the source, questions, their
 // own writing). Labels and outline lines ("Today · 1 of 14", "In plain words", "Scroll to begin"), small print,
 // buttons, links and citations are skipped. The thinker's name is said; the year is not.
@@ -884,15 +890,14 @@ async function loop() {
     }
     if ('el' in reader.plan) {
       try {
-        const { blob, starts } = await clipFor(reader.k);
+        const { blob, starts } = await tryTwice(() => clipFor(reader.k));
         if (reader.k + 1 < reader.items.length) clipFor(reader.k + 1).catch(() => {});
         if (run.stop) return false;
         followClip(reader.k, starts);
         await playClip(URL.createObjectURL(blob), run);
-      } catch (e) {
-        if (!speech) break;
-        notice(`The natural voice is not available right now${e.why ? `: ${e.why}` : ' (check the ElevenLabs key or credits)'}. Using the phone's voice.`);
-        reader.plan = { phone: null }; continue;
+      } catch {
+        // Never another voice in its place: stop, say so, and let a tap try again.
+        notice(VOICE_DOWN); stopReading(); return false;
       }
     } else { const k = reader.k; await sayPhone(item.text, reader.plan.phone, run, (at) => lightWord(k, at)); }
     if (run.stop || reader.state === 'paused') return;
@@ -1380,7 +1385,7 @@ async function contemplate(given = null) {
       follow(item, lines, 0);
       if ('el' in cz.plan) {
         try {
-          const clip = await fetchTimed(item.text, cz.plan.el);
+          const clip = await tryTwice(() => fetchTimed(item.text, cz.plan.el));
           if (cz.k + 1 < items.length) fetchTimed(items[cz.k + 1].text, cz.plan.el).catch(() => {});
           if (run.stop) return;
           const step = () => {
@@ -1393,7 +1398,9 @@ async function contemplate(given = null) {
           cancelAnimationFrame(cz.raf);
           // The phone wants a tap before it will play: wait for one (a tap on the picture plays).
           if (how === 'blocked') { cz.state = 'paused'; lyrics.classList.add('paused'); showLine([{ at: 0, text: 'Tap to begin.' }]); cz.run = null; return; }
-        } catch { cz.plan = { phone: null }; continue; }
+        } catch {
+          cz.state = 'paused'; lyrics.classList.add('paused'); showLine([{ at: 0, text: VOICE_DOWN }]); cz.run = null; return;
+        }
       } else await sayPhone(item.text, cz.plan.phone, run, (at) => follow(item, lines, at));
       if (run.stop || cz.state === 'paused') return;
       const next = items[cz.k + 1]; cz.k++;
@@ -2054,7 +2061,7 @@ async function playFrom(view, i, offset = 0) {
     p.part = 0; setPlayState(view, 'playing'); followTalk();
     if (useEl) {
       try {
-        const blob = await clip(p.i);
+        const blob = await tryTwice(() => clip(p.i));
         if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
         if (run.stop) return false;
         const at = offset; offset = 0;
@@ -2063,10 +2070,9 @@ async function playFrom(view, i, offset = 0) {
           stopTalkVoice(); view.btn.textContent = '▶ Tap to hear it'; view.btn.classList.add('wants-tap');
           return false;
         }
-      } catch (e) {
-        if (!speech) break;
-        notice('The natural voice is not available right now. Using the phone\'s voice.');
-        useEl = false; continue;
+      } catch {
+        stopTalkVoice(); notice(VOICE_DOWN); view.btn.textContent = '▶ Try again'; view.btn.classList.add('wants-tap');
+        return false;
       }
     } else {
       // The phone's voice cannot start part-way into a sentence: a skip into one starts it from its beginning.
