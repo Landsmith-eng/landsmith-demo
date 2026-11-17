@@ -334,6 +334,17 @@ CREATE TABLE IF NOT EXISTS trainer_log (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS trainer_user ON trainer_log(user_id, id);
+-- A small dare from the trainer: one practice, today. The next time the app opens, it asks how it went.
+CREATE TABLE IF NOT EXISTS dares (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  practice TEXT NOT NULL,
+  text TEXT NOT NULL,
+  local_date TEXT NOT NULL,
+  did INTEGER,                          -- 1 did it, 0 did not, null not asked yet
+  answer TEXT,
+  answered_date TEXT
+);
 
 -- Paths: a practice the user commits to (light, a month, or the long course). A day counts when they show up.
 CREATE TABLE IF NOT EXISTS path_runs (
@@ -373,7 +384,7 @@ CREATE TABLE IF NOT EXISTS settings (
 const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT'], ['nodes', 'room', 'TEXT'],
   ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT'],
   ['talks', 'vias', 'TEXT'], ['talks', 'sources', 'TEXT'], ['talks', 'summary', 'TEXT'],
-  ['users', 'depth', 'INTEGER'], ['talks', 'depth', 'INTEGER'], ['talks', 'role', 'TEXT']];
+  ['users', 'depth', 'INTEGER'], ['talks', 'depth', 'INTEGER'], ['talks', 'role', 'TEXT'], ['path_runs', 'first_practice', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });

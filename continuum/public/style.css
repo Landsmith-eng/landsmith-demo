@@ -1121,3 +1121,8 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .trainer-quiet { justify-content: space-between; margin-top: 18px; } .trainer-quiet .link { padding: 0; opacity: .85; }
 .campus-wing { margin: 18px 0 8px; }
 .campus-wing h2 { margin: 0 0 8px; }
+.trainer-push.invite { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.trainer-push.invite p:first-child { font-style: normal; font-family: var(--sans); font-size: 1rem; }
+.trainer-push.dare { border-left-color: #8fb3e0; background: rgba(143, 179, 224, .1); }
+.trainer-push.dare p:first-child { font-style: normal; font-family: var(--sans); font-size: .95rem; }
+.trainer-push textarea { width: 100%; margin: 6px 0; }

@@ -3433,6 +3433,7 @@ function trainerWelcome(o) {
       h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' },
         h('button', { type: 'button', class: 'btn', onclick: () => trainerNext({}) }, 'Begin'),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => gaze(o.welcome ?? wallpaper.querySelector('img').getAttribute('src')) }, 'Just look')),
+      o.dare && dareFollowUp(o.dare),
       o.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(o) }, 'Looking back over your road →'),
       quietLinks(o, { onTopic: async (topic, status) => {
         if (o.state !== 'write') return showTalk({ seed: topic });
@@ -3440,6 +3441,19 @@ function trainerWelcome(o) {
         if (r.found) return trainerNext({});
         status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
       } })));
+}
+// The dare taken last time: how did it go? Did it or not, and a word if they like.
+function dareFollowUp(d) {
+  const box = h('div', { class: 'trainer-push dare' }, h('p', {}, `Last time you took on a dare: "${d.text}"`), h('p', { class: 'trainer-q' }, 'How did it go?'));
+  const ta = h('textarea', { rows: '2', maxlength: '2000', placeholder: 'A word, if you like.', 'aria-label': 'How it went' });
+  const send = (did) => async () => {
+    try { const r = await api(`/api/trainer/dare/${d.id}`, { method: 'POST', body: { did, answer: ta.value, date: today() } }); box.replaceChildren(h('p', { class: 'ack' }, r.ack)); }
+    catch { notice('Could not save that. Try again.'); }
+  };
+  box.append(ta, h('div', { class: 'trainer-choices' },
+    h('button', { type: 'button', class: 'btn ghost', onclick: send(true) }, 'I did it'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: send(false) }, 'I did not')));
+  return box;
 }
 async function trainerNext(params) {
   const qs = new URLSearchParams({ date: today(), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)) });
@@ -3465,7 +3479,37 @@ function trainerStoryView(s) {
     if (c.go === 'room') return showGallery('rooms', { focus: s.id });
   };
   const choiceRow = h('div', { class: 'trainer-choices' }, s.choices.map((c) => h('button', { type: 'button', class: `btn ${c.go === 'respond' ? '' : 'ghost'}`, onclick: act(c) }, c.label)));
-  const pushBox = s.push && h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('button', { type: 'button', class: 'btn ghost', onclick: act(s.push) }, s.push.label));
+  const pushBox = s.push && (s.push.kind === 'invite' ? inviteBox(s.push) : s.push.kind === 'dare' ? dareBox(s.push)
+    : h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('button', { type: 'button', class: 'btn ghost', onclick: act(s.push) }, s.push.label)));
+  // The invitation: their own pattern, then a question. Whatever they pick, the path starts where they chose.
+  function inviteBox(pu) {
+    const box = h('div', { class: 'trainer-push invite' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.ask));
+    const pickIt = (o) => () => {
+      const start = (path) => async () => {
+        try { const r = await api('/api/paths/start', { method: 'POST', body: { path, first: o.id, date: today() } }); notice(`Your ${path === 'light' ? 'two weeks' : 'month'} starts now, with "${o.title}".`); pathDayView(r.current); }
+        catch { notice('Could not start it. Try again.'); }
+      };
+      box.replaceChildren(h('p', {}, `"${o.title}". Your call, and a good one. Want to give it two weeks, a minute or two a day, starting there? Or a month, if you want it to stick.`),
+        h('div', { class: 'trainer-choices' },
+          h('button', { type: 'button', class: 'btn', onclick: start('light') }, 'Two weeks, starting there'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: start('month') }, 'A month'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It will keep. You know where the paths are: Campus, the practice yard.')) }, 'Not now')));
+    };
+    box.append(h('div', { class: 'trainer-choices' }, ...pu.options.map((o) => h('button', { type: 'button', class: 'btn ghost', onclick: pickIt(o) }, o.title)),
+      h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not yet')));
+    return box;
+  }
+  // A dare: one small thing today. It is asked about next time.
+  function dareBox(pu) {
+    const box = h('div', { class: 'trainer-push dare' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.dare));
+    box.append(h('div', { class: 'trainer-choices' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+        await api('/api/trainer/dare', { method: 'POST', body: { practice: pu.practice, date: today() } }).catch(() => {});
+        box.replaceChildren(h('p', {}, 'Good. I will ask you how it went.'));
+      } }, pu.label),
+      h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not today')));
+    return box;
+  }
   // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
   function respondTo(label, pushed) {
     const question = pushed ?? (s.prompt && /think|true|argue|seen/i.test(label) ? s.prompt : label);

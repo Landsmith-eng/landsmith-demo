@@ -185,9 +185,16 @@ async function school(run, sc) {
   cv.remove();
 }
 
-// ── A sailboat: crosses the water slowly near the horizon, heeling a little; nearer boats are larger. ──
+// ── A sailboat: far off, a small sail crossing slowly near the horizon, heeling a little. Only in the distance: it
+// sails in the top tenth of the water, never larger than the farthest painted boat (or a few pixels where there is none).
 async function sailboat(run, sc) {
   const band = waterBand(sc, 0, 1); if (!band) return;
+  if (sc.distant !== false) {
+    const far = (sc.live ?? []).filter((x) => x.m === 'bob' && !x.soft).map((x) => rectOf(x.r, sc).h * .72).sort((a, b) => a - b)[0];
+    const yb0 = band[0] + (band[1] - band[0]) * rnd(.01, .1) + 2;
+    const h0 = Math.max(6, Math.min(far ? far * rnd(.45, .7) : rnd(7, 12), 13));
+    return sailAt(run, yb0, h0);
+  }
   // Perspective from the painted boats: a visitor sails among them, as tall as a painted boat at the same distance
   // (between the nearest and farthest, by how far down the water it sits); with one painted boat, a little beyond it.
   const boats = (sc.live ?? []).filter((x) => x.m === 'bob' && !x.soft).map((x) => { const r = rectOf(x.r, sc); return { yb: r.y + r.h * .92, h: r.h * .72 }; }).sort((a, b) => a.yb - b.yb);
@@ -199,6 +206,9 @@ async function sailboat(run, sc) {
   } else if (boats.length) { yb = boats[0].yb - rnd(4, 18); h = boats[0].h * rnd(.4, .75); }
   else { const depth = rnd(.02, .28); yb = band[0] + (band[1] - band[0]) * depth; h = (15 + 40 * depth) * 44 / 40; }
   yb = Math.max(band[0] + 3, yb);
+  return sailAt(run, yb, h);
+}
+async function sailAt(run, yb, h) {
   const w = h * 40 / 44;
   const el = svg('0 0 40 44', w, `<g class="boat">
     <path d="M21 4 L21 33 L35 32Z" fill="rgba(252,250,242,.95)"/><path d="M19 8 L19 33 L7 32Z" fill="rgba(240,238,228,.85)"/>
@@ -617,8 +627,11 @@ const equations = (run, sc) => writing(run, sc, sc.board ? 'board' : 'chart');
 
 // Who may visit which picture, and how often (weights).
 // Only visitors whose silhouettes read as real: birds, butterflies, bees, falling leaves (and light: rays, ripples,
-// writing, equations). Dragonflies, spiders, inchworms, caterpillars, fish and toy sailboats were retired.
+// writing, equations); a sailboat only far off, a spider only in dark woods. Dragonflies, inchworms, caterpillars and
+// fish were retired.
 const VISITORS = [
+  { name: 'sailboat', fn: sailboat, w: 1.5, ok: (s) => s.has('sea') && s.has('boats') && s.water && !s.has('city') }, // far off only
+  { name: 'spider', fn: spider, w: .8, ok: (s) => s.canopy && s.has('dark') && s.has('garden') }, // dark woods and gardens only
   { name: 'bird', fn: bird, w: 1.5, ok: (s) => s.has('sky') },
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },

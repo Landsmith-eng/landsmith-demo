@@ -73,9 +73,11 @@ export const THESIS = { text: 'Wisdom isn\'t scarce. Practice is.', source: 'Fro
 
 // What a path asks on its day d (1-based): the anchors morning and evening, the practice in focus, and whether an idea
 // from that practice comes with the day.
-export function planFor(pathId, d) {
+// first: the practice the user chose to begin with (the light path starts there and goes round the seven).
+export function planFor(pathId, d, first = null) {
   if (pathId === 'light') {
-    const focus = PRACTICE_ORDER[(d - 1) % 7]; const one = ANCHORS[ONE[focus]];
+    const off = Math.max(0, PRACTICE_ORDER.indexOf(first));
+    const focus = PRACTICE_ORDER[(off + d - 1) % 7]; const one = ANCHORS[ONE[focus]];
     const extra = d === 7 ? ['weekly'] : d === 14 ? ['seven'] : [];
     return { focus, idea: true, morning: one.when === 'morning' ? [ONE[focus]] : [], evening: [...(one.when === 'evening' ? [ONE[focus]] : []), ...extra] };
   }

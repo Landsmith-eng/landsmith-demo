@@ -65,3 +65,36 @@ test('the trainer: the day\'s idea first, then real stories from the map, each o
     assert.ok(upcoming.length);
   } finally { server.close(); }
 });
+
+test('the trainer invites from the user\'s own trail; the path starts where they chose; a dare is asked about next time', async () => {
+  const { db, server, call } = await boot();
+  try {
+    // They keep stopping at stories that lead to the evening review.
+    const lands = db.prepare("SELECT e.from_id AS id FROM edges e JOIN nodes n ON n.id = e.from_id WHERE e.to_id = 'practice_examine_daily' AND e.relation = 'lands_on' AND n.thinker IS NOT NULL LIMIT 4").all();
+    for (const x of lands) for (const action of ['deeper', 'respond']) await call('/api/trainer/log', { node: x.id, action, date: D });
+    let invite = null; let s = (await call(`/api/trainer/next?date=${D}`)).json.story;
+    for (let i = 0; i < 8 && !invite; i++) {
+      if (s.push?.kind === 'invite') invite = s.push;
+      else s = (await call(`/api/trainer/next?date=${D}&from=${s.id}&how=more`)).json.story;
+    }
+    assert.ok(invite, 'an invitation came');
+    assert.match(invite.text, /you keep stopping at .+ point to one thing people actually do: "Examine yourself daily"/);
+    assert.equal(invite.options[0].id, 'practice_examine_daily');
+    // Not again the same week.
+    for (let i = 0; i < 6; i++) { s = (await call(`/api/trainer/next?date=${D}&from=${s.id}&how=more`)).json.story; assert.notEqual(s.push?.kind, 'invite'); }
+    // Their pick: the light path, starting with the practice they chose.
+    const cur = (await call('/api/paths/start', { path: 'light', first: 'practice_invest_in_people', date: D })).json.current;
+    assert.equal(cur.focus.id, 'practice_invest_in_people');
+    assert.deepEqual(cur.morning.map((a) => a.id), ['people_am']);
+    // A dare: taken today, asked about on the next opening, answered once.
+    assert.equal((await call('/api/trainer/dare', { practice: 'nope', date: D })).status, 400);
+    await call('/api/trainer/dare', { practice: 'practice_control_your_response', date: D });
+    assert.equal((await call(`/api/lure?date=${D}&peek=1`)).json.dare, null); // not the same day
+    const o = (await call('/api/lure?date=2026-11-02&peek=1')).json;
+    assert.match(o.dare.text, /./);
+    assert.equal((await call(`/api/trainer/dare/${o.dare.id}`, { answer: 'x', date: '2026-11-02' })).status, 400);
+    const r = (await call(`/api/trainer/dare/${o.dare.id}`, { did: true, answer: 'Caught myself twice.', date: '2026-11-02' })).json;
+    assert.ok(r.ack);
+    assert.equal((await call('/api/lure?date=2026-11-03&peek=1')).json.dare, null);
+  } finally { server.close(); }
+});

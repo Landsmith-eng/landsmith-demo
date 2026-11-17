@@ -11,7 +11,7 @@ import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_ste
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { createLure, readReaction, ackFor } from './lure.js';
-import { PATHS, ANCHORS, WHY_IDEAS, THESIS, planFor, pathById } from './content/paths.js';
+import { PATHS, ANCHORS, WHY_IDEAS, THESIS, PRACTICE_ORDER, planFor, pathById } from './content/paths.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
@@ -258,7 +258,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     active: db.prepare("SELECT * FROM path_runs WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"),
     runs: db.prepare('SELECT * FROM path_runs WHERE user_id = ? ORDER BY id DESC LIMIT 10'),
     run: db.prepare('SELECT * FROM path_runs WHERE id = ? AND user_id = ?'),
-    start: db.prepare("INSERT INTO path_runs (user_id, path_id, started) VALUES (?, ?, ?)"),
+    start: db.prepare("INSERT INTO path_runs (user_id, path_id, started, first_practice) VALUES (?, ?, ?, ?)"),
     end: db.prepare('UPDATE path_runs SET status = ?, ended = ? WHERE id = ?'),
     days: db.prepare('SELECT DISTINCT local_date FROM path_entries WHERE run_id = ? ORDER BY local_date'),
     entries: db.prepare('SELECT day, anchor, body, local_date FROM path_entries WHERE run_id = ? ORDER BY day, rowid'),
@@ -276,7 +276,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   function pathIdea(uid, date, inPool, fresh) {
     const run = paq.active.get(uid); if (!run) return null;
-    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day, run.first_practice);
     if (!plan.idea) return null;
     const freshIds = new Set(fresh.map((n) => n.id));
     // Through the ideas that land on the practice, oldest first: from the first people who found it to the evidence.
@@ -287,7 +287,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   }
   function pathToday(uid, date) {
     const run = paq.active.get(uid); if (!run) return null;
-    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    const path = pathById(run.path_id); const day = pathDay(run, date); const plan = planFor(run.path_id, day, run.first_practice);
     const said = Object.fromEntries(paq.on.all(run.id, day).map((e) => [e.anchor, e.body]));
     const anchor = (id) => ({ id, ...ANCHORS[id], answer: said[id] ?? null });
     const pick = q.pickFor.get(uid, date); const idea = pick && lq2.move(uid, date) === 'path' ? q.node.get(pick.node_id) : null;
@@ -414,6 +414,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       reaction: t.state === 'done_today' && l?.reaction ? { text: l.reaction, ack: l.ack ?? '' } : null,
       // The trainer's welcome: a painting not seen lately, a different one most times the app is opened.
       welcome: req.query.peek ? (() => { const seen = new Set(tnq.recent.all(uid).map((r) => r.img).filter(Boolean).slice(0, 15)); const f = PAINTINGS.filter((p) => !seen.has(p)); return f[Math.floor(Math.random() * f.length)] ?? PAINTINGS[0] ?? null; })() : undefined,
+      dare: req.query.peek ? (() => { const d = tnq.openDare.get(uid, date, shiftDay(date, -3)); return d ? { id: d.id, text: d.text, date: d.local_date, practice: q.node.get(d.practice)?.title } : null; })() : undefined,
       revisit, path: (() => { const p = pathToday(uid, date); return p && { name: p.name, day: p.day, days: p.days, morning: p.done.morning, evening: p.done.evening }; })(),
       synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
   });
@@ -455,7 +456,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const date = localDate(req.body?.date); const uid = req.user.id; const path = pathById(req.body?.path);
     if (!path) return res.status(400).json({ error: 'bad_path' });
     const was = paq.active.get(uid); if (was) paq.end.run('left', date, was.id);
-    paq.start.run(uid, path.id, date);
+    paq.start.run(uid, path.id, date, PRACTICE_ORDER.includes(req.body?.first) ? req.body.first : null);
     // Today's idea may change to the path's (only if today's card is not yet written).
     if (!q.writtenOn.get(uid, date)) q.dropPick.run(uid, date);
     res.json({ current: pathToday(uid, date) });
@@ -463,7 +464,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   app.post('/api/paths/entry', auth, (req, res) => {
     const date = localDate(req.body?.date); const uid = req.user.id;
     const run = paq.active.get(uid); if (!run) return res.status(404).json({ error: 'no_path' });
-    const day = pathDay(run, date); const plan = planFor(run.path_id, day);
+    const day = pathDay(run, date); const plan = planFor(run.path_id, day, run.first_practice);
     const anchor = String(req.body?.anchor ?? ''); const body = typeof req.body?.body === 'string' ? req.body.body.trim().slice(0, 4000) : '';
     if (![...plan.morning, ...plan.evening].includes(anchor)) return res.status(400).json({ error: 'not_today' });
     if (!body) return res.status(400).json({ error: 'empty' });
@@ -501,9 +502,20 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       WHERE l.user_id = ? AND l.action IN ('more', 'respond', 'deeper', 'look') GROUP BY n.room, l.action`),
     edges: db.prepare('SELECT from_id, to_id, relation FROM edges WHERE from_id = ? OR to_id = ?'),
     stories: db.prepare("SELECT * FROM nodes WHERE plain_face IS NOT NULL AND plain_face != '' AND type != 'practice'"),
+    // The practices that the stories they stayed with lead to, most first; and who those stories were by.
+    pull: db.prepare(`SELECT e.to_id AS practice, COUNT(*) AS n FROM trainer_log l JOIN edges e ON e.from_id = l.node_id AND e.relation = 'lands_on'
+      WHERE l.user_id = ? AND l.action IN ('respond', 'deeper', 'look') GROUP BY e.to_id ORDER BY n DESC, e.to_id`),
+    pullWho: db.prepare(`SELECT n.thinker, MAX(l.id) AS last FROM trainer_log l JOIN edges e ON e.from_id = l.node_id AND e.relation = 'lands_on' JOIN nodes n ON n.id = l.node_id
+      WHERE l.user_id = ? AND e.to_id = ? AND l.action IN ('respond', 'deeper', 'look') AND n.thinker IS NOT NULL GROUP BY n.thinker ORDER BY last DESC LIMIT 3`),
+    engaged: db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE user_id = ? AND action IN ('respond', 'deeper')"),
+    lastInvite: db.prepare("SELECT MAX(local_date) AS d FROM trainer_log WHERE user_id = ? AND action = 'invite'"),
+    dareToday: db.prepare('SELECT 1 FROM dares WHERE user_id = ? AND local_date = ?'),
+    addDare: db.prepare('INSERT INTO dares (user_id, practice, text, local_date) VALUES (?, ?, ?, ?)'),
+    openDare: db.prepare('SELECT * FROM dares WHERE user_id = ? AND did IS NULL AND local_date < ? AND local_date >= ? ORDER BY id DESC LIMIT 1'),
+    answerDare: db.prepare('UPDATE dares SET did = ?, answer = ?, answered_date = ? WHERE id = ? AND user_id = ?'),
   };
   const nodeOk = (states, n) => n && !hiddenIn(states, n);
-  function choicesFor(n, uid, k, states) {
+  function choicesFor(n, uid, k, states, date) {
     const pick = (arr, salt) => arr[hash(`${uid}|${n.id}|${k}|${salt}`) % arr.length];
     const near = tnq.edges.all(n.id, n.id).map((e) => ({ ...e, other: e.from_id === n.id ? e.to_id : e.from_id, out: e.from_id === n.id }))
       .filter((e) => nodeOk(states, q.node.get(e.other)));
@@ -537,7 +549,21 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const acts = tnq.recent.all(uid).filter((r) => r.action !== 'shown'); let run = 0;
     while (run < acts.length && acts[run].action === 'more') run += 1;
     let push = null;
+    // An invitation, made of their own trail: who they keep stopping at, and the one practice those all point to; then
+    // a question, so the choice of a path is theirs. At most once a week, only once they have stayed with a few, and
+    // never while a path is under way.
+    const pulls = paq.active.get(uid) ? [] : tnq.pull.all(uid).filter((p) => PRACTICE_ORDER.includes(p.practice));
+    const lastInvite = tnq.lastInvite.get(uid)?.d;
+    const invite = pulls.length && pulls[0].n >= 3 && tnq.engaged.get(uid).n >= 5 && (!lastInvite || lastInvite <= shiftDay(date, -7)) && k % 3 === 2;
     if (run === 4) push = { text: 'You have passed four by. Stay with this one for a minute: where does it touch your own life?', label: 'Stay with it', go: 'respond' };
+    else if (invite) {
+      const top = pulls[0]; const who = tnq.pullWho.all(uid, top.practice).map((r) => r.thinker);
+      const names = who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0];
+      push = { kind: 'invite', text: `Something I have noticed: you keep stopping at ${names ?? 'the same few ideas'}. Different times, different places, and they all point to one thing people actually do: "${q.node.get(top.practice)?.title}".`,
+        ask: 'If you tried one of these for yourself, which would it be?', options: pulls.slice(0, 3).map((p) => ({ id: p.practice, title: q.node.get(p.practice)?.title })) };
+      tnq.log.run(uid, top.practice, 'invite', null, date);
+    }
+    else if (practice && practiceSteps[practice.other]?.tiny && k % 4 === 1 && !tnq.dareToday.get(uid, date)) push = { kind: 'dare', text: 'A small dare, if you want one, for today:', dare: practiceSteps[practice.other].tiny, practice: practice.other, label: 'I will try it today' };
     else if (k % 6 === 5 && opp) push = { text: 'Easy to nod along. Here is the strongest case against it.', label: 'Hear it', go: 'node', id: opp.other };
     else if (k % 7 === 6 && practice) push = { text: 'Knowing it is not doing it. Ten seconds, today?', label: 'Try it', go: 'practice', id: practice.other };
     else if (k % 5 === 4) push = { text: pick(['Be honest with yourself: do you live this, or only agree with it?', 'Where are you fooling yourself about this?', 'What would it cost you to take this seriously?'], 'push'), label: 'Answer honestly', go: 'respond' };
@@ -547,7 +573,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     return {
       id: n.id, title: n.title, thinker: n.thinker, year: n.year, type: n.type, field: n.field, room: n.room, room_name: roomName.get(n.room) ?? null,
       story: n.plain_face, prompt: n.prompt, citation: n.source_citation, url: n.source_url, analysis_url: n.analysis_url, img, today,
-      ...choicesFor(n, uid, k, states),
+      ...choicesFor(n, uid, k, states, date),
     };
   }
   app.get('/api/trainer/next', auth, (req, res) => {
@@ -599,6 +625,23 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     tnq.log.run(req.user.id, n.id, action, null, localDate(req.body?.date));
     res.json({ ok: true });
   });
+  // Dares: taken today, asked about next time.
+  app.post('/api/trainer/dare', auth, (req, res) => {
+    const date = localDate(req.body?.date); const p = String(req.body?.practice ?? ''); const text = practiceSteps[p]?.tiny;
+    if (!text) return res.status(400).json({ error: 'bad_practice' });
+    if (!tnq.dareToday.get(req.user.id, date)) tnq.addDare.run(req.user.id, p, text, date);
+    tnq.log.run(req.user.id, p, 'deeper', null, date);
+    res.json({ ok: true });
+  });
+  app.post('/api/trainer/dare/:id', auth, (req, res) => {
+    const date = localDate(req.body?.date); const did = req.body?.did === true ? 1 : req.body?.did === false ? 0 : null;
+    if (did === null) return res.status(400).json({ error: 'did_required' });
+    const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim().slice(0, 2000) || null : null;
+    const r = tnq.answerDare.run(did, answer, date, Number(req.params.id), req.user.id);
+    if (!r.changes) return res.status(404).json({ error: 'not_found' });
+    res.json({ ack: did ? ackFor('bite', hash(`${req.user.id}|${req.params.id}`)) || 'Good. That is how it starts.' : 'Fair. Tomorrow is another go, if you want it.' });
+  });
+
   // A response to a story that is not the day's own: added to the user's note on that idea (never replacing it).
   app.post('/api/trainer/respond', auth, (req, res) => {
     const date = localDate(req.body?.date); const uid = req.user.id; const n = q.node.get(req.body?.node);
