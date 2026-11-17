@@ -2377,7 +2377,11 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // When ElevenLabs refuses the key itself (no speech-to-text permission, or a bad key), it is off for every phone until
   // the key is fixed (a new key restarts the server) or six hours pass, so phones go straight to their own voice
   // typing instead of recording, uploading and failing on every first try.
-  let sttDown = null;
+  // Remembered in the database, through restarts (each update restarts the server), for this key only: a new key
+  // clears it at once.
+  const sttMemo = db.prepare("SELECT v FROM settings WHERE k = 'stt_down'");
+  const sttSave = db.prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('stt_down', ?)");
+  let sttDown = (() => { try { const m = JSON.parse(sttMemo.get()?.v ?? 'null'); return m && m.key === tts?.keyTag && m.until > Date.now() ? m : null; } catch { return null; } })();
   const sttLive = () => Boolean(tts?.transcribe) && !(sttDown && Date.now() < sttDown.until);
   app.get('/api/stt', auth, (req, res) => res.json({ enabled: sttLive() }));
   app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
@@ -2396,7 +2400,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       // The real reason, for the server log (never the words: none came back). The phone gets a plain one.
       console.warn(`ElevenLabs refused speech to text: ${e.message}${e.why ? ` (${e.why})` : ''}`);
       if (e.status === 401 || e.status === 403) {
-        sttDown = { until: Date.now() + 6 * 3600_000 };
+        sttDown = { until: Date.now() + 6 * 3600_000, key: tts.keyTag }; sttSave.run(JSON.stringify(sttDown));
         console.warn('Speech to text is off for six hours: the ElevenLabs key needs the "Speech to Text" permission (ElevenLabs > Developers > API keys). Phones will use their own voice typing until then.');
       }
       res.status(502).json({ error: e.status === 401 || e.status === 403 ? 'stt_key' : 'stt_failed' });

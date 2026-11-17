@@ -25,6 +25,8 @@ export function createTts({ apiKey, voiceId = DEFAULT_VOICE, model = DEFAULT_MOD
 
   return {
     voiceId,
+    // A fingerprint of the key (never the key): lets the server remember what this key may do, through restarts.
+    keyTag: createHash('sha256').update(apiKey).digest('hex').slice(0, 12),
     validVoice: (id) => typeof id === 'string' && VOICE_RE.test(id),
 
     // The voices on the user's ElevenLabs account, for the Voice sheet. Cached for ten minutes.

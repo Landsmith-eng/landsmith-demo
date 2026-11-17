@@ -155,3 +155,25 @@ test('the voice named Jon on the account becomes the default', async () => {
   assert.equal(await none.preferVoice('Jon'), null);
   assert.equal(none.voiceId, 'George1234');
 });
+
+test('a key refused for speech to text is remembered through a restart, and a new key clears it', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ detail: { message: 'missing the permission speech_to_text' } }), { status: 401 });
+  const db = openDb(':memory:'); seedContent(db, content);
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
+  const start = async (key) => {
+    const server = createApp(db, { tts: createTts({ apiKey: key, fetchImpl }) }).listen(0);
+    await new Promise((r) => server.once('listening', r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    return { server, get: () => fetch(`${base}/api/stt`, { headers: { 'x-continuum-token': 't' } }).then((r) => r.json()),
+      send: () => fetch(`${base}/api/stt`, { method: 'POST', headers: { 'x-continuum-token': 't', 'content-type': 'audio/webm' }, body: new Uint8Array(4000).fill(7) }) };
+  };
+  let a = await start('k1');
+  assert.equal((await a.send()).status, 502);
+  a.server.close();
+  a = await start('k1'); // the same key after a restart: still off, no failed first try
+  assert.deepEqual(await a.get(), { enabled: false });
+  a.server.close();
+  a = await start('k2'); // a new key: on again
+  assert.deepEqual(await a.get(), { enabled: true });
+  a.server.close();
+});
