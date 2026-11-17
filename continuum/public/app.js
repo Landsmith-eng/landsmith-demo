@@ -1337,14 +1337,16 @@ function lyricLines(text) {
   if (cur.length) lines.push(cur);
   return lines;
 }
-async function contemplate() {
-  const panels = [...document.querySelectorAll('.stage .panel')].filter((p) => !LYRIC_SKIP.has(p.dataset.kind));
+// given (optional): { paras: [text, …], src, onLeave } for a passage that is not a stage, such as a trainer's story.
+async function contemplate(given = null) {
+  const panels = given ? [] : [...document.querySelectorAll('.stage .panel')].filter((p) => !LYRIC_SKIP.has(p.dataset.kind));
   // The opening: only the idea's title and the thinker's name (not the cards for today beneath them).
   const said = (p) => (p.dataset.kind === 'arrival'
     ? [p.querySelector('h1')?.textContent, p.querySelector('.name-reveal')?.textContent.split('·')[0]].filter(Boolean).map((t) => t.trim().replace(/[^.!?]$/, '$&.')).join(' ')
     : spokenText(p));
-  const items = panels.flatMap((p, n) => sentences(said(p)).map((text) => ({ p: n, text })));
-  const src = wallpaper.querySelector('img')?.getAttribute('src');
+  const items = given ? given.paras.flatMap((t, n) => sentences(t).map((text) => ({ p: n, text })))
+    : panels.flatMap((p, n) => sentences(said(p)).map((text) => ({ p: n, text })));
+  const src = given?.src ?? wallpaper.querySelector('img')?.getAttribute('src');
   if (!items.length || !src) return;
   stopReading();
   const plan = await voicePlan();
@@ -1353,7 +1355,7 @@ async function contemplate() {
   const cz = { k: 0, state: 'playing', run: null, line: null, lineIdx: -1, plan, ended: false };
   const view = gaze(src, {
     extra: [lyrics, dust], hint: 'Tap to pause · drag or pinch to look', onTap: () => toggle(),
-    onLeave: () => { cz.ended = true; haltCz(); },
+    onLeave: () => { cz.ended = true; haltCz(); given?.onLeave?.(); },
   });
   if (!view) return;
   const haltCz = () => { if (cz.run) { cz.run.stop = true; cz.run.wake?.(); } speech?.cancel(); audioEl.pause(); cancelAnimationFrame(cz.raf); };
@@ -1387,8 +1389,10 @@ async function contemplate() {
             follow(item, lines, at); cz.raf = requestAnimationFrame(step);
           };
           cz.raf = requestAnimationFrame(step);
-          await playClip(URL.createObjectURL(clip.blob), run);
+          const how = await playClip(URL.createObjectURL(clip.blob), run);
           cancelAnimationFrame(cz.raf);
+          // The phone wants a tap before it will play: wait for one (a tap on the picture plays).
+          if (how === 'blocked') { cz.state = 'paused'; lyrics.classList.add('paused'); showLine([{ at: 0, text: 'Tap to begin.' }]); cz.run = null; return; }
         } catch { cz.plan = { phone: null }; continue; }
       } else await sayPhone(item.text, cz.plan.phone, run, (at) => follow(item, lines, at));
       if (run.stop || cz.state === 'paused') return;
@@ -1408,7 +1412,7 @@ async function contemplate() {
       lyrics.classList.add('paused');
     } else {
       cz.state = 'playing'; lyrics.classList.remove('paused');
-      if (cz.run && !cz.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
+      if (cz.run && !cz.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play().catch(() => {});
       else play();
     }
   }
@@ -3476,7 +3480,9 @@ const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body
 // How long to leave a story alone before the questions come: the time to read it, and a few seconds to let it settle.
 // Stories read aloud: on request (Listen), or always, if the user prefers it.
 const TRAINER_ALOUD_KEY = 'continuum.trainer.aloud';
+// 'on': read aloud; 'contemplate': the words alone over the painting, as they are spoken; else as text.
 const trainerAloud = () => store.get(TRAINER_ALOUD_KEY) === 'on';
+const trainerContemplate = () => store.get(TRAINER_ALOUD_KEY) === 'contemplate';
 const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
 function trainerStoryView(s, { greet = null } = {}) {
   setNav('trainer');
@@ -3558,10 +3564,20 @@ function trainerStoryView(s, { greet = null } = {}) {
   })));
   const voice = { spans, spoken: spokenParts, btn: listenBtn, clips: new Map() };
   spans.forEach((sp, k) => sp.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, k); }));
-  const always = h('button', { type: 'button', class: 'link small trainer-always', 'aria-pressed': String(trainerAloud()) });
-  const drawAlways = () => { always.textContent = trainerAloud() ? 'Reading every story aloud: on' : 'Read every story aloud'; always.setAttribute('aria-pressed', String(trainerAloud())); };
+  // Contemplate: the words alone over the painting, a line at a time as they are spoken. Leaving it brings the questions.
+  const contemplateIt = () => { stopTalkVoice(); contemplate({ paras: [s.title.replace(/[^.!?]$/, '$&.'), ...s.story.split('\n\n')], src: s.img, onLeave: () => setTimeout(reveal, 600) }); };
+  const czBtn = h('button', { type: 'button', class: 'trainer-listen' }, '☾ Contemplate');
+  czBtn.addEventListener('click', contemplateIt);
+  // How every story arrives: as words on the page, read aloud, or contemplated. Tap to change.
+  const always = h('button', { type: 'button', class: 'link small trainer-always' });
+  const MODES = [['off', 'Every story: as text'], ['on', 'Every story: read aloud'], ['contemplate', 'Every story: contemplated']];
+  const drawAlways = () => { const m = store.get(TRAINER_ALOUD_KEY) ?? 'off'; always.textContent = (MODES.find((x) => x[0] === m) ?? MODES[0])[1]; always.setAttribute('aria-pressed', String(m !== 'off')); };
   drawAlways();
-  always.addEventListener('click', () => { store.set(TRAINER_ALOUD_KEY, trainerAloud() ? 'off' : 'on'); drawAlways(); if (trainerAloud() && talkPlayer.view !== voice) listen(); });
+  always.addEventListener('click', () => {
+    const m = store.get(TRAINER_ALOUD_KEY) ?? 'off'; const next = MODES[(MODES.findIndex((x) => x[0] === m) + 1) % MODES.length][0];
+    store.set(TRAINER_ALOUD_KEY, next); drawAlways();
+    if (next === 'on' && talkPlayer.view !== voice) listen(); else if (next === 'contemplate') contemplateIt(); else if (next === 'off') stopTalkVoice();
+  });
   // Read aloud, the questions come when it has finished (or straight away if it is stopped).
   async function listen() {
     const done = await playFrom(voice, 0);
@@ -3581,13 +3597,13 @@ function trainerStoryView(s, { greet = null } = {}) {
     greet.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(greet) }, 'Looking back over your road →'),
   ].filter(Boolean);
   const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); };
-  if (!trainerAloud()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
+  if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
   else setTimeout(reveal, 90000); // a long story read aloud: the questions come anyway in the end
   render(h('article', { class: 'trainer-story' },
     greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
     h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
     h('h1', {}, s.title),
-    h('div', { class: 'trainer-voice' }, listenBtn, always),
+    h('div', { class: 'trainer-voice' }, listenBtn, czBtn, always),
     ...storyParas,
     (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation)),
     later));
@@ -3602,6 +3618,7 @@ function trainerStoryView(s, { greet = null } = {}) {
       status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
     } })].filter(Boolean));
   if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
+  else if (trainerContemplate()) contemplateIt();
   // Remembered last, so "pick up where you left off" above still means the place before this story.
   remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
 }

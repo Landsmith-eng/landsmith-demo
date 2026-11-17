@@ -1144,3 +1144,31 @@ html.talk-calm.peek.speaking .talk-compose {
 .trainer-always[aria-pressed="true"] { opacity: 1; color: var(--accent); }
 .trainer-story .say { border-radius: 4px; transition: background .2s; }
 .trainer-story .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* ── Text, not buttons: every action in the app is a word ──
+   Main actions read as underlined words in the display type; choices and toggles as small words, the chosen one in the
+   accent colour; the Campus doors as titles with their lines. A soft shadow keeps them legible over any painting. */
+.btn, .btn.ghost, .chip, .pill, .think-door, .think-door.pick-up {
+  background: none !important; border: 0 !important; box-shadow: none !important; border-radius: 0 !important;
+  color: inherit; text-shadow: 0 1px 4px rgba(0, 0, 0, .55); backdrop-filter: none !important;
+}
+.btn, .btn.ghost { padding: 6px 0; font-family: var(--display); font-size: 1.15rem; letter-spacing: 0;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 6px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.btn:not(.ghost) { color: var(--accent); text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.btn:active, .chip:active, .think-door:active { opacity: .6; transform: none; }
+.chip { padding: 3px 0; font-size: .92rem; opacity: .85; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); }
+.chip.on, .chip[aria-pressed="true"] { color: var(--accent); opacity: 1; text-decoration-color: var(--accent); }
+.chip.wants-tap, .trainer-listen.wants-tap { color: var(--accent) !important; background: none !important; padding: 3px 0 !important; animation: wants-text 1.6s ease-in-out infinite; }
+@keyframes wants-text { 50% { opacity: .45; } }
+.theme-chips, .size-chips, .talk-modes { gap: 6px 18px !important; }
+.row { gap: 8px 22px; }
+.think-doors { gap: 4px; }
+.think-door { padding: 8px 0 10px !important; }
+.think-door .t { text-decoration: underline; text-underline-offset: 5px; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
+.think-door.pick-up .t { color: #f4c063; }
+.pill { padding: 6px 4px; }
+.btn.mic.on, .mic[aria-pressed="true"] { color: var(--accent); }
+.btn.danger, .btn.ghost.danger { color: #f0a08e !important; text-decoration-color: #f0a08e; }
+.help-call { background: none !important; color: #f4b04a !important; padding: 2px 0 !important; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.gaze .gaze-close { background: none !important; border: 0 !important; box-shadow: none !important; backdrop-filter: none !important; padding: 6px 4px !important;
+  color: #f2f6f3; text-decoration: underline; text-underline-offset: 4px; text-shadow: 0 1px 5px rgba(0,0,0,.7); }
