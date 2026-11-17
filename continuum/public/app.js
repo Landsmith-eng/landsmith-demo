@@ -481,9 +481,16 @@ function showPractice({ practice = null, size = null } = {}) {
       ]),
       plan.anchor && panel('source', 'A line you kept', [
         h('div', { class: 'eyebrow' }, 'A line you kept'),
-        h('blockquote', { class: 'quote' }, plan.anchor.line),
-        h('button', { type: 'button', class: 'link', onclick: () => walkTo(plan.anchor.id, []) },
-          [plan.anchor.thinker, plan.anchor.title].filter(Boolean).join(' · ')),
+        // The way on first, where it is seen; then the line, its first two sentences with the rest a tap away.
+        h('p', { class: 'kept-from' }, h('span', { class: 'muted small' }, [plan.anchor.thinker, plan.anchor.title].filter(Boolean).join(' · ')), ' ',
+          h('button', { type: 'button', class: 'link', onclick: () => walkTo(plan.anchor.id, []) }, 'Read the whole idea →')),
+        (() => {
+          const parts = sentences(plan.anchor.line); const short = parts.slice(0, 2).join(' ');
+          if (parts.length <= 2) return h('blockquote', { class: 'quote' }, plan.anchor.line);
+          const q = h('blockquote', { class: 'quote' }, short, ' ');
+          q.append(h('button', { type: 'button', class: 'link kept-more', onclick: () => q.replaceChildren(plan.anchor.line) }, '…the rest'));
+          return q;
+        })(),
       ]),
       panel('question', 'The practice', [
         h('div', { class: 'eyebrow spoken' }, plan.arrive[sz]), exercise, h('div', { class: 'timer' }, ring, begin),

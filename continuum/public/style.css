@@ -1172,3 +1172,6 @@ html.talk-calm.peek.speaking .talk-compose {
 .help-call { background: none !important; color: #f4b04a !important; padding: 2px 0 !important; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
 .gaze .gaze-close { background: none !important; border: 0 !important; box-shadow: none !important; backdrop-filter: none !important; padding: 6px 4px !important;
   color: #f2f6f3; text-decoration: underline; text-underline-offset: 4px; text-shadow: 0 1px 5px rgba(0,0,0,.7); }
+.kept-from { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.kept-from .link { padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+.kept-more { padding: 0; color: var(--accent); font-style: normal; }

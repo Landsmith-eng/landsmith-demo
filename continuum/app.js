@@ -1137,7 +1137,12 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     keptFor: db.prepare(`
       SELECT n.id, n.title, n.thinker, n.source_face FROM favorites f JOIN nodes n ON n.id = f.node_id
       WHERE f.user_id = :uid AND (:practice IS NULL OR EXISTS (SELECT 1 FROM edges e WHERE e.from_id = n.id AND e.to_id = :practice AND e.relation = 'lands_on'))
-      ORDER BY f.created_at DESC LIMIT 1`),
+      ORDER BY f.created_at DESC, n.id`),
+  };
+  // The line kept that goes with a practice: a different one of their kept lines each day (not always the newest).
+  const keptOn = (uid, practice, date) => {
+    const all = pq.keptFor.all({ uid, practice });
+    return all.length ? all[Math.floor(Date.parse(`${date}T00:00:00Z`) / 86400000) % all.length] : null;
   };
   const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
@@ -1192,7 +1197,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     // The plate behind the practice carries the day's situation: done for today, coming back, a reluctant
     // stretch, or ready to grow. null = the usual one.
     const mood = today ? 'stillness' : last && gap >= 3 ? 'return' : reluctant ? 'patience' : offerBigger ? 'change' : null;
-    const kept = pq.keptFor.get({ uid, practice: chosen.id }) ?? pq.keptFor.get({ uid, practice: null });
+    const kept = keptOn(uid, chosen.id, date) ?? keptOn(uid, null, date);
     return {
       practice: { id: chosen.id, title: chosen.title, plain_face: chosen.plain_face, steps: practiceSteps[chosen.id] ?? null },
       reason: reason === 'weekday' ? `${weekday}'s practice` : kept ? `Because you kept ${kept.thinker ? `${kept.thinker}'s line` : `"${kept.title}"`}` : 'Built from the ideas you have written on and walked to',
@@ -1209,7 +1214,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const p = pq.practices.all().find((x) => x.id === req.query.practice);
       plan.practice = { id: p.id, title: p.title, plain_face: p.plain_face, steps: practiceSteps[p.id] ?? null };
       plan.reason = 'Your choice today';
-      const kept = pq.keptFor.get({ uid: req.user.id, practice: p.id });
+      const kept = keptOn(req.user.id, p.id, date);
       if (kept) plan.anchor = { id: kept.id, title: kept.title, thinker: kept.thinker, line: firstLine(kept.source_face) || kept.title };
     }
     res.json(plan);

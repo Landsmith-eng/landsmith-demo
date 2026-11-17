@@ -190,3 +190,14 @@ test('an idea offered as the day\'s idea and left unanswered is not offered agai
     assert.notEqual((await call(`/api/today?date=${day(5)}`, { token })).json.node.id, ideas[0]);
   } finally { server.close(); }
 });
+
+test('the line kept on the practice page takes turns among everything kept, not always the newest', async () => {
+  const { server, call } = await boot();
+  try {
+    const token = 'b';
+    for (const id of ['kahneman_tversky_loss_aversion', 'seneca_evening_review', 'epictetus_up_to_us']) await call('/api/favorite', { method: 'POST', token, body: { node_id: id } });
+    const shown = new Set();
+    for (let n = 0; n < 6; n++) shown.add((await call(`/api/practice?date=${day(n)}`, { token })).json.anchor?.id);
+    assert.ok(shown.size >= 2, `only ${[...shown]}`);
+  } finally { server.close(); }
+});
