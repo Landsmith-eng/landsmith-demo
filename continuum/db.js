@@ -322,6 +322,19 @@ CREATE TABLE IF NOT EXISTS push_subs (
   tz TEXT,                             -- the phone's time zone, to write only in the daytime
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- The trainer: each story shown, the painting behind it, and what the user chose to do with it (another, respond,
+-- deeper, look). It tunes what comes next.
+CREATE TABLE IF NOT EXISTS trainer_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL,
+  action TEXT NOT NULL,                 -- shown|more|respond|deeper|look
+  img TEXT,
+  local_date TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS trainer_user ON trainer_log(user_id, id);
+
 -- Paths: a practice the user commits to (light, a month, or the long course). A day counts when they show up.
 CREATE TABLE IF NOT EXISTS path_runs (
   id INTEGER PRIMARY KEY,

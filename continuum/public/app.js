@@ -165,7 +165,8 @@ let pageBg = null; // a page's own plate in place of its tab's, set just before 
 // Four tabs: Wander (today's idea and practice), Think (talk, problems, debates, the Parthenon), Explore (the Gallery
 // and the Map), You (the diary and the week's review). Pages keep their own names (for their plates); the tab lit is
 // the one they live under.
-const TAB_OF = { practice: 'today', talk: 'think', gallery: 'explore', journal: 'you', review: 'you' };
+// Three tabs: the Trainer, the Campus (every room and door, all unlocked), and You.
+const TAB_OF = { today: 'campus', practice: 'campus', talk: 'campus', think: 'campus', gallery: 'campus', explore: 'campus', journal: 'you', review: 'you' };
 function setNav(name) {
   currentTab = name; pageBg = null;
   const tab = TAB_OF[name] ?? name;
@@ -2854,7 +2855,9 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   if (!tourState) document.querySelectorAll('.tour').forEach((x) => x.remove()); // a welcome card left behind
   const to = nav.dataset.nav;
-  if (to === 'you' || to === 'journal') showJournal();
+  if (to === 'trainer') showTrainer();
+  else if (to === 'campus') showCampus();
+  else if (to === 'you' || to === 'journal') showJournal();
   else if (to === 'think') showThink();
   else if (to === 'talk') showTalk();
   else if (to === 'practice') showPractice();
@@ -2931,11 +2934,8 @@ const TOUR_KEY = 'continuum.tour';
 const TOUR = [
   { text: 'Welcome: a journey of discovery: the ideas that shaped how we think, what we value and how we live, from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
   { text: 'Most of what we believe, we picked up without choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
-  { target: '.tabs [data-nav=today]', text: 'Wander: one idea a day, with a short summary and a link to its source, and a question about it. Then the idea opens one part at a time. About two minutes.' },
-  { target: '.tabs [data-nav=think]', text: 'Think: respond by voice or in writing. Bring a debate with a friend, the news or a goal. It remembers what you\'ve said, pushes back when you\'re very sure, and what you talk about chooses what comes next.' },
-  { target: '.tabs [data-nav=think]', text: 'Work through a problem, or join the Parthenon: small groups talking over one question together, live, with Continuum as moderator.' },
-  { target: '.tabs [data-nav=today]', text: 'Practice, on Wander too: ideas into habits, from ten seconds a day.' },
-  { target: '.tabs [data-nav=explore]', text: 'Explore: every idea by room, time and theme, plus the Map, where any idea suggests a journey.' },
+  { target: '.tabs [data-nav=trainer]', text: 'The Trainer: one true story at a time from the world of thought, over a painting. After each, choose: another, say what you think, or go deeper. Every choice shapes what comes next, and now and then it will push you a little.' },
+  { target: '.tabs [data-nav=campus]', text: 'The Campus: every room is open. The galleries, the map, Talk, working through a problem, the psychology room, the debates, the Parthenon, the paths to practice. Wander in anywhere.' },
   { target: '.tabs [data-nav=you]', text: 'You: your diary, everything you write, and your views over time. When your thinking shifts, it notices and asks what changed. Review shows your week.' },
   { target: '#listen', text: 'Two small touches: tap Listen to hear any idea read aloud. And pinch the screen to make the words bigger, and to look closer at the picture.' },
   { text: 'The debates: an invitation, not a test. Nothing is graded.' },
@@ -3392,18 +3392,152 @@ function nudgeSetting() {
 // over the road so far. Everything else is in the menu below.
 const GREETED_KEY = 'continuum.greeted'; const NUDGE_ASKED_KEY = 'continuum.nudges.asked';
 // A shortcut from the home-screen icon (press and hold it) goes straight to its place.
-const SHORTCUTS = { wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal(), path: () => showPaths() };
+const SHORTCUTS = { trainer: () => showTrainer(), campus: () => showCampus(), wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal(), path: () => showPaths() };
 function arrive() {
   const go = SHORTCUTS[params.get('go')];
   if (go) { store.set(GREETED_KEY, today()); go(); return; }
   if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
   setNav('');
   return guarded(async () => {
-    const o = await api(`/api/lure?date=${today()}`);
+    return showTrainer();
+  });
+}
+
+// ── The Trainer ──
+// A welcome back over a painting, with its own small life (a bird, a candle, leaves); then one true story at a time from
+// the map, each over a different painting, and after it a few choices that change with the story. Look at the picture
+// whenever you like: Look mode, with its living parts.
+function showTrainer() {
+  setNav('trainer');
+  return guarded(async () => {
+    const o = await api(`/api/lure?date=${today()}&peek=1`);
     store.set(GREETED_KEY, today());
-    pageBg = brightFor('arrive') ?? null;
-    if (o.synthesis) return lookBack(o);
-    lineView(o);
+    trainerWelcome(o);
+  });
+}
+function trainerWelcome(o) {
+  const first = (o.name ?? '').split(' ')[0];
+  if (o.welcome) setWallpaper(o.welcome, 1, { plain: true });
+  pageBg = o.welcome ?? pageBg;
+  const rv = o.revisit;
+  const line = rv ? h('p', { class: 'opener revisit' }, `Coming back to something from ${rv.date}: `, h('em', {}, rv.name), `. ${rv.ask} `,
+    h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(rv.talk)); showTalk({ seed: `Coming back to ${rv.name}. ${rv.ask} `, draft: true }); } }, 'Pick it up →'))
+    : o.opener && o.state === 'write' && (o.visits ?? 1) > 1 ? h('p', { class: 'opener' }, o.opener) : null;
+  render(
+    h('div', { class: 'trainer-welcome' },
+      h('h1', {}, (o.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}` : 'Welcome') : (first ? `Welcome back, ${first}` : 'Welcome back')),
+      line,
+      h('p', { class: 'muted small' }, (o.visits ?? 1) <= 1
+        ? 'I am your trainer. I will bring you true stories from the world of thought, one at a time. After each, you choose: another, say what you think, or go deeper. Every choice teaches me where to take you.'
+        : 'Take a moment with the picture if you like. Then we begin.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' },
+        h('button', { type: 'button', class: 'btn', onclick: () => trainerNext({}) }, 'Begin'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => gaze(o.welcome ?? wallpaper.querySelector('img').getAttribute('src')) }, 'Just look')),
+      o.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(o) }, 'Looking back over your road →'),
+      quietLinks(o, { onTopic: async (topic, status) => {
+        if (o.state !== 'write') return showTalk({ seed: topic });
+        const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+        if (r.found) return trainerNext({});
+        status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+      } })));
+}
+async function trainerNext(params) {
+  const qs = new URLSearchParams({ date: today(), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)) });
+  try {
+    const { story } = await api(`/api/trainer/next?${qs}`);
+    if (!story) return render(h('p', {}, 'You have heard every story there is, for now. The Campus is open.'), h('button', { type: 'button', class: 'btn', onclick: () => showCampus() }, 'To the Campus'));
+    trainerStoryView(story);
+  } catch { notice('Could not reach the trainer. Try again.'); }
+}
+const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body: { node: s.id, action, date: today() } }).catch(() => {});
+function trainerStoryView(s) {
+  setNav('trainer');
+  setWallpaper(s.img, 1, { plain: true }); pageBg = s.img;
+  remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
+  const act = (c) => async () => {
+    if (c.go === 'more' || c.go === 'near' || c.go === 'far') return trainerNext({ from: s.id, how: c.go, img: s.img });
+    if (c.go === 'respond') return respondTo(c.label, c === s.push ? s.push.text : null);
+    trainerLog(s, 'deeper');
+    if (c.go === 'node') return trainerNext({ id: c.id, from: s.id, img: s.img });
+    if (c.go === 'source') return walkTo(s.id, []);
+    if (c.go === 'practice') return showPractice({ practice: c.id });
+    if (c.go === 'talk') return showTalk({ about: { title: s.title } });
+    if (c.go === 'room') return showGallery('rooms', { focus: s.id });
+  };
+  const choiceRow = h('div', { class: 'trainer-choices' }, s.choices.map((c) => h('button', { type: 'button', class: `btn ${c.go === 'respond' ? '' : 'ghost'}`, onclick: act(c) }, c.label)));
+  const pushBox = s.push && h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('button', { type: 'button', class: 'btn ghost', onclick: act(s.push) }, s.push.label));
+  // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
+  function respondTo(label, pushed) {
+    const question = pushed ?? (s.prompt && /think|true|argue|seen/i.test(label) ? s.prompt : label);
+    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A word or a page. Even "huh" tells me something.', 'aria-label': question });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    const box = h('div', { class: 'trainer-respond' }, h('p', { class: 'trainer-q' }, question), ta,
+      h('div', { class: 'row', style: 'gap:8px' }, dictation(ta, { label: 'Say it' })?.button ?? h('span'), send));
+    send.addEventListener('click', async () => {
+      if (!ta.value.trim()) return;
+      send.disabled = true;
+      try {
+        const r = s.today
+          ? await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: ta.value, date: today() } })
+          : await api('/api/trainer/respond', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } });
+        if (s.today) trainerLog(s, 'respond');
+        const onward = s.choices.filter((c) => c.go !== 'respond');
+        if (!onward.some((c) => ['more', 'near', 'far'].includes(c.go))) onward.push({ label: 'Another', go: 'more' });
+        box.replaceWith(h('div', { class: 'trainer-after' }, h('blockquote', { class: 'kept' }, ta.value.trim()),
+          r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
+          h('div', { class: 'trainer-choices' }, onward.map((c) => h('button', { type: 'button', class: 'btn ghost', onclick: act(c) }, c.label)))));
+      } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
+    });
+    choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
+  }
+  render(h('article', { class: 'trainer-story' },
+    h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
+    h('h1', {}, s.title),
+    ...s.story.split('\n\n').map((p) => h('p', { class: 'plain' }, p)),
+    (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation)),
+    pushBox,
+    choiceRow,
+    h('div', { class: 'row trainer-quiet' },
+      h('button', { type: 'button', class: 'link small', onclick: () => { trainerLog(s, 'look'); gaze(s.img); } }, 'Look at the painting'),
+      // There is always a way on, even when "another" is not among the choices.
+      !s.choices.some((c) => ['more', 'near', 'far'].includes(c.go)) && h('button', { type: 'button', class: 'link small trainer-next', onclick: () => trainerNext({ from: s.id, how: 'more', img: s.img }) }, 'Something else →'))));
+}
+
+// ── The Campus: every room, every door unlocked ──
+function showCampus() {
+  setNav('campus');
+  return guarded(async () => {
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const open = cs?.cases.filter((c) => c.status === 'open') ?? [];
+    pageBg = TAB_BG.gallery;
+    const door = (title, line, go) => h('button', { type: 'button', class: 'think-door', onclick: go }, h('span', { class: 't' }, title), h('span', { class: 'muted small' }, line));
+    const wing = (name, ...doors) => h('section', { class: 'campus-wing' }, h('h2', {}, name), h('div', { class: 'think-doors' }, ...doors));
+    render(
+      h('h1', {}, 'Campus'),
+      h('p', {}, 'Every door is open. Wander in anywhere; nothing here is locked or in order.'),
+      wing('The galleries',
+        door('The rooms', 'Every idea, by part of the world and age.', () => showGallery('rooms')),
+        door('The map', 'How the ideas connect: who taught, answered and extended whom.', () => showMap()),
+        door('Through time', 'Five thousand years, left to right.', () => showGallery('timeline')),
+        door('Themes', 'The questions people keep asking.', () => showGallery('themes'))),
+      wing('The daily idea',
+        door('Today\'s idea', 'One question about one idea, then the idea itself.', () => showToday()),
+        door('Your week', 'What you met, wrote and kept.', () => showReview(7))),
+      wing('Rooms for thinking',
+        door('Talk', 'Argue a point, test a belief, ask for a practice or a reading path.', () => showTalk()),
+        door('Work through a problem', 'A few questions, then a route through it, and check-ins as you go.', () => showWorkThrough()),
+        door('The psychology room', 'Surveys on where you are now, the schools of psychology and their methods.', () => showMind()),
+        door('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
+        door('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
+        door('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
+        door('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
+        door('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
+        door('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
+      wing('The practice yard',
+        door('A path to practice', 'Two weeks, a month, or the long course: the seven practices, a few minutes a day.', () => showPaths()),
+        door('Today\'s practice', 'Ideas into habits, from ten seconds a day.', () => showPractice())),
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'),
+        h('ul', { class: 'path' }, open.map((c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)))))));
   });
 }
 

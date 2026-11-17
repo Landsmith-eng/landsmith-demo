@@ -1106,3 +1106,18 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .anchor-line { margin: 0 0 6px; font-size: .85rem; opacity: .8; }
 .anchor-answer { margin: 4px 0; padding-left: 10px; border-left: 2px solid var(--accent); }
 .path-answers { margin: 8px 0; } .path-answers summary { cursor: pointer; font-weight: 600; }
+
+/* The trainer */
+.trainer-welcome { margin-top: 18vh; }
+.trainer-welcome h1 { margin-bottom: 8px; }
+.trainer-story h1 { margin: 4px 0 10px; }
+.trainer-story .plain { font-size: 1.12rem; line-height: 1.6; }
+.trainer-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 6px; }
+.trainer-push { margin: 16px 0 4px; padding: 10px 14px; border-left: 3px solid #e0a23a; background: rgba(224, 162, 58, .1); border-radius: 4px 12px 12px 4px; }
+.trainer-push p { margin: 0 0 8px; font-family: var(--display); font-size: 1.1rem; font-style: italic; }
+.trainer-respond { margin-top: 14px; }
+.trainer-respond textarea { width: 100%; margin: 6px 0; }
+.trainer-q { font-family: var(--display); font-size: 1.15rem; margin: 0 0 4px; }
+.trainer-quiet { justify-content: space-between; margin-top: 18px; } .trainer-quiet .link { padding: 0; opacity: .85; }
+.campus-wing { margin: 18px 0 8px; }
+.campus-wing h2 { margin: 0 0 8px; }

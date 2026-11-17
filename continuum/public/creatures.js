@@ -616,18 +616,14 @@ async function writing(run, sc, kind = 'paper') {
 const equations = (run, sc) => writing(run, sc, sc.board ? 'board' : 'chart');
 
 // Who may visit which picture, and how often (weights).
+// Only visitors whose silhouettes read as real: birds, butterflies, bees, falling leaves (and light: rays, ripples,
+// writing, equations). Dragonflies, spiders, inchworms, caterpillars, fish and toy sailboats were retired.
 const VISITORS = [
   { name: 'bird', fn: bird, w: 1.5, ok: (s) => s.has('sky') },
   { name: 'flock', fn: flock, w: 1.3, ok: (s) => s.has('sky') },
-  { name: 'dragonfly', fn: dragonfly, w: 1, ok: (s) => s.has('garden') || s.has('lake') },
-  { name: 'sailboat', fn: sailboat, w: 2, ok: (s) => s.has('boats') && s.water && (s.live ?? []).some((x) => x.m === 'bob' && !x.soft) }, // only among painted boats
-  { name: 'fish', fn: school, w: 1.5, ok: (s) => (s.has('sea') || s.has('lake')) && s.water && !s.has('city') && s.water[1] - s.water[0] >= .15 && (!s.waterX || s.waterX[1] - s.waterX[0] >= .4) }, // water deep and wide enough for a school
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },
   { name: 'egret', fn: egret, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'sandpipers', fn: sandpipers, w: 2.5, ok: (s) => s.has('beach') && s.shore },
-  { name: 'caterpillar', fn: caterpillar, w: 1, ok: (s) => s.has('garden') && groundBelow(s) },
-  { name: 'inchworm', fn: inchworm, w: 1.5, ok: (s) => s.trunks },
-  { name: 'spider', fn: spider, w: 1, ok: (s) => s.canopy },
   { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
   { name: 'butterfly', fn: butterfly, w: 2, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },

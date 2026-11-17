@@ -10,7 +10,7 @@ import { TYPES, FIELDS, RELS, REL_HELP } from './content/model.js';
 import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_steps.js';
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
-import { createLure } from './lure.js';
+import { createLure, readReaction, ackFor } from './lure.js';
 import { PATHS, ANCHORS, WHY_IDEAS, THESIS, planFor, pathById } from './content/paths.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
@@ -403,7 +403,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   app.get('/api/lure', auth, (req, res) => {
     const date = localDate(req.query.date); const uid = req.user.id;
     const t = todayData(req, date);
-    if (t.state === 'write') lure.shown(uid, date);
+    if (t.state === 'write' && !req.query.peek) lure.shown(uid, date); // the trainer's welcome only peeks
     const l = lure.today(uid, date);
     const first = (req.user.name ?? '').split(' ')[0];
     const nudge = lure.unseenNudge(uid); lure.seeNudges(uid);
@@ -412,6 +412,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     lure.maybeSynthesize(uid, date); // in the background: ready for next time if it is due
     res.json({ ...t, opener: t.state === 'write' ? (nudge?.text ?? lure.opener(uid, date, first)) : null,
       reaction: t.state === 'done_today' && l?.reaction ? { text: l.reaction, ack: l.ack ?? '' } : null,
+      // The trainer's welcome: a painting not seen lately, a different one most times the app is opened.
+      welcome: req.query.peek ? (() => { const seen = new Set(tnq.recent.all(uid).map((r) => r.img).filter(Boolean).slice(0, 15)); const f = PAINTINGS.filter((p) => !seen.has(p)); return f[Math.floor(Math.random() * f.length)] ?? PAINTINGS[0] ?? null; })() : undefined,
       revisit, path: (() => { const p = pathToday(uid, date); return p && { name: p.name, day: p.day, days: p.days, morning: p.done.morning, evening: p.done.evening }; })(),
       synthesis: lure.unseenSynthesis(uid), nudges: { offered: lure.subscribed(uid) ? 'on' : null, answered: q.writtenCount.get(uid).n } });
   });
@@ -479,6 +481,137 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const run = paq.run.get(Number(req.params.run), req.user.id);
     if (!run) return res.status(404).json({ error: 'not_found' });
     res.json(pathOutcome(run));
+  });
+
+  // ── The trainer ──
+  // One story at a time, each a real one from the map (an idea's own plain telling, with its source), each over a
+  // different painting. After it, a few choices that change with the story: another (near, far, or a surprise), a way
+  // to respond that fits it (what would you do, is it true of you, argue with it), and a way deeper that it actually
+  // has (its original words, who argued back, where it went next, the practice it leads to, its room). Now and then
+  // the trainer pushes: stay with this one, be honest, here is the strongest case against it, try it today. Every
+  // choice is kept and tunes the next story; the day's own idea comes first.
+  const PAINTINGS = ['rooms', 'spares', 'bright', 'nodes'].flatMap((d) => {
+    try { return readdirSync(join(PUBLIC_DIR, 'img', d)).filter((f) => f.endsWith('.webp')).map((f) => `/img/${d}/${f}`); } catch { return []; }
+  });
+  const tnq = {
+    log: db.prepare('INSERT INTO trainer_log (user_id, node_id, action, img, local_date) VALUES (?, ?, ?, ?, ?)'),
+    recent: db.prepare('SELECT node_id, action, img FROM trainer_log WHERE user_id = ? ORDER BY id DESC LIMIT 120'),
+    shownCount: db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE user_id = ? AND action = 'shown'"),
+    byRoom: db.prepare(`SELECT n.room, l.action, COUNT(*) AS n FROM trainer_log l JOIN nodes n ON n.id = l.node_id
+      WHERE l.user_id = ? AND l.action IN ('more', 'respond', 'deeper', 'look') GROUP BY n.room, l.action`),
+    edges: db.prepare('SELECT from_id, to_id, relation FROM edges WHERE from_id = ? OR to_id = ?'),
+    stories: db.prepare("SELECT * FROM nodes WHERE plain_face IS NOT NULL AND plain_face != '' AND type != 'practice'"),
+  };
+  const nodeOk = (states, n) => n && !hiddenIn(states, n);
+  function choicesFor(n, uid, k, states) {
+    const pick = (arr, salt) => arr[hash(`${uid}|${n.id}|${k}|${salt}`) % arr.length];
+    const near = tnq.edges.all(n.id, n.id).map((e) => ({ ...e, other: e.from_id === n.id ? e.to_id : e.from_id, out: e.from_id === n.id }))
+      .filter((e) => nodeOk(states, q.node.get(e.other)));
+    const opp = near.find((e) => e.relation === 'refuted');
+    const next = near.find((e) => e.out && ['extended', 'taught', 'secularized', 'measured', 'echoes'].includes(e.relation));
+    const prev = near.find((e) => !e.out && e.relation !== 'lands_on' && e.relation !== 'converged');
+    const kin = near.find((e) => e.relation === 'converged');
+    const practice = near.find((e) => e.relation === 'lands_on' && e.out);
+    const more = pick([{ label: 'Another', go: 'more' }, { label: 'Something else', go: 'more' }, { label: 'Surprise me', go: 'far' },
+      { label: 'Somewhere far from here', go: 'far' }, { label: `More from ${roomName.get(n.room) ?? 'this room'}`, go: 'near' }], 'more');
+    const RESPOND = { dilemma: ['What would you do?'], puzzle: ['What is your answer?'], case: ['Was the court right?', 'How would you have ruled?'], quote: ['Is it true?', 'Is this true of you?', 'Argue with it'],
+      work: ['What do you see in it?'], event: ['What do you make of it?'] };
+    const respond = { label: pick(RESPOND[n.type] ?? ['Say what you think', 'Is this true of you?', 'Argue with it', 'Where have you seen this?'], 'respond'), go: 'respond' };
+    const ways = [
+      n.source_face && { label: 'Read the original words', go: 'source' },
+      opp && { label: 'Who argued back?', go: 'node', id: opp.other },
+      next && { label: 'Where it went next', go: 'node', id: next.other },
+      prev && { label: 'Where it came from', go: 'node', id: prev.other },
+      kin && { label: 'Who saw the same, elsewhere', go: 'node', id: kin.other },
+      practice && { label: 'The practice it leads to', go: 'practice', id: practice.other },
+      { label: 'Talk it through', go: 'talk' },
+      n.room && { label: 'Walk through its room', go: 'room' },
+    ].filter(Boolean);
+    const deeper = pick(ways, 'deeper');
+    const second = pick(ways.filter((w) => w !== deeper), 'deeper2');
+    // Not always the same three: sometimes two ways deeper and no "another", sometimes the order turns.
+    const shape = hash(`${uid}|${n.id}|${k}|shape`) % 6;
+    const set = shape === 0 && second ? [respond, deeper, second] : shape === 1 ? [deeper, respond, more] : shape === 2 ? [more, deeper, respond] : [respond, deeper, more];
+    // The push: now and then, a nudge to think harder or be honest.
+    // How many stories in a row they have passed by: the push comes once, at the fourth, not every time after.
+    const acts = tnq.recent.all(uid).filter((r) => r.action !== 'shown'); let run = 0;
+    while (run < acts.length && acts[run].action === 'more') run += 1;
+    let push = null;
+    if (run === 4) push = { text: 'You have passed four by. Stay with this one for a minute: where does it touch your own life?', label: 'Stay with it', go: 'respond' };
+    else if (k % 6 === 5 && opp) push = { text: 'Easy to nod along. Here is the strongest case against it.', label: 'Hear it', go: 'node', id: opp.other };
+    else if (k % 7 === 6 && practice) push = { text: 'Knowing it is not doing it. Ten seconds, today?', label: 'Try it', go: 'practice', id: practice.other };
+    else if (k % 5 === 4) push = { text: pick(['Be honest with yourself: do you live this, or only agree with it?', 'Where are you fooling yourself about this?', 'What would it cost you to take this seriously?'], 'push'), label: 'Answer honestly', go: 'respond' };
+    return { choices: set.filter(Boolean), push };
+  }
+  function trainerStory(n, uid, date, { img = null, today = false, k = 0, states }) {
+    return {
+      id: n.id, title: n.title, thinker: n.thinker, year: n.year, type: n.type, field: n.field, room: n.room, room_name: roomName.get(n.room) ?? null,
+      story: n.plain_face, prompt: n.prompt, citation: n.source_citation, url: n.source_url, analysis_url: n.analysis_url, img, today,
+      ...choicesFor(n, uid, k, states),
+    };
+  }
+  app.get('/api/trainer/next', auth, (req, res) => {
+    const date = localDate(req.query.date); const uid = req.user.id;
+    const from = q.node.get(String(req.query.from ?? '')); const how = String(req.query.how ?? '');
+    if (from && ['more', 'near', 'far'].includes(how)) tnq.log.run(uid, from.id, 'more', null, date);
+    const states = talkStates(uid, date);
+    const recent = tnq.recent.all(uid);
+    const shownIds = new Set(recent.filter((r) => r.action === 'shown').map((r) => r.node_id));
+    let n = null; let today = false;
+    // Asked for by name (who argued back, where it went next).
+    const asked = q.node.get(String(req.query.id ?? ''));
+    if (asked && nodeOk(states, asked)) n = asked;
+    // The day's own idea first, while it is unanswered.
+    if (!n && !req.query.from && !q.writtenOn.get(uid, date)) {
+      const pick = todaysPick(uid, date); if (pick) { n = q.node.get(pick); today = true; lure.shown(uid, date); }
+    }
+    if (!n) {
+      const count = {}; for (const r of tnq.byRoom.all(uid)) (count[r.room] ??= {})[r.action] = r.n;
+      const lastRooms = recent.filter((r) => r.action === 'shown').slice(0, 5).map((r) => q.node.get(r.node_id)?.room);
+      const cands = tnq.stories.all().filter((x) => nodeOk(states, x) && x.id !== pickToday(uid, date) && !shownIds.has(x.id));
+      const pool = cands.length ? cands : tnq.stories.all().filter((x) => nodeOk(states, x) && x.id !== from?.id);
+      let best = null; let score = -Infinity;
+      for (const x of pool) {
+        const c = count[x.room] ?? {}; const total = (c.more ?? 0) + (c.respond ?? 0) + (c.deeper ?? 0) + (c.look ?? 0) + 2;
+        let v = (hash(`${uid}|${x.id}|${recent.length}`) % 1000) / 1000;
+        v += 1.2 * ((c.respond ?? 0) + (c.deeper ?? 0) + .5 * (c.look ?? 0)) / total - .8 * (c.more ?? 0) / total;
+        if (how === 'near' && from && x.room === from.room) v += 3;
+        if (how === 'far' && from && x.room !== from.room && !lastRooms.includes(x.room)) v += 3;
+        if (!how && lastRooms.slice(0, 2).includes(x.room)) v -= .6;
+        if (v > score) { score = v; best = x; }
+      }
+      n = best;
+    }
+    if (!n) return res.json({ story: null });
+    // A different painting each time: its own, else its room's, else one not seen lately.
+    const seen = new Set(recent.filter((r) => r.img).slice(0, 15).map((r) => r.img).concat(String(req.query.img ?? '')));
+    const own = n.image ? JSON.parse(n.image).src : null; const roomImg = roomBgOn(n.room, date);
+    const fresh = PAINTINGS.filter((p) => !seen.has(p));
+    const img = [own, roomImg].find((p) => p && !seen.has(p)) ?? (fresh.length ? fresh[hash(`${uid}|${n.id}|${recent.length}`) % fresh.length] : own ?? roomImg);
+    const k = tnq.shownCount.get(uid).n;
+    tnq.log.run(uid, n.id, 'shown', img, date);
+    res.json({ story: trainerStory(n, uid, date, { img, today, k, states }) });
+  });
+  const pickToday = (uid, date) => q.pickFor.get(uid, date)?.node_id ?? null;
+  app.post('/api/trainer/log', auth, (req, res) => {
+    const action = String(req.body?.action ?? ''); const n = q.node.get(req.body?.node);
+    if (!n || !['deeper', 'look', 'respond'].includes(action)) return res.status(400).json({ error: 'bad' });
+    tnq.log.run(req.user.id, n.id, action, null, localDate(req.body?.date));
+    res.json({ ok: true });
+  });
+  // A response to a story that is not the day's own: added to the user's note on that idea (never replacing it).
+  app.post('/api/trainer/respond', auth, (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id; const n = q.node.get(req.body?.node);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!n) return res.status(404).json({ error: 'not_found' });
+    if (!text || text.length > MAX_BODY) return res.status(400).json({ error: 'bad_text' });
+    const had = dq.noteOn.get(uid, n.id)?.body;
+    const q2 = typeof req.body?.question === 'string' ? req.body.question.slice(0, 200) : '';
+    dq.saveNote.run(uid, n.id, `${had ? `${had}\n\n` : ''}${q2 ? `${q2} ` : ''}${text}`.slice(0, MAX_BODY), date);
+    tnq.log.run(uid, n.id, 'respond', null, date);
+    noteFrom(uid, date, text, `Their response to "${n.title}"${q2 ? ` (asked: ${q2})` : ''}.`, 'note');
+    const r = readReaction(text);
+    res.json({ ack: ackFor(r.strength, hash(`${uid}|${n.id}|${date}|ack`)) });
   });
 
   // Something else on their mind: today's line goes there instead (until they have answered today's).
