@@ -3410,9 +3410,11 @@ function arrive() {
 function showTrainer() {
   setNav('trainer');
   return guarded(async () => {
-    const o = await api(`/api/lure?date=${today()}&peek=1`);
+    // The greeting and the day's message together, straight away; the questions come after a little while.
+    const [o, next] = await Promise.all([api(`/api/lure?date=${today()}&peek=1`), api(`/api/trainer/next?date=${today()}`)]);
     store.set(GREETED_KEY, today());
-    trainerWelcome(o);
+    if (!next.story) return trainerWelcome(o);
+    trainerStoryView(next.story, { greet: o });
   });
 }
 function trainerWelcome(o) {
@@ -3464,10 +3466,11 @@ async function trainerNext(params) {
   } catch { notice('Could not reach the trainer. Try again.'); }
 }
 const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body: { node: s.id, action, date: today() } }).catch(() => {});
-function trainerStoryView(s) {
+// How long to leave a story alone before the questions come: the time to read it, and a few seconds to let it settle.
+const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
+function trainerStoryView(s, { greet = null } = {}) {
   setNav('trainer');
   setWallpaper(s.img, 1, { plain: true }); pageBg = s.img;
-  remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
   const act = (c) => async () => {
     if (c.go === 'more' || c.go === 'near' || c.go === 'far') return trainerNext({ from: s.id, how: c.go, img: s.img });
     if (c.go === 'respond') return respondTo(c.label, c === s.push ? s.push.text : null);
@@ -3534,17 +3537,38 @@ function trainerStoryView(s) {
     });
     choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
   }
+  // The questions, and anything waiting from last time, arrive together once the story has had time to land.
+  const first = (greet?.name ?? '').split(' ')[0];
+  const later = h('div', { class: 'trainer-later' });
+  const waiting = greet && [
+    greet.dare && dareFollowUp(greet.dare),
+    greet.revisit && h('p', { class: 'opener revisit' }, `Coming back to something from ${greet.revisit.date}: `, h('em', {}, greet.revisit.name), `. ${greet.revisit.ask} `,
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(greet.revisit.talk)); showTalk({ seed: `Coming back to ${greet.revisit.name}. ${greet.revisit.ask} `, draft: true }); } }, 'Pick it up →')),
+    greet.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(greet) }, 'Looking back over your road →'),
+  ].filter(Boolean);
+  const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); };
+  setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
   render(h('article', { class: 'trainer-story' },
+    greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
     h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
     h('h1', {}, s.title),
     ...s.story.split('\n\n').map((p) => h('p', { class: 'plain' }, p)),
     (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation)),
-    pushBox,
-    choiceRow,
-    h('div', { class: 'row trainer-quiet' },
+    later));
+  // A tap on the story says "ready": the questions come at once.
+  view.querySelector('.trainer-story')?.addEventListener('click', (e) => { if (!e.target.closest('a, button, textarea')) reveal(); });
+  later.append(...[pushBox, choiceRow, ...(waiting ?? []), h('div', { class: 'row trainer-quiet' },
       h('button', { type: 'button', class: 'link small', onclick: () => { trainerLog(s, 'look'); gaze(s.img); } }, 'Look at the painting'),
       // There is always a way on, even when "another" is not among the choices.
-      !s.choices.some((c) => ['more', 'near', 'far'].includes(c.go)) && h('button', { type: 'button', class: 'link small trainer-next', onclick: () => trainerNext({ from: s.id, how: 'more', img: s.img }) }, 'Something else →'))));
+      !s.choices.some((c) => ['more', 'near', 'far'].includes(c.go)) && h('button', { type: 'button', class: 'link small trainer-next', onclick: () => trainerNext({ from: s.id, how: 'more', img: s.img }) }, 'Something else →')),
+    greet && quietLinks(greet, { onTopic: async (topic, status) => {
+      if (greet.state !== 'write') return showTalk({ seed: topic });
+      const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+      if (r.found) return trainerNext({});
+      status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+    } })].filter(Boolean));
+  // Remembered last, so "pick up where you left off" above still means the place before this story.
+  remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
 }
 
 // ── The Campus: every room, every door unlocked ──
