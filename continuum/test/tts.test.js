@@ -177,3 +177,21 @@ test('a key refused for speech to text is remembered through a restart, and a ne
   assert.deepEqual(await a.get(), { enabled: true });
   a.server.close();
 });
+
+test('at start, a quick check learns whether the key may transcribe: refused turns it off; allowed turns it back on', async () => {
+  let allowed = false; const sent = [];
+  const fetchImpl = async (url, opts) => { sent.push(opts.body.get('file')); return allowed ? new Response(JSON.stringify({ text: '' })) : new Response(JSON.stringify({ detail: { message: 'missing the permission speech_to_text' } }), { status: 401 }); };
+  const db = openDb(':memory:'); seedContent(db, content);
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
+  const app = createApp(db, { tts: createTts({ apiKey: 'k', fetchImpl }) });
+  const server = app.listen(0); await new Promise((r) => server.once('listening', r));
+  const get = () => fetch(`http://127.0.0.1:${server.address().port}/api/stt`, { headers: { 'x-continuum-token': 't' } }).then((r) => r.json());
+  try {
+    assert.equal(await app.checkStt(), false);
+    assert.ok(sent[0].size > 16000 && sent[0].type === 'audio/wav'); // half a second of silence
+    assert.deepEqual(await get(), { enabled: false });
+    allowed = true;
+    assert.equal(await app.checkStt(), true);
+    assert.deepEqual(await get(), { enabled: true });
+  } finally { server.close(); }
+});

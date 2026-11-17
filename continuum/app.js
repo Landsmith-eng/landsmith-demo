@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS daily_pick (
   PRIMARY KEY (user_id, local_date)
 )`;
 
-export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80 } = {}) {
+export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80, probeStt = false } = {}) {
   db.exec(DAILY_PICK_TABLE);
   // Why the day's card was chosen, shown on the card.
   if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
@@ -2383,6 +2383,31 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   const sttSave = db.prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('stt_down', ?)");
   let sttDown = (() => { try { const m = JSON.parse(sttMemo.get()?.v ?? 'null'); return m && m.key === tts?.keyTag && m.until > Date.now() ? m : null; } catch { return null; } })();
   const sttLive = () => Boolean(tts?.transcribe) && !(sttDown && Date.now() < sttDown.until);
+  // At each start (every update restarts the server): half a second of silence to ElevenLabs, to learn whether this key
+  // may transcribe. Refused: phones use their own voice typing from the first tap. Allowed: any earlier refusal is
+  // forgotten, so a fixed key works at once. Anything else (the network, a busy service) changes nothing.
+  async function checkStt() {
+    if (!tts?.transcribe) return null;
+    const rate = 16000; const n = rate / 2; const wav = Buffer.alloc(44 + n * 2);
+    wav.write('RIFF', 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
+    try {
+      await tts.transcribe(wav, 'audio/wav');
+      if (sttDown) { sttDown = null; sttSave.run('null'); }
+      console.log('Speech to text: the ElevenLabs key may transcribe.');
+      return true;
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) {
+        sttDown = { until: Date.now() + 365 * 86400_000, key: tts.keyTag }; sttSave.run(JSON.stringify(sttDown));
+        console.warn('Speech to text is OFF: the ElevenLabs key lacks the "Speech to Text" permission (ElevenLabs > Developers > API keys). Phones use their own voice typing until the key is fixed; the next restart checks again.');
+        return false;
+      }
+      console.warn(`Speech to text check: ${e.message} (left as it was)`);
+      return null;
+    }
+  }
+  if (probeStt) setTimeout(() => checkStt(), 3000);
+  app.checkStt = checkStt;
   app.get('/api/stt', auth, (req, res) => res.json({ enabled: sttLive() }));
   app.post('/api/stt', auth, express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
     if (!sttLive()) return res.status(503).json({ error: 'stt_off' });

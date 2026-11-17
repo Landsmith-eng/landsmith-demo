@@ -70,6 +70,7 @@ const talk = createTalk({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.
 const app = createApp(db, {
   adminKey: process.env.CONTINUUM_ADMIN_KEY, tts, talk,
   talkDailyLimit: Number(process.env.CONTINUUM_TALK_DAILY_LIMIT) || undefined,
+  probeStt: true, // at each start, check whether the ElevenLabs key may transcribe
 });
 // Nudges: every ten minutes, a look at who is due a note (most are not). Set CONTINUUM_NUDGES=off to stop them.
 if (process.env.CONTINUUM_NUDGES !== 'off') {
