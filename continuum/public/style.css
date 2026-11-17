@@ -1135,3 +1135,10 @@ html.talk-calm .talk-bar { transition: opacity .5s ease; }
 .trainer-word { background: none; border: 0; padding: 4px 0; color: inherit; font-family: var(--display); font-size: 1.3rem; cursor: pointer;
   border-bottom: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
 .trainer-word:active { opacity: .6; }
+.trainer-voice { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin: -2px 0 10px; }
+.trainer-listen { background: none; border: 0; padding: 2px 0; color: inherit; font-size: .95rem; cursor: pointer; opacity: .9; }
+.trainer-listen.wants-tap { color: var(--accent-ink); background: var(--accent); padding: 4px 12px; border-radius: 999px; animation: wants-tap 1.6s ease-in-out infinite; }
+.trainer-always { padding: 0; opacity: .75; }
+.trainer-always[aria-pressed="true"] { opacity: 1; color: var(--accent); }
+.trainer-story .say { border-radius: 4px; transition: background .2s; }
+.trainer-story .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }

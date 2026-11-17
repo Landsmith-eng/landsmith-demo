@@ -2049,7 +2049,7 @@ async function playFrom(view, i, offset = 0) {
         const at = offset; offset = 0;
         if (await playClip(URL.createObjectURL(blob), run, at, (d) => { (view.durs ??= {})[p.i] = d; }) === 'blocked') {
           // The browser wants a tap first: ask for one, on the reply itself.
-          stopTalkVoice(); view.btn.textContent = '▶ Tap to hear the reply'; view.btn.classList.add('wants-tap');
+          stopTalkVoice(); view.btn.textContent = '▶ Tap to hear it'; view.btn.classList.add('wants-tap');
           return false;
         }
       } catch (e) {
@@ -3467,6 +3467,9 @@ async function trainerNext(params) {
 }
 const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body: { node: s.id, action, date: today() } }).catch(() => {});
 // How long to leave a story alone before the questions come: the time to read it, and a few seconds to let it settle.
+// Stories read aloud: on request (Listen), or always, if the user prefers it.
+const TRAINER_ALOUD_KEY = 'continuum.trainer.aloud';
+const trainerAloud = () => store.get(TRAINER_ALOUD_KEY) === 'on';
 const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
 function trainerStoryView(s, { greet = null } = {}) {
   setNav('trainer');
@@ -3540,6 +3543,27 @@ function trainerStoryView(s, { greet = null } = {}) {
     });
     choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
   }
+  // The story as sentences, so it can be read aloud with the sentence being read lit and followed.
+  const listenBtn = h('button', { type: 'button', class: 'trainer-listen', 'aria-pressed': 'false' }, '🔊 Listen');
+  const spokenParts = []; const spans = [];
+  const storyParas = s.story.split('\n\n').map((para) => h('p', { class: 'plain' }, ...sentences(para).map((t) => {
+    const sp = h('span', { class: 'say' }, t, ' '); spans.push(sp); spokenParts.push(t); return sp;
+  })));
+  const voice = { spans, spoken: spokenParts, btn: listenBtn, clips: new Map() };
+  spans.forEach((sp, k) => sp.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, k); }));
+  const always = h('button', { type: 'button', class: 'link small trainer-always', 'aria-pressed': String(trainerAloud()) });
+  const drawAlways = () => { always.textContent = trainerAloud() ? 'Reading every story aloud: on' : 'Read every story aloud'; always.setAttribute('aria-pressed', String(trainerAloud())); };
+  drawAlways();
+  always.addEventListener('click', () => { store.set(TRAINER_ALOUD_KEY, trainerAloud() ? 'off' : 'on'); drawAlways(); if (trainerAloud() && talkPlayer.view !== voice) listen(); });
+  // Read aloud, the questions come when it has finished (or straight away if it is stopped).
+  async function listen() {
+    const done = await playFrom(voice, 0);
+    // The phone wants a tap before it will play: leave the "Tap to hear it" prompt, and let the questions come in their own time.
+    if (listenBtn.classList.contains('wants-tap')) { setTimeout(reveal, absorbMs(s.story, Boolean(greet))); return; }
+    listenBtn.textContent = '🔊 Listen';
+    if (done || talkPlayer.view !== voice) setTimeout(reveal, 1500);
+  }
+  listenBtn.addEventListener('click', () => (talkPlayer.view === voice ? togglePlay(voice) : listen()));
   // The questions, and anything waiting from last time, arrive together once the story has had time to land.
   const first = (greet?.name ?? '').split(' ')[0];
   const later = h('div', { class: 'trainer-later' });
@@ -3550,12 +3574,14 @@ function trainerStoryView(s, { greet = null } = {}) {
     greet.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(greet) }, 'Looking back over your road →'),
   ].filter(Boolean);
   const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); };
-  setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
+  if (!trainerAloud()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
+  else setTimeout(reveal, 90000); // a long story read aloud: the questions come anyway in the end
   render(h('article', { class: 'trainer-story' },
     greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
     h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
     h('h1', {}, s.title),
-    ...s.story.split('\n\n').map((p) => h('p', { class: 'plain' }, p)),
+    h('div', { class: 'trainer-voice' }, listenBtn, always),
+    ...storyParas,
     (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation)),
     later));
   // A tap on the story says "ready": the questions come at once.
@@ -3568,6 +3594,7 @@ function trainerStoryView(s, { greet = null } = {}) {
       if (r.found) return trainerNext({});
       status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
     } })].filter(Boolean));
+  if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
   // Remembered last, so "pick up where you left off" above still means the place before this story.
   remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
 }
