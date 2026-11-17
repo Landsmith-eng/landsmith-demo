@@ -2433,9 +2433,10 @@ function showPaths({ choose = false } = {}) {
     const whyChips = h('div', { class: 'theme-chips' }, d.why.map((w) => h('button', { type: 'button', class: 'chip', onclick: () => walkTo(w.id, []) }, w.title)));
     render(
       d.current && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showPaths() }, `← ${d.current.name}`)),
-      h('h1', {}, 'A path to practise'),
+      h('h1', {}, 'A path to practice'),
       h('blockquote', { class: 'thesis' }, h('p', {}, d.thesis.text), h('cite', {}, d.thesis.source)),
-      h('p', { class: 'muted small' }, 'Seven practices, found again and again by people who never heard of each other, and backed by modern evidence: tend the body, examine yourself daily, control your response, invest in a few close people, work at something that outlasts you, hold beliefs loosely, keep death in view. Pick how far to go.'),
+      h('p', {}, 'For 2,500 years, people who never met kept arriving at the same seven habits for living well. Science has since caught up with them. They were never a secret: living them every day is the hard part. Choose how far to go.'),
+      h('p', { class: 'muted small' }, 'Tend the body · examine yourself daily · control your response · invest in a few close people · work at something that outlasts you · hold beliefs loosely · keep death in view.'),
       h('div', { class: 'path-cards' }, d.paths.map((p) => h('section', { class: 'path-card' },
         h('div', { class: 'eyebrow' }, `${p.days} days · ${p.effort}`),
         h('h2', {}, p.name),
@@ -2509,7 +2510,7 @@ function showPathOutcome(run, data = null) {
     render(
       h('div', { class: 'eyebrow' }, `${o.started}${o.ended ? ` to ${o.ended}` : ''}`),
       h('h1', {}, o.status === 'done' ? `${o.name}: done` : o.name),
-      h('p', {}, `${o.practised} ${o.practised === 1 ? 'day' : 'days'} practised, ${o.answers} ${o.answers === 1 ? 'answer' : 'answers'}. This is what you wrote, gathered by question: read it the way you would someone else's diary, and look for what repeats.`),
+      h('p', {}, `${o.practised} ${o.practised === 1 ? 'day' : 'days'} practiced, ${o.answers} ${o.answers === 1 ? 'answer' : 'answers'}. This is what you wrote, gathered by question: read it the way you would someone else's diary, and look for what repeats.`),
       o.anchors.map((a) => h('details', { class: 'path-answers' }, h('summary', {}, `${a.label}${a.when ? ` · ${a.when}` : ''} · ${a.list.length}`),
         h('ul', {}, a.list.map((x) => h('li', {}, h('span', { class: 'muted small' }, `Day ${x.day} · `), x.body))))),
       h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;margin-top:16px' },
@@ -3096,7 +3097,7 @@ function showMind() {
 // sessions, tailored; the next one with what to do and a place to say how it went.
 function programSection(c, refs) {
   const p = c.program; if (!p || c.status !== 'open') return null;
-  const SH = { yes: 'can be done on your own with a guide', partly: 'partly done on your own; the full therapy is with a therapist', professional: 'done with a trained therapist; this programme prepares and supports you' };
+  const SH = { yes: 'can be done on your own with a guide', partly: 'partly done on your own; the full therapy is with a therapist', professional: 'done with a trained therapist; this program prepares and supports you' };
   const cur = p.sessions[p.current];
   const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'What did you do, and what did you notice?', 'aria-label': 'How the session went' });
   const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Done: how it went');
@@ -3119,7 +3120,7 @@ function programSection(c, refs) {
     } }, h('span', { class: 't' }, a.name), h('span', { class: 'small' }, a.why))),
     h('button', { type: 'button', class: 'link small', onclick: () => showTherapies({ forCase: c.id }) }, 'See all the psychotherapies'));
   return h('section', { class: 'wt-part program' },
-    h('h2', {}, `Your programme: ${p.name}${p.short ? ` (${p.short})` : ''}`),
+    h('h2', {}, `Your program: ${p.name}${p.short ? ` (${p.short})` : ''}`),
     h('p', {}, p.why), p.tailored && h('p', { class: 'muted small' }, p.tailored),
     p.professional && h('p', { class: 'help-line' }, p.professional_note),
     h('p', { class: 'muted small' }, `This approach ${SH[p.self_help] ?? ''}. One session a day at most; most people take a few days between them.`),
@@ -3128,7 +3129,7 @@ function programSection(c, refs) {
       h('p', {}, cur.exercise), cur.practice && refs[cur.practice] && h('p', { class: 'muted small' }, 'The practice for it: ', ideaLink(cur.practice, refs)),
       p.opens ? h('p', { class: 'muted small' }, `Done for today. The next session opens ${p.opens === today() ? 'today' : 'tomorrow'}.`)
         : h('div', {}, ta, h('div', { class: 'row' }, dictation(ta)?.button, send), status)),
-    p.finished && h('p', {}, 'You have finished the programme. Keep the practices that helped; check in below, or choose another approach to go further.'),
+    p.finished && h('p', {}, 'You have finished the program. Keep the practices that helped; check in below, or choose another approach to go further.'),
     h('ol', { class: 'program-list' }, p.sessions.map(item)),
     change);
 }
@@ -3352,7 +3353,7 @@ function showThink() {
         big('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
         big('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
         big('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
-        big('A path to practise', 'Commit to two weeks, a month, or the long course: the seven practices people everywhere found for living well, a few minutes a day.', () => showPaths()),
+        big('A path to practice', 'Commit to two weeks, a month, or the long course: the seven practices people everywhere found for living well, a few minutes a day.', () => showPaths()),
         big('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
         big('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
         big('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
@@ -3704,7 +3705,7 @@ function renderCase(c) {
     practice: ['practice', 'lenses', 'wisdom', 'route', 'therapy', 'survey', 'professional'],
     therapy: ['professional', 'therapy', 'lenses', 'wisdom', 'route', 'practice', 'survey'],
   }[p.lead?.kind] ?? ['professional', 'therapy', 'lenses', 'wisdom', 'survey', 'route', 'practice'];
-  const LEAD = { therapy: 'A therapy programme', philosophy: 'The wisdom of the ages', practice: 'A daily practice', professional: 'A professional\'s help' };
+  const LEAD = { therapy: 'A therapy program', philosophy: 'The wisdom of the ages', practice: 'A daily practice', professional: 'A professional\'s help' };
   render(back,
     h('div', { class: 'eyebrow' }, `Since ${c.date}`), h('h1', {}, c.title), help,
     h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),

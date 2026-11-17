@@ -69,7 +69,7 @@ export const PATHS = [
 // The ideas on the map that show why: the evidence and the oldest witnesses.
 export const WHY_IDEAS = ['seneca_evening_review', 'zengzi_three_daily_examinations', 'pennebaker_expressive_writing', 'william_james_habit',
   'harvard_study_adult_development', 'beck_cognitive_therapy_stoicism_tested', 'gollwitzer_implementation_intentions', 'epictetus_up_to_us'];
-export const THESIS = { text: 'Wisdom isn\'t scarce. Practice is. Across two and a half thousand years and every continent, people found the same handful of practices for living well. The problem was never knowing them; it is doing them, every day.', source: 'From "What It All Sums To"' };
+export const THESIS = { text: 'Wisdom isn\'t scarce. Practice is.', source: 'From "What It All Sums To"' };
 
 // What a path asks on its day d (1-based): the anchors morning and evening, the practice in focus, and whether an idea
 // from that practice comes with the day.
