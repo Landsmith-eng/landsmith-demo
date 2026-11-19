@@ -721,6 +721,17 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     });
   });
 
+  // What to tell someone when Claude does not answer: plainly, and when it comes back if Anthropic said.
+  function claudeTrouble(e) {
+    const m = String(e?.error?.error?.message ?? e?.message ?? '');
+    if (/usage limit/i.test(m)) {
+      const when = m.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+      return `Talk is resting${when ? ` until ${new Date(`${when}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}` : ' for now'}: Continuum has used this month's allowance with Claude. The stories, the map and everything else still work.`;
+    }
+    if (e?.status === 401) return 'The Anthropic key did not work. The server window says more.';
+    if (e?.status === 429 || e?.status === 529) return 'Claude is busy just now. Try again in a minute.';
+    return 'Something went wrong reaching Claude. Try again in a moment.';
+  }
   // Is Claude reachable? One tiny call, the same way the app makes them; reports only the status and Anthropic's own
   // error message (no one's content). For diagnosing "Something went wrong reaching Claude".
   app.get('/api/diag/claude', auth, async (req, res) => {
@@ -2119,7 +2130,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources, offer: keep && depth < 3 && reply.includes('[[go_deeper]]') ? depth + 1 : null });
     } catch (e) {
       console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);
-      send({ t: 'error', error: e.status === 401 ? 'The Anthropic key did not work. The server window says more.' : 'Something went wrong reaching Claude. Try again in a moment.' });
+      send({ t: 'error', error: claudeTrouble(e) });
     }
     res.end();
   });
