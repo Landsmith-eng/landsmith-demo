@@ -3411,7 +3411,7 @@ function nudgeSetting() {
 
 // ── Arriving: one line in the water ──
 // Each time the app opens: never the whole map, one thing. A line from a friend, one question about one idea (with what
-// it is and where to read it), and room to say anything back, even "huh". What the app says back is short, and often
+// it is and where to read it), and room to say anything back. What the app says back is short, and often
 // nothing at all. "Something else on my mind" sends today's line wherever they point. Now and then, first, a look back
 // over the road so far. Everything else is in the menu below.
 const GREETED_KEY = 'continuum.greeted'; const NUDGE_ASKED_KEY = 'continuum.nudges.asked';
@@ -3513,7 +3513,7 @@ function trainerStoryView(s, { greet = null } = {}) {
   // Three words, not buttons: your thoughts, a conversation, or more.
   const word = (label, fn) => h('button', { type: 'button', class: 'trainer-word', onclick: fn }, label);
   const choiceRow = h('div', { class: 'trainer-words' },
-    word('Thoughts', () => respondTo('Thoughts', null)),
+    word('Thoughts', () => reflectOn()),
     word('Talk', act({ go: 'talk' })),
     word('More, please', act({ go: 'more' })));
   const pushBox = s.push && (s.push.kind === 'invite' ? inviteBox(s.push) : s.push.kind === 'dare' ? dareBox(s.push)
@@ -3547,10 +3547,75 @@ function trainerStoryView(s, { greet = null } = {}) {
       h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not today')));
     return box;
   }
+  // Thoughts: one thing to react to, tied to this passage, as a card: a question, something to try, or a parallel
+  // story, labelled. Answer it, or skip it and just share thoughts on the passage. In voice mode the card is read aloud
+  // and the answer (or a spoken "skip") is heard.
+  const voiceMode = () => trainerAloud() || trainerContemplate();
+  async function reflectOn() {
+    const card = h('div', { class: 'reflect-card', 'aria-live': 'polite' }, h('p', { class: 'muted small' }, 'A moment…'));
+    choiceRow.replaceWith(card); pushBox?.remove();
+    const r = await getReflection();
+    if (!r) { card.replaceChildren(h('p', { class: 'muted small' }, 'Could not reach the trainer. ', h('button', { type: 'button', class: 'link', onclick: () => { card.replaceWith(choiceRow); } }, 'Back'))); return; }
+    drawCard(card, r, false);
+  }
+  function drawCard(card, r, skipped, said = null) {
+    stopTalkVoice();
+    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: skipped ? 'What do you make of it?' : r.kind === 'try' ? 'Afterwards, or now: how it went.' : 'Your answer.', 'aria-label': skipped ? 'Your thoughts' : r.question });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    let byVoice = false;
+    // A spoken answer that starts with "skip" (or "pass") skips the prompt; anything said after it is their thoughts.
+    const SKIP = /^\s*(skip|pass)(\s+(it|that|this))?\b[\s.,!]*/i;
+    const dict = dictation(ta, { label: 'Say it', onStart: () => stopTalkVoice(), onDone: (said) => {
+      if (!said) return;
+      if (!skipped && SKIP.test(said)) {
+        const rest = said.replace(SKIP, '').trim();
+        drawCard(card, r, true, rest || null); return;
+      }
+      byVoice = true; if (voiceMode()) submit();
+    } });
+    // What is read aloud in voice mode: the label, the parallel story, the activity, the question.
+    const parts = skipped ? [`Your thoughts on ${s.title}, then. What do you make of it?`]
+      : [r.label, ...(r.parallel ? [`${r.parallel.title}${r.parallel.thinker ? ` · ${r.parallel.thinker}` : ''}`, r.parallel.story] : []), r.text, r.question].filter(Boolean);
+    const P = parts.map((t) => sentences(t).map((x) => h('span', { class: 'say' }, x, ' '))); const spans = P.flat();
+    const readBtn = h('button', { type: 'button', class: 'link small' }, '🔊 Read it to me');
+    // Spoken with a pause after a label or title (a full stop for the voice, not on the screen).
+    const view = { spans, spoken: spans.map((x) => { const t = x.textContent.trim().replace(/\s*·\s*/g, ', '); return /[.!?…"”]$/.test(t) ? t : `${t}.`; }), btn: readBtn, clips: new Map() };
+    const readAndListen = async () => { const done = await playFrom(view, 0); readBtn.textContent = '🔊 Read it to me'; if (done && dict && document.body.contains(ta)) dict.start(); };
+    readBtn.addEventListener('click', () => (talkPlayer.view === view ? togglePlay(view) : readAndListen()));
+    async function submit() {
+      const text = ta.value.trim(); if (!text) return;
+      send.disabled = true;
+      try {
+        if (s.today && !s.answered) { await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: text, date: today() } }).catch(() => null); s.answered = true; trainerLog(s, 'respond'); }
+        const out = await api(`/api/trainer/reflect/${r.id}`, { method: 'POST', body: { text, skipped, via: byVoice ? 'voice' : 'typed', date: today() } });
+        card.replaceWith(h('div', { class: 'trainer-after' },
+          h('div', { class: 'eyebrow' }, skipped ? 'Your thoughts' : r.label), !skipped && h('p', { class: 'muted small' }, r.question),
+          h('blockquote', { class: 'kept' }, text),
+          out.ack ? h('p', { class: 'ack' }, out.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
+          h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
+      } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
+    }
+    send.addEventListener('click', submit);
+    let i = 0; const part = () => P[i++] ?? [];
+    const body = skipped
+      ? [h('div', { class: 'eyebrow' }, 'Your thoughts'), h('p', { class: 'trainer-q' }, ...part())]
+      : [h('div', { class: 'eyebrow reflect-label' }, ...part()),
+        ...(r.parallel ? [h('p', { class: 'reflect-parallel-title' }, ...part(), h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => walkTo(r.parallel.id, []) }, ' (open it)')),
+          h('p', { class: 'plain reflect-parallel' }, ...part())] : []),
+        r.text && h('p', { class: 'reflect-text' }, ...part()),
+        h('p', { class: 'trainer-q' }, ...part())];
+    card.replaceChildren(...body.filter(Boolean), ta,
+      h('div', { class: 'row', style: 'gap:8px' }, dict?.button ?? h('span'), send),
+      h('div', { class: 'row reflect-ways' }, readBtn,
+        !skipped && h('button', { type: 'button', class: 'link', onclick: () => drawCard(card, r, true) }, 'Skip — just share my thoughts')));
+    // Said "skip" and went straight on: those words are their thoughts, sent as they are.
+    if (said) { ta.value = said; byVoice = true; submit(); return; }
+    if (voiceMode()) readAndListen(); else ta.focus({ preventScroll: true });
+  }
   // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
   function respondTo(label, pushed) {
     const question = pushed ?? s.prompt ?? 'What do you think?';
-    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A word or a page. Even "huh" tells me something.', 'aria-label': question });
+    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A line or two, or more.', 'aria-label': question });
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
     const box = h('div', { class: 'trainer-respond' }, h('p', { class: 'trainer-q' }, question), ta,
       h('div', { class: 'row', style: 'gap:8px' }, dictation(ta, { label: 'Say it' })?.button ?? h('span'), send));
@@ -3609,7 +3674,10 @@ function trainerStoryView(s, { greet = null } = {}) {
       h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(greet.revisit.talk)); showTalk({ seed: `Coming back to ${greet.revisit.name}. ${greet.revisit.ask} `, draft: true }); } }, 'Pick it up →')),
     greet.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(greet) }, 'Looking back over your road →'),
   ].filter(Boolean);
-  const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); };
+  // The prompt for Thoughts is fetched once the questions appear, so it is ready (or nearly) when Thoughts is tapped.
+  let reflection = null;
+  const getReflection = () => (reflection ??= api(`/api/trainer/reflect?node=${encodeURIComponent(s.id)}&date=${today()}`).catch(() => { reflection = null; return null; }));
+  const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); getReflection(); };
   if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
   else setTimeout(reveal, 90000); // a long story read aloud: the questions come anyway in the end
   render(h('article', { class: 'trainer-story' },
@@ -3745,7 +3813,7 @@ function lineView(o) {
       h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showToday() }, 'Read where it comes from')),
       quietLinks(o, { onTopic }));
   }
-  const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'Say anything. Even "huh" tells me something.', 'aria-label': 'Your answer' });
+  const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A line or two, or more.', 'aria-label': 'Your answer' });
   const draftKey = `continuum.draft.${n.id}`; ta.value = store.get(draftKey) ?? '';
   const send = h('button', { type: 'button', class: 'btn', disabled: !ta.value.trim() }, 'Send');
   const status = h('span', { class: 'muted small', role: 'status' });

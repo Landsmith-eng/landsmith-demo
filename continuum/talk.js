@@ -332,6 +332,34 @@ export async function summarizeTalk(talk, { previous = null, turns }) {
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
 }
 
+// After a passage in the trainer: one prompt to react to, in one of three kinds, matched to the user's depth.
+// question: one personal question (not a quiz). try: a small thing to do today, one to five minutes, and what to notice.
+// parallel: the app supplies a real neighbouring idea from the map; the model writes only the bridge and a question.
+export const REFLECT_SCHEMA = { type: 'object', properties: { text: { type: 'string' }, question: { type: 'string' } }, required: ['text', 'question'], additionalProperties: false };
+const REFLECT_DEPTH = {
+  1: 'Depth level 1 (ideas): keep to ideas and the user\'s views; nothing about their private life.',
+  2: 'Depth level 2 (your life): you may ask about their own experience, gently.',
+  3: 'Depth level 3 (all the way): you may ask about feelings, relationships and history, kindly and directly.',
+};
+export async function writeReflection(talk, { kind, node, depth = 1, parallel = null }) {
+  const ask = {
+    question: 'Write ONE personal question about this passage, the kind a curious friend would ask ("When did you last…?", "Who in your life…?", "What would change if…?"). Not a quiz, not a test of what the passage said. text: "" (empty). question: the question, one sentence.',
+    try: 'Write ONE small activity to do today, taking one to five minutes, that puts this passage into practice in an ordinary day. Concrete and doable (where, when, what exactly), light, never preachy or grand. text: the activity, one or two sentences, in the imperative. question: what to tell afterwards, one short question ("What did you notice?" or more specific).',
+    parallel: `The app will show the user a parallel story, a real idea from another thinker or tradition, after this passage: "${parallel?.title}"${parallel?.thinker ? ` (${parallel.thinker})` : ''}: ${parallel?.plain_face}. text: ONE sentence that says what the two have in common, or where they differ, without lecturing. question: ONE personal question about the parallel and the user's own life.`,
+  }[kind];
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model,
+    max_tokens: 1500,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: REFLECT_SCHEMA } },
+    system: `You are Continuum's trainer, a philosophy app that has just shown its user one short passage. You give them one thing to react to. Tone: light, warm, plain words, a little playful when it fits; never preachy, never moralising, never therapy-speak, no exclamation marks. Write in American English. ${REFLECT_DEPTH[depth] ?? REFLECT_DEPTH[1]} Use only what is in the passage (and the parallel, if given); invent no facts, quotations or sources.`,
+    messages: [{ role: 'user', content: `The passage: "${node.title}"${node.thinker ? ` (${node.thinker})` : ''}. ${node.plain_face}\n\n${ask}` }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+}
+
 // One question back after the user writes a note on an idea: something that helps them learn about themselves and the
 // idea at once. Uses what they have said before (views) only to make the question personal, never to judge it.
 export async function askBack(talk, { note, idea, views = '' }) {

@@ -334,6 +334,22 @@ CREATE TABLE IF NOT EXISTS trainer_log (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS trainer_user ON trainer_log(user_id, id);
+-- After a passage, the one thing given to react to (a question, something to try, a parallel story) and what the user
+-- said: kept so Talk, summaries and later recall can come back to it.
+CREATE TABLE IF NOT EXISTS reflections (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL,
+  kind TEXT NOT NULL,                  -- question|try|parallel
+  prompt TEXT NOT NULL,                -- JSON {text, question, parallel}
+  response TEXT,
+  skipped INTEGER NOT NULL DEFAULT 0,  -- 1: skipped the prompt, and shared thoughts on the passage itself
+  via TEXT,                            -- voice|typed
+  local_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  answered_at TEXT
+);
+
 -- A small dare from the trainer: one practice, today. The next time the app opens, it asks how it went.
 CREATE TABLE IF NOT EXISTS dares (
   id INTEGER PRIMARY KEY,

@@ -16,7 +16,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
+import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, writeReflection, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
@@ -632,6 +632,62 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     tnq.log.run(req.user.id, n.id, action, null, localDate(req.body?.date));
     res.json({ ok: true });
   });
+  // ── After a passage: one thing to react to ──
+  // Rotating through a personal question, a small thing to try today, and a parallel story (a real neighbouring idea on
+  // the map, in its own words). Written by Claude to the user's depth when it can; otherwise from the map itself.
+  const rfq = {
+    today: db.prepare('SELECT * FROM reflections WHERE user_id = ? AND node_id = ? AND local_date = ? ORDER BY id DESC LIMIT 1'),
+    count: db.prepare('SELECT COUNT(*) AS n FROM reflections WHERE user_id = ?'),
+    add: db.prepare('INSERT INTO reflections (user_id, node_id, kind, prompt, local_date) VALUES (?, ?, ?, ?, ?)'),
+    get: db.prepare('SELECT * FROM reflections WHERE id = ? AND user_id = ?'),
+    answer: db.prepare("UPDATE reflections SET response = ?, skipped = ?, via = ?, answered_at = datetime('now') WHERE id = ? AND user_id = ?"),
+    recent: db.prepare(`SELECT r.*, n.title FROM reflections r JOIN nodes n ON n.id = r.node_id WHERE r.user_id = ? AND r.response IS NOT NULL
+      ORDER BY r.id DESC LIMIT 6`),
+  };
+  const REFLECT_LABEL = { question: 'Question', try: 'Try this', parallel: 'A parallel story' };
+  const reflectOut = (r) => { const p = JSON.parse(r.prompt); return { id: r.id, kind: r.kind, label: REFLECT_LABEL[r.kind], text: p.text, question: p.question, parallel: p.parallel ?? null, response: r.response, skipped: Boolean(r.skipped) }; };
+  app.get('/api/trainer/reflect', auth, async (req, res) => {
+    const date = localDate(req.query.date); const uid = req.user.id; const n = q.node.get(String(req.query.node ?? ''));
+    if (!n) return res.status(404).json({ error: 'not_found' });
+    const had = rfq.today.get(uid, n.id, date); if (had) return res.json(reflectOut(had));
+    const states = talkStates(uid, date);
+    const near = tnq.edges.all(n.id, n.id).map((e) => ({ rel: e.relation, other: e.from_id === n.id ? e.to_id : e.from_id }));
+    const parallelNode = ['converged', 'echoes', 'extended', 'refuted', 'taught', 'measured'].map((rel) => near.find((x) => x.rel === rel))
+      .map((x) => x && q.node.get(x.other)).find((x) => x && x.type !== 'practice' && x.plain_face && !hiddenIn(states, x));
+    const practice = near.find((x) => x.rel === 'lands_on' && practiceSteps[x.other]?.tiny)?.other;
+    const kinds = ['question', 'try', 'parallel'].filter((k) => k !== 'parallel' || parallelNode).filter((k) => k !== 'try' || talk || practice);
+    const kind = kinds[rfq.count.get(uid).n % kinds.length];
+    const depth = tq.userDepth.get(uid)?.depth ?? 1;
+    let out = null;
+    if (talk) {
+      try { out = await writeReflection(talk, { kind, node: n, depth, parallel: kind === 'parallel' ? parallelNode : null }); } catch (e) { console.warn(`Reflection: Claude failed (${e.status ?? ''} ${e.name ?? 'error'})`); }
+    }
+    // Without Claude: from the map's own words.
+    if (!out?.question) out = kind === 'question' ? { text: '', question: n.prompt || `Where have you seen "${n.title}" in your own life?` }
+      : kind === 'try' ? { text: practice ? practiceSteps[practice].tiny : `Some time today, for two minutes, look for one place where "${n.title}" shows up around you.`, question: 'What did you notice?' }
+        : { text: 'Another time, another place, a similar thought.', question: 'Where do the two meet in your own life, if they do?' };
+    const prompt = { text: out.text ?? '', question: out.question, ...(kind === 'parallel' ? { parallel: { id: parallelNode.id, title: parallelNode.title, thinker: parallelNode.thinker, story: parallelNode.plain_face } } : {}) };
+    const r = rfq.add.run(uid, n.id, kind, JSON.stringify(prompt), date);
+    res.json(reflectOut(rfq.get.get(Number(r.lastInsertRowid), uid)));
+  });
+  app.post('/api/trainer/reflect/:id', auth, (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id; const r = rfq.get.get(Number(req.params.id), uid);
+    if (!r) return res.status(404).json({ error: 'not_found' });
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text || text.length > MAX_BODY) return res.status(400).json({ error: 'bad_text' });
+    const skipped = req.body?.skipped === true; const via = req.body?.via === 'voice' ? 'voice' : 'typed';
+    rfq.answer.run(text, skipped ? 1 : 0, via, r.id, uid);
+    // Also on the idea's note (never replacing it), into the views ledger, and logged for the trainer.
+    const n = q.node.get(r.node_id); const p = JSON.parse(r.prompt);
+    const asked = skipped ? 'Thoughts' : `${REFLECT_LABEL[r.kind]}: ${[p.text, p.question].filter(Boolean).join(' ')}`;
+    const had = dq.noteOn.get(uid, n.id)?.body;
+    dq.saveNote.run(uid, n.id, `${had ? `${had}\n\n` : ''}${asked}\n${text}`.slice(0, MAX_BODY), date);
+    tnq.log.run(uid, n.id, 'respond', null, date);
+    noteFrom(uid, date, text, `Their answer to ${skipped ? `the passage "${n.title}"` : `"${p.question}" (${REFLECT_LABEL[r.kind]}, after "${n.title}")`}.`, 'note');
+    const rd = readReaction(text);
+    res.json({ ack: ackFor(rd.strength, hash(`${uid}|${r.id}|ack`)), reflection: reflectOut(rfq.get.get(r.id, uid)) });
+  });
+
   // Dares: taken today, asked about next time.
   app.post('/api/trainer/dare', auth, (req, res) => {
     const date = localDate(req.body?.date); const p = String(req.body?.practice ?? ''); const text = practiceSteps[p]?.tiny;
@@ -1888,11 +1944,13 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   });
   // Earlier conversations, as Continuum sees them: their summaries (title, key points, threads to pick up).
   function pastText(uid, exceptId) {
-    return tq.past.all(uid, exceptId ?? 0).map((t) => {
+    const reflections = rfq.recent.all(uid).map((r) => { const p = JSON.parse(r.prompt);
+      return `- ${r.local_date} · after "${r.title}"${r.skipped ? ', their thoughts' : `, ${REFLECT_LABEL[r.kind].toLowerCase()} "${p.question}"`}: "${clip(r.response, 200)}"`; });
+    return [...(reflections.length ? ['Lately, after passages in the trainer:', ...reflections] : []), ...tq.past.all(uid, exceptId ?? 0).map((t) => {
       const s = JSON.parse(t.summary);
       const threads = (s.connections ?? []).map((c) => `${c.name} (${c.link}) next time: ${c.ask}`).join('; ');
       return `- ${s.title} · ${t.updated_at.slice(0, 10)}. ${(s.points ?? []).join(' ')}${threads ? ` Threads: ${threads}` : ''}`;
-    }).join('\n');
+    })].join('\n');
   }
 
   // How each of the user's messages was given (voice or typed), in order.

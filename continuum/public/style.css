@@ -1175,3 +1175,13 @@ html.talk-calm.peek.speaking .talk-compose {
 .kept-from { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .kept-from .link { padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 .kept-more { padding: 0; color: var(--accent); font-style: normal; }
+/* Thoughts: one thing to react to */
+.reflect-card { margin-top: 16px; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: 4px 12px 12px 4px; background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.reflect-card .eyebrow { margin-bottom: 6px; }
+.reflect-parallel-title { font-family: var(--display); font-size: 1.12rem; margin: 2px 0 4px; }
+.reflect-parallel { font-size: 1rem !important; opacity: .95; }
+.reflect-text { margin: 6px 0; }
+.reflect-card textarea { width: 100%; margin: 8px 0 6px; }
+.reflect-ways { justify-content: space-between; margin-top: 8px; }
+.reflect-ways .link { padding: 0; }
+.reflect-card .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 4px; }
