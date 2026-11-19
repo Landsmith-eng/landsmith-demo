@@ -11,6 +11,8 @@ import { practiceSteps, SIZES, SIZE_ORDER, ARRIVE } from './content/practice_ste
 import { MAX_TEXT as TTS_MAX } from './tts.js';
 import { stances, BASIS } from './content/stances.js';
 import { createLure, readReaction, ackFor } from './lure.js';
+import { createSources } from './sources.js';
+const { BOOKS } = await import('./content/books.js').catch(() => ({ BOOKS: {} }));
 import { PATHS, ANCHORS, WHY_IDEAS, THESIS, PRACTICE_ORDER, planFor, pathById } from './content/paths.js';
 import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
@@ -35,7 +37,7 @@ CREATE TABLE IF NOT EXISTS daily_pick (
   PRIMARY KEY (user_id, local_date)
 )`;
 
-export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80, probeStt = false } = {}) {
+export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimit = 80, probeStt = false, sourceFetch = fetch } = {}) {
   db.exec(DAILY_PICK_TABLE);
   // Why the day's card was chosen, shown on the card.
   if (!db.prepare("SELECT 1 FROM pragma_table_info('daily_pick') WHERE name = 'why'").get()) db.exec('ALTER TABLE daily_pick ADD COLUMN why TEXT');
@@ -686,6 +688,35 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     noteFrom(uid, date, text, `Their answer to ${skipped ? `the passage "${n.title}"` : `"${p.question}" (${REFLECT_LABEL[r.kind]}, after "${n.title}")`}.`, 'note');
     const rd = readReaction(text);
     res.json({ ack: ackFor(rd.strength, hash(`${uid}|${r.id}|ack`)), reflection: reflectOut(rfq.get.get(r.id, uid)) });
+  });
+
+  // ── Source links that do not die: checked before they are shown or opened, with Gutenberg's mirrors, Standard Ebooks
+  // and the Internet Archive behind Gutenberg. Failures are logged by site and time only. ──
+  const failQ = db.prepare('INSERT INTO source_failures (host, why) VALUES (?, ?)');
+  const sources = createSources({ fetchImpl: sourceFetch, books: BOOKS, onFailure: (host, why) => { failQ.run(host, why); console.warn(`Source unavailable: ${host} (${why}) at ${new Date().toISOString()}`); } });
+  const UNAVAILABLE = 'Source temporarily unavailable — try again later';
+  app.get('/api/source/:id', auth, async (req, res) => {
+    const n = q.node.get(req.params.id);
+    if (!n?.source_url) return res.status(404).json({ error: 'no_source' });
+    const r = await sources.resolve(n.source_url);
+    res.json(r.ok ? { ok: true, url: r.url, via: r.via, book: r.book } : { ok: false, message: UNAVAILABLE, book: r.book ?? null });
+  });
+  // Opening a source: the working place for it, or a plain page saying it is unavailable (never a dead link). Public:
+  // sources are public pages, and the answer is cached, so it costs a check at most every fifteen minutes.
+  app.get('/go/:id', async (req, res) => {
+    const n = q.node.get(req.params.id);
+    const r = n?.source_url ? await sources.resolve(n.source_url) : { ok: false };
+    if (r.ok) return res.redirect(302, r.url);
+    const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+    res.status(503).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source unavailable</title>
+<body style="font-family:Georgia,serif;background:#0d1410;color:#e8f0e8;padding:28px;line-height:1.5"><p style="font-size:1.2rem">${UNAVAILABLE}.</p>
+${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><a href="javascript:history.length>1?history.back():window.close()" style="color:#7fd1a8">Back to Continuum</a></p></body>`);
+  });
+  app.get('/admin/api/sources', (req, res, next) => admin(req, res, next), (req, res) => {
+    res.json({
+      by_site: db.prepare("SELECT host, COUNT(*) AS failures, MAX(at) AS last FROM source_failures WHERE at > datetime('now', '-7 days') GROUP BY host ORDER BY failures DESC").all(),
+      recent: db.prepare('SELECT host, why, at FROM source_failures ORDER BY id DESC LIMIT 50').all(),
+    });
   });
 
   // Dares: taken today, asked about next time.

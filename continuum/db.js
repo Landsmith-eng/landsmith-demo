@@ -334,6 +334,14 @@ CREATE TABLE IF NOT EXISTS trainer_log (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS trainer_user ON trainer_log(user_id, id);
+-- When a source site did not answer: the site and the time only (no user, no page), to see which are flaky.
+CREATE TABLE IF NOT EXISTS source_failures (
+  id INTEGER PRIMARY KEY,
+  host TEXT NOT NULL,
+  why TEXT,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- After a passage, the one thing given to react to (a question, something to try, a parallel story) and what the user
 -- said: kept so Talk, summaries and later recall can come back to it.
 CREATE TABLE IF NOT EXISTS reflections (

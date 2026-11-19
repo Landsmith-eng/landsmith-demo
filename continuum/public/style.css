@@ -1185,3 +1185,4 @@ html.talk-calm.peek.speaking .talk-compose {
 .reflect-ways { justify-content: space-between; margin-top: 8px; }
 .reflect-ways .link { padding: 0; }
 .reflect-card .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 4px; }
+.source-down { font-style: italic; }

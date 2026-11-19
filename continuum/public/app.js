@@ -284,8 +284,28 @@ function findUrl(citation) {
     .replace(/\([^)]*\)?/g, ' ').split(/\s,|\s\.|,?\s*§|,\s*(?:pp?|chs?|vol|Book|Part|esp)\.?\s/)[0].replace(/\s+/g, ' ').trim().slice(0, 160);
   return /["“].*\d/.test(work) ? `https://scholar.google.com/scholar?q=${encodeURIComponent(work)}` : `https://www.google.com/search?tbm=bks&q=${encodeURIComponent(work)}`;
 }
-const sourceLink = (url, citation, label = 'Read it ↗', cls = 'fulltext') => (url || findUrl(citation))
-  && h('a', { href: url || findUrl(citation), target: '_blank', rel: 'noopener', class: cls }, url ? label : 'Find it ↗');
+// A link to a passage's source. With the idea's id it goes through the server, which checks it first and falls back
+// (Gutenberg's mirrors, Standard Ebooks, the Internet Archive); checked here too as it is shown, so a source that cannot
+// be reached shows a plain note instead of a dead link. Answers kept for fifteen minutes.
+const SOURCE_VIA = { mirror: 'a Gutenberg mirror', standardebooks: 'Standard Ebooks', archive: 'the Internet Archive' };
+const sourceChecks = new Map(); // id -> { at, p }
+function sourceStatus(id) {
+  const c = sourceChecks.get(id);
+  if (c && Date.now() - c.at < 15 * 60_000) return c.p;
+  const p = api(`/api/source/${encodeURIComponent(id)}`).catch(() => null);
+  sourceChecks.set(id, { at: Date.now(), p }); return p;
+}
+function sourceLink(url, citation, label = 'Read it ↗', cls = 'fulltext', id = null) {
+  if (!url && !findUrl(citation)) return null;
+  if (!url || !id) return h('a', { href: url || findUrl(citation), target: '_blank', rel: 'noopener', class: cls }, url ? label : 'Find it ↗');
+  const a = h('a', { href: `/go/${encodeURIComponent(id)}`, target: '_blank', rel: 'noopener', class: cls }, label);
+  sourceStatus(id).then((r) => {
+    if (!r || !a.isConnected) return;
+    if (!r.ok) a.replaceWith(h('span', { class: 'muted small source-down' }, 'Source temporarily unavailable — try again later'));
+    else if (SOURCE_VIA[r.via]) a.append(h('span', { class: 'muted small' }, ` (from ${SOURCE_VIA[r.via]})`));
+  });
+  return a;
+}
 
 const ROLE_LABEL = { majority: 'Opinion of the Court', plurality: 'Plurality opinion', concurrence: 'Concurring', dissent: 'Dissenting' };
 
@@ -307,7 +327,7 @@ function conceptPanels(node, trail, { intro = null } = {}) {
       h('blockquote', { class: 'quote' }, node.source_face.split('\n\n').map((p) => h('p', {}, p))),
       h('cite', {}, node.source_citation ?? ''),
       h('div', { class: 'srclinks' },
-        sourceLink(node.source_url, node.source_citation, 'Read the full text ↗'),
+        sourceLink(node.source_url, node.source_citation, 'Read the full text ↗', 'fulltext', node.id),
         node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')),
     ]));
   }
@@ -1560,7 +1580,7 @@ function sourceFirst(node) {
     node.plain_face && h('p', { class: 'plain' }, node.plain_face.split('\n\n')[0]),
     (node.source_citation || node.source_url) && h('p', { class: 'small source-line' },
       node.source_citation && h('span', { class: 'muted' }, `Source: ${node.source_citation} `),
-      sourceLink(node.source_url, node.source_citation),
+      sourceLink(node.source_url, node.source_citation, 'Read it ↗', 'fulltext', node.id),
       node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')));
 }
 
@@ -2185,7 +2205,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         ...ids.map((id) => { const r = refs[id]; return h('li', {},
           h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title),
           r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`),
-          ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out')); }),
+          ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out', id)); }),
         ...(web ?? []).map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))),
       ];
       return items.length > 0 && h('details', { class: 'talk-sources' }, h('summary', { class: 'eyebrow' }, `Sources · ${items.length}`), h('ul', {}, items));
@@ -2572,7 +2592,7 @@ function summaryView(s) {
     (ideas.length > 0 || pages.length > 0) && h('div', {}, h('div', { class: 'eyebrow' }, 'Sources'),
       h('ul', { class: 'sum-src' },
         ideas.map((r) => h('li', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); walkTo(r.id, []); } }, r.title),
-          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`), ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out'))),
+          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`), ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out', r.id))),
         pages.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))))),
     s.pending && h('p', { class: 'muted small' }, 'Updating with the latest exchange…'),
   ];
@@ -3686,7 +3706,7 @@ function trainerStoryView(s, { greet = null } = {}) {
     h('h1', {}, s.title),
     h('div', { class: 'trainer-voice' }, listenBtn, czBtn, always),
     ...storyParas,
-    (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation)),
+    (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation, 'Read it ↗', 'fulltext', s.id)),
     later));
   // A tap on the story says "ready": the questions come at once.
   view.querySelector('.trainer-story')?.addEventListener('click', (e) => { if (!e.target.closest('a, button, textarea')) reveal(); });
@@ -3847,7 +3867,7 @@ function lineView(o) {
     back || (o.opener && h('p', { class: 'opener' }, o.opener)),
     h('h1', { class: 'line-prompt' }, n.prompt),
     // What it is about and where to read it, at once; the summary itself just under the answer box.
-    h('p', { class: 'muted small line-src' }, [n.title, n.thinker].filter(Boolean).join(' · '), ' ', sourceLink(n.source_url, n.source_citation)),
+    h('p', { class: 'muted small line-src' }, [n.title, n.thinker].filter(Boolean).join(' · '), ' ', sourceLink(n.source_url, n.source_citation, 'Read it ↗', 'fulltext', n.id)),
     form,
     n.plain_face && h('div', { class: 'line-about' }, h('div', { class: 'eyebrow' }, 'What it is about'), sourceFirst(n)),
     quietLinks(o, { onTopic }));

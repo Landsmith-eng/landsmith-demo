@@ -25,6 +25,9 @@
       <input id="k" type="password" placeholder="Admin key" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
       <button class="btn">Load</button>
     </form>
+    <h2 style="margin-top:28px">Source sites</h2>
+    <p class="muted small">When a book's site did not answer (last 7 days): the site and the time only. Readers were sent to a mirror, Standard Ebooks or the Internet Archive instead, or told it was unavailable.</p>
+    <div id="sources" class="muted small">Load to see.</div>
     <h2 style="margin-top:28px">Invite someone</h2>
     <p class="muted small">Makes a personal link to Continuum. Send it to them; opening it signs them in on that phone.</p>
     <form id="inv" class="row" style="justify-content:flex-start">
@@ -51,7 +54,13 @@
           : j.error === 'name_required' ? 'Type a name first.'
             : `The server said no (${res.status}${j.error ? `: ${j.error}` : ''}). If Render is still deploying, wait a minute and try again.`;
     });
+    async function loadSources() {
+      const r = await fetch('/admin/api/sources', { headers: { 'x-admin-key': key() } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      const box = $('#sources'); if (!r) { box.textContent = ''; return; }
+      box.textContent = r.by_site.length ? r.by_site.map((x) => `${x.host}: ${x.failures} ${x.failures === 1 ? 'failure' : 'failures'}, last ${x.last} UTC`).join(' · ') : 'No failures in the last 7 days.';
+    }
     async function load() {
+      loadSources();
       const res = await fetch('/admin/api/stats', { headers: { 'x-admin-key': key() } });
       if (!res.ok) { $('#summary').textContent = res.status === 403 ? 'Wrong key, or CONTINUUM_ADMIN_KEY is not set on the server.' : 'Failed to load.'; return; }
       const { testers } = await res.json();
