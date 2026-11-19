@@ -721,6 +721,19 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     });
   });
 
+  // Is Claude reachable? One tiny call, the same way the app makes them; reports only the status and Anthropic's own
+  // error message (no one's content). For diagnosing "Something went wrong reaching Claude".
+  app.get('/api/diag/claude', auth, async (req, res) => {
+    if (!talk) return res.json({ ok: false, why: 'no ANTHROPIC_API_KEY on the server' });
+    const t0 = Date.now();
+    try {
+      const msg = await talk.client.beta.messages.create({ model: talk.model, max_tokens: 20, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', messages: [{ role: 'user', content: 'Say OK.' }] });
+      res.json({ ok: true, model: talk.model, served: msg.model, stop: msg.stop_reason, ms: Date.now() - t0 });
+    } catch (e) {
+      res.json({ ok: false, model: talk.model, status: e.status ?? null, type: e.error?.error?.type ?? e.name, message: String(e.error?.error?.message ?? e.message ?? '').slice(0, 300), ms: Date.now() - t0 });
+    }
+  });
+
   // The honest question for one passage, in plain words: concrete, specific to it, short (kept for the day).
   const honestCache = new Map();
   app.get('/api/trainer/push', auth, async (req, res) => {
