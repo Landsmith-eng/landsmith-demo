@@ -3537,7 +3537,13 @@ function trainerStoryView(s, { greet = null } = {}) {
     word('Talk', act({ go: 'talk' })),
     word('More, please', act({ go: 'more' })));
   const pushBox = s.push && (s.push.kind === 'invite' ? inviteBox(s.push) : s.push.kind === 'dare' ? dareBox(s.push)
-    : h('div', { class: 'trainer-push' }, h('p', {}, s.push.text), h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: act(s.push) }, s.push.label))));
+    : h('div', { class: 'trainer-push' }, h('p', { class: 'push-text' }, s.push.text), h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: act(s.push) }, s.push.label))));
+  // The honest question, written for this passage, replaces the plain one as soon as it arrives.
+  if (s.push?.kind === 'honest') {
+    api(`/api/trainer/push?node=${encodeURIComponent(s.id)}&date=${today()}`).then((r) => {
+      if (r?.text && pushBox?.isConnected !== false) { s.push.text = r.text; const p = pushBox.querySelector('.push-text'); if (p) p.textContent = r.text; }
+    }).catch(() => {});
+  }
   // The invitation: their own pattern, then a question. Whatever they pick, the path starts where they chose.
   function inviteBox(pu) {
     const box = h('div', { class: 'trainer-push invite' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.ask));

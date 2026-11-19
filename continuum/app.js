@@ -575,7 +575,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     else if (practice && practiceSteps[practice.other]?.tiny && k % 4 === 1 && !tnq.dareToday.get(uid, date)) push = { kind: 'dare', text: 'A small dare, if you want one, for today:', dare: practiceSteps[practice.other].tiny, practice: practice.other, label: 'I will try it today' };
     else if (k % 6 === 5 && opp) push = { text: 'Easy to nod along. Here is the strongest case against it.', label: 'Hear it', go: 'node', id: opp.other };
     else if (k % 7 === 6 && practice) push = { text: 'Knowing it is not doing it. Ten seconds, today?', label: 'Try it', go: 'practice', id: practice.other };
-    else if (k % 5 === 4) push = { text: pick(['Be honest with yourself: do you live this, or only agree with it?', 'Where are you fooling yourself about this?', 'What would it cost you to take this seriously?'], 'push'), label: 'Answer honestly', go: 'respond' };
+    // The honest question: written for this passage by Claude when the page asks (/api/trainer/push); this plain one
+    // stands in until then, or if Claude cannot be reached.
+    else if (k % 5 === 4) push = { kind: 'honest', text: pick(['If you actually lived by this, what would you have to give up?', 'Do you live by this, or do you just agree with it?', 'Where in your own life do you not quite do this?'], 'push'), label: 'Answer honestly', go: 'respond' };
     return { choices: set.filter(Boolean), push };
   }
   function trainerStory(n, uid, date, { img = null, today = false, k = 0, states }) {
@@ -717,6 +719,28 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       by_site: db.prepare("SELECT host, COUNT(*) AS failures, MAX(at) AS last FROM source_failures WHERE at > datetime('now', '-7 days') GROUP BY host ORDER BY failures DESC").all(),
       recent: db.prepare('SELECT host, why, at FROM source_failures ORDER BY id DESC LIMIT 50').all(),
     });
+  });
+
+  // The honest question for one passage, in plain words: concrete, specific to it, short (kept for the day).
+  const honestCache = new Map();
+  app.get('/api/trainer/push', auth, async (req, res) => {
+    const date = localDate(req.query.date); const uid = req.user.id; const n = q.node.get(String(req.query.node ?? ''));
+    if (!n) return res.status(404).json({ error: 'not_found' });
+    const key = `${uid}|${n.id}|${date}`;
+    if (honestCache.has(key)) return res.json({ text: honestCache.get(key) });
+    let text = null;
+    if (talk) {
+      try {
+        const msg = await talk.client.beta.messages.create({
+          model: talk.model, max_tokens: 600, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' },
+          system: `Continuum, a philosophy app, has just shown its user a short passage. Write ONE question that pushes them, kindly, to be honest with themselves about it: does their own life match what this passage says? Make it concrete and specific to this passage, in plain everyday words, about something they actually do, own, say or avoid. Under twenty words. No abstractions ("take this seriously", "live this"), no jargon, no lecturing, no exclamation marks. American English. Example, for Singer's drowning child: "If Singer is right, what's one thing you bought this month you'd have to give up?" ${{ 1: 'Keep it about ideas and choices, not their private life.', 2: 'It may touch their own experience.', 3: 'It may touch feelings and relationships, kindly.' }[tq.userDepth.get(uid)?.depth ?? 1]} Answer with the question only.`,
+          messages: [{ role: 'user', content: `"${n.title}"${n.thinker ? ` (${n.thinker})` : ''}. ${n.plain_face}` }],
+        });
+        if (msg.stop_reason === 'end_turn') text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim().replace(/^["“]|["”]$/g, '') || null;
+      } catch (e) { console.warn(`Honest question: Claude failed (${e.status ?? ''} ${e.name ?? 'error'})`); }
+    }
+    if (text) honestCache.set(key, text);
+    res.json({ text });
   });
 
   // Dares: taken today, asked about next time.

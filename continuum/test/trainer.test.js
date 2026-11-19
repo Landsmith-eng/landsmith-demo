@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, seedContent } from '../db.js';
 import { createApp } from '../app.js';
+import { createTalk } from '../talk.js';
 import * as content from '../content/index.js';
 
 async function boot() {
@@ -97,4 +98,29 @@ test('the trainer invites from the user\'s own trail; the path starts where they
     assert.ok(r.ack);
     assert.equal((await call('/api/lure?date=2026-11-03&peek=1')).json.dare, null);
   } finally { server.close(); }
+});
+
+test('the honest push is plain, and written for the passage when Claude is there', async () => {
+  // Without Claude: plain wording, never the old abstract lines; the endpoint has nothing to add.
+  const { server, call } = await boot();
+  try {
+    let s = (await call(`/api/trainer/next?date=${D}`)).json.story; const seen = [];
+    for (let i = 0; i < 14; i++) { if (s.push?.kind === 'honest') seen.push(s.push.text); s = (await call(`/api/trainer/next?date=${D}&from=${s.id}&how=near`)).json.story; await call('/api/trainer/log', { node: s.id, action: 'deeper', date: D }); }
+    assert.ok(seen.length >= 1, 'an honest push came');
+    for (const t of seen) assert.doesNotMatch(t, /take this seriously|fooling yourself|live this, or only/);
+    assert.deepEqual((await call(`/api/trainer/push?node=singer_drowning_child&date=${D}`)).json, { text: null });
+  } finally { server.close(); }
+  // With Claude: specific to the passage, at the user's depth, kept for the day.
+  const asked = [];
+  const client = { beta: { messages: { create: async (p) => { asked.push(p); return { stop_reason: 'end_turn', content: [{ type: 'text', text: '"If Singer is right, what\'s one thing you bought this month you\'d have to give up?"' }] }; } } } };
+  const db = openDb(':memory:'); seedContent(db, content);
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'T');
+  const srv = createApp(db, { talk: createTalk({ client }) }).listen(0); await new Promise((r) => srv.once('listening', r));
+  const get = () => fetch(`http://127.0.0.1:${srv.address().port}/api/trainer/push?node=singer_drowning_child&date=${D}`, { headers: { 'x-continuum-token': 't' } }).then((r) => r.json());
+  try {
+    assert.equal((await get()).text, "If Singer is right, what's one thing you bought this month you'd have to give up?");
+    assert.match(asked[0].messages[0].content, /drowning/i);
+    assert.match(asked[0].system, /plain everyday words/);
+    await get(); assert.equal(asked.length, 1); // kept for the day
+  } finally { srv.close(); }
 });
