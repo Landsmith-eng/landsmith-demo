@@ -74,7 +74,10 @@ export function createSources({ fetchImpl = fetch, books = {}, onFailure = () =>
     const id = gutenbergId(url);
     if (await check(url)) return { ok: true, url, via: id ? 'gutenberg' : 'original', book: id ? { id, ...books[id] } : null };
     if (!id) return { ok: false };
-    for (const m of MIRRORS) { const u = `${m}/${mirrorPath(id)}`; if (await check(u)) return { ok: true, url: u, via: 'mirror', book: { id, ...books[id] } }; }
+    // On a mirror, the book's readable web page where it has one (<id>-h/<id>-h.htm), else its folder of files.
+    for (const m of MIRRORS) {
+      for (const u of [`${m}/${mirrorPath(id)}${id}-h/${id}-h.htm`, `${m}/${mirrorPath(id)}`]) if (await check(u)) return { ok: true, url: u, via: 'mirror', book: { id, ...books[id] } };
+    }
     const se = await standardEbooks(id); if (se && await check(se)) return { ok: true, url: se, via: 'standardebooks', book: { id, ...books[id] } };
     const ia = await archive(id); if (ia && await check(ia)) return { ok: true, url: ia, via: 'archive', book: { id, ...books[id] } };
     return { ok: false, book: { id, ...books[id] } };

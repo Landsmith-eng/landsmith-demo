@@ -35,9 +35,9 @@ test('Gutenberg first; when it is down, a mirror, then Standard Ebooks, then the
   let { r } = await run(['www.gutenberg.org']);
   assert.deepEqual([r.ok, r.url, r.via], [true, BOOK, 'gutenberg']);
   ({ r } = await run(['gutenberg.pglaf.org']));
-  assert.deepEqual([r.via, r.url], ['mirror', 'https://gutenberg.pglaf.org/4/5/1/0/45109/']);
+  assert.deepEqual([r.via, r.url], ['mirror', 'https://gutenberg.pglaf.org/4/5/1/0/45109/45109-h/45109-h.htm']); // the book's web page
   ({ r } = await run(['aleph.gutenberg.org']));
-  assert.equal(r.url, 'https://aleph.gutenberg.org/4/5/1/0/45109/');
+  assert.equal(r.url, 'https://aleph.gutenberg.org/4/5/1/0/45109/45109-h/45109-h.htm');
   ({ r } = await run(['standardebooks.org']));
   assert.deepEqual([r.via, r.url], ['standardebooks', 'https://standardebooks.org/ebooks/epictetus/short-works/george-long']);
   ({ r } = await run(['archive.org']));
