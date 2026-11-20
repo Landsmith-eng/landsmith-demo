@@ -1186,3 +1186,13 @@ html.talk-calm.peek.speaking .talk-compose {
 .reflect-ways .link { padding: 0; }
 .reflect-card .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 4px; }
 .source-down { font-style: italic; }
+/* Passage visitors */
+/* Rings from a fish nipping the surface (class "nip": ".rise" is the text reveal, which blurs). */
+#creatures .creature.nip, #creatures-light .creature.nip { opacity: 1; }
+#creatures.dark .creature.nip { filter: none; }
+.creature.fleck { opacity: 0; }
+.creature.glow { border-radius: 50%; mix-blend-mode: soft-light; filter: blur(8px); }
+.creature.cave-shadow { border-radius: 45% 45% 40% 40%; background: rgba(10, 6, 4, .9); filter: blur(22px); opacity: 0; }
+.creature.speck { width: 3px; height: 3px; border-radius: 50%; background: rgba(40, 46, 38, .95); opacity: .55; }
+.creature.flutter.dreaming { animation: dream-fade 9s ease-in-out infinite; }
+@keyframes dream-fade { 0%, 100% { opacity: .5; } 40% { opacity: .5; } 55% { opacity: 0; } 70% { opacity: 0; } 85% { opacity: .5; } }

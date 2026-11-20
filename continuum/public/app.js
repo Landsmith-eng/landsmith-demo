@@ -2,7 +2,7 @@
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
 import { SURVEYS, surveyById, optionsFor } from '/surveys.js';
-import { startCreatures, summon, creaturesInto, sceneFor } from '/creatures.js';
+import { startCreatures, summon, creaturesInto, sceneFor, passagePaintings, startPassage, stopPassage } from '/creatures.js';
 import { startLiving, liveIn, liveOut } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
@@ -80,6 +80,7 @@ function h(tag, attrs = {}, ...children) {
 function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
   if (talkPlayer.state !== 'idle') stopTalkVoice(); // leaving a reply being read aloud stops it
+  stopPassage(); // a passage's own visitor leaves with it
   document.documentElement.classList.remove('talk-calm', 'peek', 'speaking');
   document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
@@ -2953,7 +2954,7 @@ addEventListener('touchend', (e) => {
 // skips it. Skipped when testing with ?day=, and shown as a still for reduced-motion settings.
 function intro(then = () => {}) {
   try { if (sessionStorage.getItem('continuum.intro')) return then(); sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
-  if (params.get('day') || params.get('visit')) return then(); // a test date, or a link to see a visitor: straight in
+  if (params.get('day') || params.get('visit') || params.get('story')) return then(); // a test date, or a link to see a visitor: straight in
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const hall = h('img', { class: 'hall', src: '/img/tabs/gallery_empty.webp', alt: '' });
   const cat = h('img', { class: 'cat', src: '/img/tabs/gallery.webp', alt: '' });
@@ -3441,6 +3442,7 @@ function arrive() {
   const go = SHORTCUTS[params.get('go')];
   if (go) { store.set(GREETED_KEY, today()); go(); return; }
   if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
+  if (params.get('story')) { setNav('trainer'); trainerNext({ id: String(params.get('story')).replace(/[^a-z0-9_]/g, '') }); return; } // a link to one story
   setNav('');
   return guarded(async () => {
     return showTrainer();
@@ -3519,6 +3521,10 @@ const trainerContemplate = () => store.get(TRAINER_ALOUD_KEY) === 'contemplate';
 const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
 function trainerStoryView(s, { greet = null } = {}) {
   setNav('trainer');
+  // A passage with a visitor of its own (the pond's rises, the river's current, the cave's firelight…) is shown on a
+  // painting where that visitor belongs, if its painting is not one.
+  const fits = passagePaintings(s.id);
+  if (fits.length && !fits.includes(s.img)) s.img = fits[Math.floor(Math.random() * fits.length)];
   setWallpaper(s.img, 1, { plain: true }); pageBg = s.img;
   const act = (c) => async () => {
     if (c.go === 'more' || c.go === 'near' || c.go === 'far') return trainerNext({ from: s.id, how: c.go, img: s.img });
@@ -3726,6 +3732,7 @@ function trainerStoryView(s, { greet = null } = {}) {
     } })].filter(Boolean));
   if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
   else if (trainerContemplate()) contemplateIt();
+  startPassage(s.id);
   // Remembered last, so "pick up where you left off" above still means the place before this story.
   remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
 }

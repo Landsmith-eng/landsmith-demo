@@ -595,6 +595,164 @@ async function ripples(run, sc) {
   await wait(4000, run);
 }
 
+// ── Rises: a fish nipping at the surface from below. Rings spread from the spot and fade, each a pale crest with a
+// faint darker trough beside it (as ripples look on real water), smaller and flatter farther off. The fish moves on
+// between rises, a little way in a wandering line, now and then nipping twice in quick succession. ──
+function waterRect(sc) {
+  const r = rectOf([sc.waterX?.[0] ?? 0, sc.water[0], sc.waterX?.[1] ?? 1, sc.water[1]], sc);
+  return { x0: Math.max(14, r.x + 10), x1: Math.min(innerWidth - 14, r.x + r.w - 10) };
+}
+function rise(run, x, y, depth) {
+  const R = 12 + 44 * depth; const flat = .2 + .16 * depth; const n = depth > .35 ? 3 : 2; const life = 4200 + 1400 * depth;
+  const box = (stroke, width, parent, cls) => {
+    const el = svg(`${-R - 6} ${-R * flat - 6} ${2 * R + 12} ${2 * R * flat + 12}`, 2 * R + 12,
+      Array.from({ length: n }, () => `<ellipse cx="0" cy="0" fill="none" stroke="${stroke}" stroke-width="${width}" vector-effect="non-scaling-stroke"/>`).join(''));
+    el.classList.add('creature', cls); el.style.transform = `translate(${x - R - 6}px, ${y - R * flat - 6}px)`; el.style.opacity = '1'; parent.append(el); return el;
+  };
+  const crest = box('rgba(252,250,242,1)', .9 + .5 * depth, lightLayer, 'nip'); const trough = box('rgba(24,52,56,1)', 1.2 + .6 * depth, layer, 'nip');
+  const cr = [...crest.querySelectorAll('ellipse')]; const tr = [...trough.querySelectorAll('ellipse')];
+  const t0 = performance.now();
+  const step = (now) => {
+    if (run.stopped) { crest.remove(); trough.remove(); return; }
+    const t = now - t0; let alive = false;
+    for (let i = 0; i < n; i++) {
+      const p = (t - i * 850) / life; const on = p > 0 && p < 1; if (on) alive = true;
+      const r = 1.5 + R * Math.pow(Math.max(0, Math.min(1, p)), .7); const a = on ? Math.min(1, p / .06) * Math.pow(1 - p, 1.8) * (i ? .7 : 1) : 0; // brightest as it opens, fading as it spreads; the later rings softer
+      cr[i].setAttribute('rx', r); cr[i].setAttribute('ry', r * flat); cr[i].setAttribute('opacity', (.55 * a).toFixed(3));
+      tr[i].setAttribute('rx', r + 1.6); tr[i].setAttribute('ry', r * flat + .9); tr[i].setAttribute('cy', .9); tr[i].setAttribute('opacity', (.4 * a).toFixed(3));
+    }
+    if (alive || t < 600) requestAnimationFrame(step); else { crest.remove(); trough.remove(); }
+  };
+  requestAnimationFrame(step);
+}
+async function rises(run, sc, endless = false) {
+  if (sc.water[0] <= 0) return; // a pond seen from straight above: flattened rings would look wrong
+  const band = waterBand(sc, .1, .95); if (!band) return;
+  const { x0, x1 } = waterRect(sc); if (x1 - x0 < 40) return;
+  let x = rnd(x0, x1); let y = rnd(band[0], band[1]); let heading = rnd(0, Math.PI * 2);
+  for (let k = 0; endless || k < Math.round(rnd(4, 8)); k++) {
+    if (run.stopped) return;
+    const depth = (y - band[0]) / Math.max(1, band[1] - band[0]);
+    rise(run, x, y, depth);
+    if (Math.random() < .25) { await wait(rnd(350, 650), run); rise(run, x + rnd(-6, 6), y + rnd(-2, 2), depth); } // a quick second nip
+    await wait(rnd(1600, 6500), run);
+    // The fish swims on: a wandering line, kept on the water.
+    heading += rnd(-.9, .9); const stepPx = rnd(18, 75) * (.6 + depth);
+    x += Math.cos(heading) * stepPx; y += Math.sin(heading) * stepPx * .35;
+    if (x < x0 || x > x1) { heading = Math.PI - heading; x = Math.max(x0, Math.min(x1, x)); }
+    if (y < band[0] || y > band[1]) { heading = -heading; y = Math.max(band[0], Math.min(band[1], y)); }
+  }
+  await wait(3000, run);
+}
+
+// ── The current (Heraclitus): small flecks of light drift with the river, never the same path twice, and now and then
+// a leaf is carried past on the surface. ──
+async function current(run, sc) {
+  const band = waterBand(sc, .08, .9); if (!band) return;
+  const { x0, x1 } = waterRect(sc); const dir = Math.random() < .5 ? 1 : -1;
+  const flecks = Array.from({ length: 9 }, () => {
+    const el = svg('0 0 24 3', 24, '<rect x="0" y="0" width="24" height="3" rx="1.5" fill="rgba(255,252,240,.95)"/>');
+    el.classList.add('creature', 'fleck'); lightLayer.append(el); return { el, born: -1e9, life: 0 };
+  });
+  const reborn = (f, t) => { f.y = rnd(band[0], band[1]); f.depth = (f.y - band[0]) / Math.max(1, band[1] - band[0]); f.x = rnd(x0, x1); f.born = t; f.life = rnd(2600, 5200); f.w = 6 + 18 * f.depth; f.n = noise(); };
+  let leaf = null; let nextLeaf = rnd(4000, 12000);
+  await frames(run, (t) => {
+    for (const f of flecks) {
+      if (t - f.born > f.life) reborn(f, t);
+      const u = (t - f.born) / f.life; const a = Math.sin(Math.PI * u);
+      f.x += dir * (.12 + .5 * f.depth);
+      f.el.style.transform = `translate(${f.x}px, ${f.y + f.n(t) * 2}px) scale(${f.w / 24}, ${.5 + .5 * f.depth})`; f.el.style.opacity = (.5 * a).toFixed(3);
+    }
+    if (!leaf && t > nextLeaf) {
+      const y = rnd(band[0] + (band[1] - band[0]) * .3, band[1]); const depth = (y - band[0]) / Math.max(1, band[1] - band[0]);
+      const el = svg('0 0 20 12', 8 + 9 * depth, '<path d="M1 6 C5 0 14 0 19 6 C14 12 5 12 1 6Z" fill="rgba(90,70,30,.95)"/>');
+      el.classList.add('creature', 'leaf'); layer.append(el);
+      leaf = { el, y, depth, x: dir > 0 ? x0 - 20 : x1 + 20, ph: rnd(0, 6) };
+    }
+    if (leaf) {
+      leaf.x += dir * (.25 + .55 * leaf.depth);
+      leaf.el.style.transform = `translate(${leaf.x}px, ${leaf.y + Math.sin(t / 800 + leaf.ph) * 1.5}px) rotate(${Math.sin(t / 1900 + leaf.ph) * 25}deg) scaleY(.6)`;
+      if (leaf.x < x0 - 40 || leaf.x > x1 + 40) { leaf.el.remove(); leaf = null; nextLeaf = t + rnd(9000, 20000); }
+    }
+    return true;
+  });
+  for (const f of flecks) f.el.remove(); leaf?.el.remove();
+}
+
+// ── Firelight in a dark room (Plato's cave): a low warm light breathing on the wall, and soft shadows that move
+// across it now and then, never quite clear enough to make out. ──
+function glowEl(x, y, R, color) {
+  const el = document.createElement('div'); el.className = 'creature glow';
+  Object.assign(el.style, { width: `${R * 2}px`, height: `${R * 2}px`, transform: `translate(${x - R}px, ${y - R}px)`, background: `radial-gradient(circle, ${color} 0%, transparent 70%)`, opacity: '0' });
+  return el;
+}
+async function cavelight(run, sc) {
+  const W = innerWidth, H = innerHeight; const flame = candle();
+  const fire = glowEl(W * rnd(.2, .8), H * .78, Math.max(W, H) * .55, 'rgba(255,170,90,.55)'); lightLayer.append(fire);
+  const shadows = Array.from({ length: 2 }, () => {
+    const el = document.createElement('div'); el.className = 'creature cave-shadow'; lightLayer.append(el);
+    return { el, x: -200, y: H * rnd(.22, .5), w: rnd(90, 170), h: rnd(150, 240), v: 0, next: rnd(3000, 9000) };
+  });
+  await frames(run, (t) => {
+    const f = flame(t); fire.style.opacity = (.55 * (f - .3)).toFixed(3);
+    for (const sh of shadows) {
+      if (sh.v === 0 && t > sh.next) { sh.v = (Math.random() < .5 ? 1 : -1) * rnd(.06, .14); sh.x = sh.v > 0 ? -sh.w : W + sh.w; }
+      if (sh.v) {
+        sh.x += sh.v * 16;
+        sh.el.style.transform = `translate(${sh.x}px, ${sh.y}px) scale(${1 + (f - .8) * .3}, ${1 + (f - .8) * .5})`;
+        Object.assign(sh.el.style, { width: `${sh.w}px`, height: `${sh.h}px`, opacity: (.32 * f).toFixed(3) });
+        if (sh.x < -sh.w * 2 || sh.x > W + sh.w * 2) { sh.v = 0; sh.next = t + rnd(6000, 16000); sh.el.style.opacity = '0'; }
+      }
+    }
+    return true;
+  });
+  fire.remove(); shadows.forEach((sh) => sh.el.remove());
+}
+// ── A lamp at night (Seneca's evening review): its warm light breathing on the room, slowly dimming as the day is gone
+// over, resting low, then rising again. Where the painting has its own lamp or window light, from there. ──
+async function lampglow(run, sc) {
+  const W = innerWidth, H = innerHeight; const flame = candle();
+  const at = sc.rays?.warm ? rectOf([sc.rays.x, sc.rays.y, sc.rays.x, sc.rays.y], sc) : { x: W * rnd(.15, .85), y: H * rnd(.55, .75) };
+  const glow = glowEl(at.x, at.y, Math.max(W, H) * .42, 'rgba(255,190,110,.6)'); lightLayer.append(glow);
+  await frames(run, (t) => {
+    const cycle = (t % 46000) / 46000; const dim = cycle < .65 ? 1 - cycle * .9 : cycle < .8 ? .41 : .41 + (cycle - .8) * 2.95;
+    glow.style.opacity = (.6 * dim * (flame(t) - .25)).toFixed(3);
+    return true;
+  });
+  glow.remove();
+}
+// ── The butterfly dream (Zhuangzi): a butterfly that is there, then not, then somewhere else. ──
+async function dreamButterfly(run, sc) {
+  while (!run.stopped) {
+    const going = butterfly(run, sc);
+    await wait(rnd(2500, 5000), run);
+    const el = [...layer.children, ...(perch?.children ?? [])].reverse().find((c) => c.classList.contains('flutter'));
+    if (el) el.classList.add('dreaming');
+    await going; await wait(rnd(3000, 8000), run);
+  }
+}
+// ── Wind made visible (Epictetus: the archer aims; the wind is not his): gusts carry leaves across, one after another. ──
+async function gusts(run, sc) {
+  while (!run.stopped) { await leaves(run, sc); await wait(rnd(2500, 7000), run); }
+}
+// ── Sisyphus: far off on a hillside, a speck climbs, very slowly, almost to the top; then rolls back down, and begins
+// again. Only where a painting has a ridge marked for it (hill: [[foot x, y], [top x, y]]). ──
+async function sisyphus(run, sc) {
+  const [a, b] = sc.hill.map(([x, y]) => rectOf([x, y, x, y], sc)); const W = innerWidth;
+  const el = document.createElement('div'); el.className = 'creature speck'; layer.append(el);
+  const at = (p) => ({ x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p });
+  while (!run.stopped) {
+    const up = rnd(38000, 56000); const top = rnd(.86, .95);
+    await frames(run, (t) => { const p = top * Math.min(1, t / up); const q = at(p); el.style.transform = `translate(${q.x - 1.5}px, ${q.y - 3 + Math.sin(t / 900) * .3}px)`; return t < up; });
+    await wait(rnd(1200, 2600), run);
+    const down = rnd(5000, 7500);
+    await frames(run, (t) => { const u = Math.min(1, t / down); const p = top * (1 - u * u); const q = at(p); el.style.transform = `translate(${q.x - 1.5}px, ${q.y - 3 - Math.abs(Math.sin(u * 14)) * 2 * (1 - u)}px)`; return t < down; });
+    await wait(rnd(3500, 6000), run);
+    if (W !== innerWidth) break;
+  }
+  el.remove();
+}
+
 // ── Writing: on a painted page or open book, a few lines appear as if written by an unseen hand, rest, and fade. ──
 const LINES = ['Know thyself.', 'Some things are up to us,', 'and some are not.', 'What did I do well today?', 'Begin at once to live.', 'The unexamined life', 'is not worth living.', 'I think, therefore I am.', 'Dear friend,', 'Today I learned', 'Let us balance the account', 'of each day.', 'Be patient toward', 'all that is unsolved.', 'Nothing in excess.', 'What is it I ought to do?'];
 const EQUATIONS = ['F = ma', 'E = mc²', 'a² + b² = c²', 'F = G m₁m₂ / r²', 'ΔxΔp ≥ ħ/2', 'PV = nRT', 'S = k log W', 'e^{iπ} + 1 = 0', '∇ · E = ρ / ε₀', 'T² ∝ a³', 'v = λf', 'iħ ∂ψ/∂t = Ĥψ', 'p = mv', 'λ = h / p', 'ds² = c²dt² − dx²'];
@@ -637,6 +795,7 @@ const VISITORS = [
   { name: 'ducks', fn: ducks, w: 2, ok: (s) => s.has('lake') && s.water },
   { name: 'egret', fn: egret, w: 1.5, ok: (s) => (s.has('lake') || s.has('sea')) && s.water },
   { name: 'sandpipers', fn: sandpipers, w: 2.5, ok: (s) => s.has('beach') && s.shore },
+  { name: 'rises', fn: (run, sc) => rises(run, sc, false), w: 2, ok: (s) => (s.has('lake') || s.has('sea')) && s.water && s.water[0] > 0 && !s.has('city') && !s.has('marsh') }, // a fish nipping the surface
   { name: 'leaves', fn: leaves, w: 2, ok: (s) => s.canopy || s.has('garden') },
   { name: 'butterfly', fn: butterfly, w: 2, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
   { name: 'bees', fn: bees, w: 2, ok: (s) => s.flowers },
@@ -722,3 +881,35 @@ export function sceneFor(name) {
   const pool = bright.length ? bright : fits;
   return pool.length ? `/img/${pool[Math.floor(Math.random() * pool.length)]}.webp` : null;
 }
+
+// ── Passage visitors: while a story is open, a visitor that belongs to it (the drowning child's pond, Heraclitus's
+// river, Plato's cave, Seneca's lamp, Zhuangzi's butterfly, Epictetus's wind, Sisyphus's hill), for as long as the
+// story stays, on a painting where it fits. ──
+const water = (s) => (s.has('lake') || s.has('sea')) && s.water && !s.has('city');
+const PASSAGES = {
+  singer_drowning_child: { fn: (run, sc) => rises(run, sc, true), ok: (s) => water(s) && s.has('lake') && !s.has('marsh') && s.water[0] > 0 },
+  heraclitus_same_river: { fn: current, ok: (s) => water(s) && s.has('lake') },
+  plato_cave: { fn: cavelight, ok: (s) => s.has('in') && s.has('dark') && !s.chart }, // a room with walls, not a dome open to the stars
+  seneca_evening_review: { fn: lampglow, ok: (s) => s.has('in') && s.has('dark') },
+  zhuangzi_butterfly_dream: { fn: dreamButterfly, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
+  epictetus_up_to_us: { fn: gusts, ok: (s) => s.canopy || (s.has('garden') && s.has('out')) },
+  camus_myth_of_sisyphus: { fn: sisyphus, ok: (s) => Boolean(s.hill) },
+};
+// The paintings a passage's visitor fits ('/img/....webp'); [] when it has none.
+export function passagePaintings(id) {
+  const p = PASSAGES[id]; if (!p) return [];
+  return Object.entries(SCENES).filter(([, s]) => p.ok({ ...s, has: (k) => s.k.split(' ').includes(k) })).map(([key]) => `/img/${key}.webp`);
+}
+let passageTimer = 0;
+// Start the passage's visitor on the painting now showing (after a moment, once the story has settled). false if none fits.
+export function startPassage(id) {
+  clearTimeout(passageTimer);
+  const p = PASSAGES[id]; if (!p || !layer || reduced()) return false;
+  passageTimer = setTimeout(() => {
+    const sc = scene(); if (!p.ok(sc)) return;
+    shoo(); clearTimeout(timer); last = `passage:${id}`;
+    go({ name: last, fn: p.fn }, sc);
+  }, 2200);
+  return true;
+}
+export function stopPassage() { clearTimeout(passageTimer); if (active && String(last ?? '').startsWith('passage:')) shoo(); }
