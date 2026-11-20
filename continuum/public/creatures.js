@@ -1092,4 +1092,6 @@ export function startPassage(id) {
   }, 2200);
   return true;
 }
+// For a link to one passage: whether its visitor can move here. 'still': the phone asks for no motion; null: none.
+export function passageStatus(id) { return PASSAGES[id] ? (reduced() ? 'still' : 'ok') : null; }
 export function stopPassage() { clearTimeout(passageTimer); passage = null; if (active && String(last ?? '').startsWith('passage:')) shoo(); }

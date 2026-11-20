@@ -2,7 +2,7 @@
 import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
 import { mountMap } from '/mapview.js';
 import { SURVEYS, surveyById, optionsFor } from '/surveys.js';
-import { startCreatures, summon, creaturesInto, sceneFor, passagePaintings, startPassage, stopPassage } from '/creatures.js';
+import { startCreatures, summon, creaturesInto, sceneFor, passagePaintings, startPassage, stopPassage, passageStatus } from '/creatures.js';
 import { startLiving, liveIn, liveOut } from '/living.js';
 const TOKEN_KEY = 'continuum.token';
 const view = document.getElementById('view');
@@ -3519,6 +3519,12 @@ const TRAINER_ALOUD_KEY = 'continuum.trainer.aloud';
 const trainerAloud = () => store.get(TRAINER_ALOUD_KEY) === 'on';
 const trainerContemplate = () => store.get(TRAINER_ALOUD_KEY) === 'contemplate';
 const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
+// Where each passage's moving painting is, for the line shown when a link opens one.
+const PASSAGE_WHERE = { singer_drowning_child: 'the water: a fish rising', heraclitus_same_river: 'the river: a small leaf carried across',
+  plato_cave: 'the wall at the side: firelight and shadows', seneca_evening_review: 'the lamp: the room slowly dims',
+  zhuangzi_butterfly_dream: 'the top corners: a small butterfly', nagarjuna_emptiness: 'the table, lower left: a cord ties itself in a knot',
+  epictetus_up_to_us: 'the reeds at the bottom: a gust, and leaves blowing across', camus_myth_of_sisyphus: 'the hillside: a small stone pushed up, rolling back' };
+let storyHinted = false;
 function trainerStoryView(s, { greet = null } = {}) {
   setNav('trainer');
   // A passage with a visitor of its own (the pond's rises, the river's current, the cave's firelight…) is shown on a
@@ -3733,6 +3739,12 @@ function trainerStoryView(s, { greet = null } = {}) {
   if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
   else if (trainerContemplate()) contemplateIt();
   startPassage(s.id);
+  // Opened from a link to this passage (to see its moving painting): say where to look, or why nothing moves.
+  if (params.get('story') === s.id && !storyHinted) {
+    storyHinted = true; const st = passageStatus(s.id);
+    if (st === 'still') notice('This phone is set to remove animations (Settings › Accessibility), so the paintings stay still. Turn that off to see them move.');
+    else if (st === 'ok') notice(`In a few seconds, watch ${PASSAGE_WHERE[s.id] ?? 'the painting'}.`);
+  }
   // Remembered last, so "pick up where you left off" above still means the place before this story.
   remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
 }
