@@ -212,3 +212,30 @@ test('talk: each message keeps how it was said; a running summary with perspecti
     assert.equal((await call('/api/talk/9999/summary')).status, 404);
   } finally { server.close(); }
 });
+
+test('talk is cached: the map for an hour, the conversation as it grows, the instructions unchanged through the day; usage is tallied', async () => {
+  const usage = (read, written) => ({ input_tokens: 40, output_tokens: 120, cache_read_input_tokens: read, cache_creation_input_tokens: written, cache_creation: { ephemeral_1h_input_tokens: written, ephemeral_5m_input_tokens: 0 } });
+  const turns = [
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'First answer.' }], usage: usage(0, 15000) },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Second answer.' }], usage: usage(15200, 0) },
+  ];
+  const fake = fakeClaude(turns);
+  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }));
+  try {
+    const first = await lines(await call('/api/talk', { text: 'What is courage?', date: D }));
+    const id = first[0].id;
+    // A view noted between the two messages (as happens after every message) must not change the instructions.
+    db.prepare("INSERT INTO views (user_id, kind, topic, body, source, local_date) VALUES (1, 'view', 'courage', 'Courage is acting while afraid.', 'talk', ?)").run(D);
+    await lines(await call('/api/talk', { id, text: 'And is it a virtue?', date: D }));
+    const [a, b] = fake.requests;
+    assert.deepEqual(a.cache_control, { type: 'ephemeral' }, 'the conversation tail is cached');
+    assert.deepEqual(a.system[1].cache_control, { type: 'ephemeral', ttl: '1h' }, 'the map is cached for an hour');
+    assert.equal(JSON.stringify(b.system), JSON.stringify(a.system), 'the instructions are byte-for-byte the same, so the cache holds');
+    assert.equal(b.messages[0].content, a.messages[0].content, 'the conversation is only appended to');
+    const u = await (await call('/api/diag/usage')).json();
+    const day = u.days[0];
+    assert.equal(day.calls >= 2, true);
+    assert.ok(day.cached_share > .4, `most of the prompt read from the cache (${day.cached_share})`);
+    assert.ok(day.usd > 0 && day.kinds[0].read >= 15200);
+  } finally { server.close(); }
+});

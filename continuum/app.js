@@ -18,7 +18,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, writeReflection, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
+import { RULES as CACHE_PROBE, systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, writeReflection, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
@@ -736,6 +736,47 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     if (e?.status === 429 || e?.status === 529) return 'Claude is busy just now. Try again in a minute.';
     return 'Something went wrong reaching Claude. Try again in a moment.';
   }
+  // ── What Claude costs ──
+  // Every call is tallied by day and by kind (from the start of its instructions): calls, tokens sent, tokens written
+  // to and read from the prompt cache, tokens written back (thinking included), and an estimate in dollars at the
+  // model's list prices. Kept in the database (settings: usage:<date>) through restarts. Counts only, never content.
+  const PRICE = { in: 4, out: 20, read: .2, write5m: 5, write1h: 8 }; // dollars per million tokens (Claude Opus 5.5)
+  const usageGet = db.prepare('SELECT v FROM settings WHERE k = ?'); const usageSet = db.prepare('INSERT OR REPLACE INTO settings (k, v) VALUES (?, ?)');
+  const usageDay = (d) => { try { return JSON.parse(usageGet.get(`usage:${d}`)?.v ?? 'null') ?? {}; } catch { return {}; } };
+  const costOf = (u) => (u.in * PRICE.in + u.out * PRICE.out + u.read * PRICE.read + u.w5 * PRICE.write5m + u.w1 * PRICE.write1h) / 1e6;
+  if (talk) talk.onUsage = ({ kind, usage }) => {
+    const d = new Date().toISOString().slice(0, 10); const day = usageDay(d);
+    const k = (day[kind] ??= { calls: 0, in: 0, out: 0, read: 0, w5: 0, w1: 0 });
+    const w1 = usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+    const w5 = usage.cache_creation?.ephemeral_5m_input_tokens ?? Math.max(0, (usage.cache_creation_input_tokens ?? 0) - w1);
+    k.calls += 1; k.in += usage.input_tokens ?? 0; k.out += usage.output_tokens ?? 0; k.read += usage.cache_read_input_tokens ?? 0; k.w5 += w5; k.w1 += w1;
+    usageSet.run(`usage:${d}`, JSON.stringify(day));
+  };
+  // The tally for the last few days: totals, the share of the prompt read from the cache, and the costliest kinds.
+  app.get('/api/diag/usage', auth, (req, res) => {
+    const days = Math.min(31, Math.max(1, Number(req.query.days) || 7)); const out = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10); const day = usageDay(d);
+      const kinds = Object.entries(day).map(([kind, u]) => ({ kind, ...u, usd: Number(costOf(u).toFixed(4)) })).sort((a, b) => b.usd - a.usd);
+      if (!kinds.length) continue;
+      const t = kinds.reduce((a, k) => ({ calls: a.calls + k.calls, in: a.in + k.in, out: a.out + k.out, read: a.read + k.read, w5: a.w5 + k.w5, w1: a.w1 + k.w1 }), { calls: 0, in: 0, out: 0, read: 0, w5: 0, w1: 0 });
+      const prompt = t.in + t.read + t.w5 + t.w1;
+      out.push({ date: d, calls: t.calls, usd: Number(costOf(t).toFixed(3)), cached_share: prompt ? Number((t.read / prompt).toFixed(2)) : 0, kinds: kinds.slice(0, 8) });
+    }
+    res.json({ prices_per_million: PRICE, days: out });
+  });
+  // Does the prompt cache work on this account? The same ~1,700-token instructions sent twice: the first writes them
+  // to the cache, the second should read them back. About two cents.
+  app.get('/api/diag/cache', auth, async (req, res) => {
+    if (!talk) return res.json({ ok: false, why: 'no ANTHROPIC_API_KEY on the server' });
+    const system = [{ type: 'text', text: `${CACHE_PROBE}\n\nProbe ${new Date().toISOString().slice(0, 13)}`, cache_control: { type: 'ephemeral' } }];
+    const call = () => talk.client.beta.messages.create({ model: talk.model, max_tokens: 20, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' }, system, messages: [{ role: 'user', content: 'Say OK.' }] });
+    try {
+      const a = await call(); const b = await call();
+      const pick = (m) => ({ written: m.usage.cache_creation_input_tokens ?? 0, read: m.usage.cache_read_input_tokens ?? 0, uncached: m.usage.input_tokens });
+      res.json({ ok: true, first: pick(a), second: pick(b), caching: (b.usage.cache_read_input_tokens ?? 0) > 0 });
+    } catch (e) { res.json({ ok: false, status: e.status ?? null, message: String(e.error?.error?.message ?? e.message ?? '').slice(0, 300) }); }
+  });
   // Is Claude reachable? One tiny call, the same way the app makes them; reports only the status and Anthropic's own
   // error message (no one's content). For diagnosing "Something went wrong reaching Claude".
   app.get('/api/diag/claude', auth, async (req, res) => {
@@ -749,6 +790,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     }
   });
 
+  const frozenSystem = new Map(); // conversation|day -> its instructions (see /api/talk)
   // The honest question for one passage, in plain words: concrete, specific to it, short (kept for the day).
   const honestCache = new Map();
   app.get('/api/trainer/push', auth, async (req, res) => {
@@ -2116,7 +2158,15 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       const states = talkStates(uid, date);
       const depth = depthOf(uid, t);
       const session = keep ? sessionText({ depth, role: t.role ?? null, past: pastText(uid, t.id) }) : '';
-      const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session });
+      // What the instructions say about this person is set once per conversation per day: their views are noted after
+      // every message, and changing the instructions each time would make the whole conversation uncacheable. What
+      // they said since is in the conversation itself.
+      const fkey = t.id ? `${t.id}|${date}|${session.length}` : null;
+      let system = fkey && frozenSystem.get(fkey);
+      if (!system) {
+        system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session });
+        if (fkey) { frozenSystem.set(fkey, system); if (frozenSystem.size > 300) frozenSystem.delete(frozenSystem.keys().next().value); }
+      }
       // Alongside the reply, a quiet check for signs of danger to themselves or others: help goes on screen. Nothing is
       // stored, logged or sent anywhere else.
       const lastReply = transcript(messages.slice(0, -1)).filter((x) => x.who === 'map').at(-1)?.text ?? '';

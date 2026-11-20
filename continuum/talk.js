@@ -9,7 +9,27 @@ const ID_RE = /^[a-z0-9_]{3,80}$/;
 
 export function createTalk({ apiKey, client = null, model = TALK_MODEL } = {}) {
   if (!client && !apiKey) return null;
-  return { client: client ?? new Anthropic({ apiKey }), model, apiKey };
+  const talk = { client: null, model, apiKey, onUsage: null };
+  talk.client = meter(client ?? new Anthropic({ apiKey }), talk);
+  return talk;
+}
+
+// What each call to Claude used, for the running tally (talk.onUsage): which kind of call (from the start of its
+// instructions), and its tokens, including those written to and read from the prompt cache.
+const kindOf = (body) => {
+  const sys = typeof body.system === 'string' ? body.system : Array.isArray(body.system) ? body.system[0]?.text ?? '' : '';
+  return sys.replace(/\s+/g, ' ').slice(0, 48) || 'no instructions';
+};
+function meter(client, talk) {
+  const m = client?.beta?.messages; if (!m || m.metered) return client;
+  const note = (msg, body) => { if (msg?.usage) try { talk.onUsage?.({ kind: kindOf(body), usage: msg.usage, model: msg.model }); } catch { /* a tally never breaks a call */ } };
+  if (typeof m.create === 'function') { const create = m.create.bind(m); m.create = async (body, opts) => { const r = await create(body, opts); note(r, body); return r; }; }
+  if (typeof m.stream === 'function') {
+    const stream = m.stream.bind(m);
+    m.stream = (body, opts) => { const st = stream(body, opts); st?.finalMessage?.().then((r) => note(r, body), () => {}); return st; };
+  }
+  m.metered = true;
+  return client;
 }
 
 // Check the key (looking up the model costs nothing). The SDK sends the key as a bearer token; if Anthropic turns
@@ -18,14 +38,14 @@ export async function connectTalk(talk) {
   try { await talk.client.models.retrieve(talk.model); return { ok: true, via: 'bearer' }; } catch (first) {
     if (first.status !== 401 || !talk.apiKey) return { ok: false, error: first };
     const alt = new Anthropic({ apiKey: null, authToken: null, defaultHeaders: { 'x-api-key': talk.apiKey, Authorization: null } });
-    try { await alt.models.retrieve(talk.model); talk.client = alt; return { ok: true, via: 'x-api-key' }; } catch (second) {
+    try { await alt.models.retrieve(talk.model); talk.client = meter(alt, talk); return { ok: true, via: 'x-api-key' }; } catch (second) {
       return { ok: false, error: second };
     }
   }
 }
 
 // The stable part of the prompt (cached). Spoken aloud, so it asks for short, plain, conversational replies.
-const RULES = `You are the conversation partner inside Continuum, a daily practice app that walks people through human wisdom: philosophy, the world's religious traditions, psychology, science, art, law and the news. The user talks with you on their phone, often by voice, and your replies are read aloud.
+export const RULES = `You are the conversation partner inside Continuum, a daily practice app that walks people through human wisdom: philosophy, the world's religious traditions, psychology, science, art, law and the news. The user talks with you on their phone, often by voice, and your replies are read aloud.
 
 What you are for
 - Think with the user, using the ideas on Continuum's map (listed below). Draw on them by name, connect them, and let the thinkers disagree with each other.
@@ -134,7 +154,9 @@ export async function riskCheck(talk, { text, before = '' }) {
 export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '', session = '' }) {
   return [
     { type: 'text', text: RULES },
-    { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral' } },
+    // The map (about 15,000 tokens) is kept in the prompt cache for an hour: people come back to a conversation after
+    // more than five minutes, and reading it from the cache costs a twentieth of sending it again.
+    { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral', ttl: '1h' } },
     { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}${session ? `\n\n${session}` : ''}` },
   ];
 }
@@ -153,6 +175,9 @@ export async function answer(talk, { system, messages, onText, readIdea }) {
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort: 'high' },
+      // The conversation so far is cached as it grows (the breakpoint moves to its end each time), so each idea
+      // looked up, and the next message within a few minutes, reads the earlier turns from the cache.
+      cache_control: { type: 'ephemeral' },
       system,
       tools: TOOLS,
       messages,
