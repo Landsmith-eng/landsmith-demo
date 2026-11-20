@@ -1005,9 +1005,9 @@ function notice(text) {
 //  - When the server has an ElevenLabs key, the phone records (MediaRecorder) and ElevenLabs Scribe writes it down:
 //    far more exact, and the same on every phone. It records through pauses for thought until the user taps again,
 //    or until nothing has been heard for a while.
-//  - Otherwise the browser's own speech recognition. On Android Chrome its "continuous" mode repeats words (each
-//    result carries everything heard so far), so there it listens one phrase at a time, keeps only the latest
-//    version of each phrase, and starts again after each pause.
+//  - Otherwise the browser's own speech recognition, listening continuously (Android beeps each time it starts
+//    listening, so it is not restarted at every pause). Android Chrome repeats words in this mode (each result can
+//    carry everything heard so far); mergeHeard turns either style into one clean text.
 // Returns { button, start, stop, active } or null where the phone can do neither.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const ANDROID = /Android/i.test(navigator.userAgent);
@@ -1105,19 +1105,29 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
   }
 
   // ── The browser's own recognition ──
+  // Android Chrome, listening continuously, often hands back each phrase with everything before it repeated
+  // ("so", "so I think", "so I think it is"); other browsers hand back separate phrases. Either way, one clean text:
+  // a piece that starts with what is already there replaces it, one already contained is dropped, anything else is added.
+  function mergeHeard(pieces) {
+    const bare = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    let out = '';
+    for (const raw of pieces) {
+      const t = raw.replace(/\s+/g, ' ').trim(); if (!t) continue;
+      const o = bare(out), n = bare(t);
+      if (!o || n.startsWith(o)) out = t; else if (!o.includes(n)) out = `${out} ${t}`;
+    }
+    return out;
+  }
   function recognizer() {
     let rec = null; let heard = ''; let quiet = 0; let failed = null; let quickEnds = 0; let began = 0;
     const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
     function listen() {
       const r = rec = new Recognition();
-      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = !ANDROID;
+      // Continuous everywhere. Android sounds a beep each time listening starts, so starting again after every pause meant
+      // a beep at every pause; now it starts again only when the phone itself ends a long session.
+      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
       let session = '';
-      r.onresult = (e) => {
-        const list = [...e.results];
-        if (ANDROID) session = list.at(-1)?.[0]?.transcript ?? session; // the latest version of this phrase only
-        else session = list.map((x) => x[0].transcript).join(' ');
-        hush(); put(`${heard} ${session}`);
-      };
+      r.onresult = (e) => { session = mergeHeard([...e.results].map((x) => x[0]?.transcript ?? '')); hush(); put(`${heard} ${session}`); };
       r.onerror = (e) => {
         voiceLog('phone recognition error', e.error);
         if (e.error === 'no-speech' || e.error === 'aborted') return; // a pause, or our own stop: carry on
@@ -1161,7 +1171,7 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
     let ear = null;
     try { ear = new (window.AudioContext || window.webkitAudioContext)(); ear.resume?.().catch(() => {}); } catch { ear = null; }
     const useRecorder = canRecord && speakInWay() !== 'phone' && await sttEnabled();
-    voiceLog('start', useRecorder ? 'ElevenLabs recording' : Recognition ? `phone recognition${ANDROID ? ' (Android, phrase by phrase)' : ''}` : 'none');
+    voiceLog('start', useRecorder ? 'ElevenLabs recording' : Recognition ? 'phone recognition (continuous)' : 'none');
     if (!useRecorder) ear?.close().catch(() => {});
     engine = useRecorder ? recorder(ear) : Recognition ? recognizer() : null;
     if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
