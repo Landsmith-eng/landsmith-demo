@@ -81,6 +81,7 @@ function render(...nodes) {
   stopTopic(); // leaving a Parthenon topic closes its live line
   if (talkPlayer.state !== 'idle') stopTalkVoice(); // leaving a reply being read aloud stops it
   stopPassage(); // a passage's own visitor leaves with it
+  pinPlace = pinNext; pinNext = null; // the screen being drawn is the one just remembered, or one not to come back to
   document.documentElement.classList.remove('talk-calm', 'peek', 'speaking');
   document.documentElement.classList.remove('map-full');
   const staged = nodes.some((n) => n?.classList?.contains('stage'));
@@ -2883,9 +2884,53 @@ function walkTo(id, trail, opts = {}) {
 // Where the reader was, kept on the phone, so opening the app can offer to pick up there: an idea (and the part of
 // it they had reached), a conversation, a problem being worked through, the Map, the day's practice.
 const LAST_KEY = 'continuum.last';
-function remember(place) { store.set(LAST_KEY, JSON.stringify({ ...place, at: Date.now() })); }
+function remember(place) {
+  store.set(LAST_KEY, JSON.stringify({ ...place, at: Date.now() }));
+  // The same screen, further on (the part of an idea reached): the pin follows. Otherwise it is for the screen about to be drawn.
+  if (pinPlace && pinPlace.kind === place.kind && pinPlace.id === place.id) pinPlace = { ...pinPlace, ...place }; else pinNext = place;
+}
+
+// ── Keeping your place ──
+// A phone may close the app while you are in another one, and opening it again would start over and lose anything
+// typed and not yet sent. So on leaving, the screen you were on (and what you were in the middle of there: your
+// thoughts on a passage, an answer) and whatever is typed in its boxes are pinned. Back within two hours, you return
+// to that screen with your words where you left them.
+const PIN_KEY = 'continuum.pin'; const PIN_MS = 2 * 3600_000;
+let pinPlace = null; let pinNext = null;
+const pinTask = (task) => { if (pinPlace) pinPlace = { ...pinPlace, task }; };
+const boxKey = (el, i) => el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || `box${i}`;
+function savePin() {
+  if (!pinPlace) { store.del(PIN_KEY); return; }
+  const drafts = [...view.querySelectorAll('textarea, input[type=text]')].map((el, i) => ({ k: boxKey(el, i), v: el.value })).filter((d) => d.v.trim());
+  store.set(PIN_KEY, JSON.stringify({ place: pinPlace, drafts, y: Math.round(scrollY), at: Date.now() }));
+}
+let pinTimer = 0;
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePin(); });
+addEventListener('pagehide', savePin);
+document.addEventListener('input', (e) => { if (e.target.closest?.('#view')) { clearTimeout(pinTimer); pinTimer = setTimeout(savePin, 700); } });
+function takePin() {
+  let p = null; try { p = JSON.parse(store.get(PIN_KEY) ?? 'null'); } catch { /* none */ }
+  store.del(PIN_KEY);
+  return p?.place && Date.now() - (p.at ?? 0) < PIN_MS ? p : null;
+}
+// Puts the words back in their boxes as the screen fills in (some boxes come a moment later, after a fetch).
+function refill(pin) {
+  const left = [...(pin.drafts ?? [])]; if (!left.length && !pin.y) return;
+  let tries = 0;
+  const go = () => {
+    const boxes = [...view.querySelectorAll('textarea, input[type=text]')];
+    for (let j = left.length - 1; j >= 0; j--) {
+      const el = boxes.find((b, i) => boxKey(b, i) === left[j].k && !b.value.trim());
+      if (el) { el.value = left[j].v; el.dispatchEvent(new Event('input', { bubbles: true })); left.splice(j, 1); }
+    }
+    if (tries === 2 && pin.y) scrollTo(0, pin.y);
+    if (left.length && ++tries < 30) setTimeout(go, 300);
+  };
+  setTimeout(go, 150);
+}
 function lastPlace() { try { return JSON.parse(store.get(LAST_KEY) ?? 'null'); } catch { return null; } }
 function resume(p) {
+  if (p.kind === 'story') { setNav('trainer'); return trainerNext({ id: p.id }, { img: p.img, task: p.task ?? null }); }
   if (p.kind === 'idea') return walkTo(p.id, [], { startAt: p.part ?? 0 });
   if (p.kind === 'talk') return showTalk();
   if (p.kind === 'problem') return showWorkThrough(p.id ?? null);
@@ -3443,6 +3488,9 @@ function arrive() {
   if (go) { store.set(GREETED_KEY, today()); go(); return; }
   if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
   if (params.get('story')) { setNav('trainer'); trainerNext({ id: String(params.get('story')).replace(/[^a-z0-9_]/g, '') }); return; } // a link to one story
+  // Back from another app (the phone had closed this one): straight back to where you were, words and all.
+  const pin = takePin();
+  if (pin) { resume(pin.place); refill(pin); return; }
   setNav('');
   return guarded(async () => {
     return showTrainer();
@@ -3503,12 +3551,12 @@ function dareFollowUp(d) {
     h('button', { type: 'button', class: 'trainer-word', onclick: send(false) }, 'I did not')));
   return box;
 }
-async function trainerNext(params) {
+async function trainerNext(params, opts = {}) {
   const qs = new URLSearchParams({ date: today(), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)) });
   try {
     const { story } = await api(`/api/trainer/next?${qs}`);
     if (!story) return render(h('p', {}, 'You have heard every story there is, for now. The Campus is open.'), h('button', { type: 'button', class: 'btn', onclick: () => showCampus() }, 'To the Campus'));
-    trainerStoryView(story);
+    trainerStoryView(story, opts);
   } catch { notice('Could not reach the trainer. Try again.'); }
 }
 const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body: { node: s.id, action, date: today() } }).catch(() => {});
@@ -3525,8 +3573,13 @@ const PASSAGE_WHERE = { singer_drowning_child: 'the water: a fish rising', herac
   zhuangzi_butterfly_dream: 'the top corners: a small butterfly', nagarjuna_emptiness: 'the table, lower left: a cord ties itself in a knot',
   epictetus_up_to_us: 'the reeds at the bottom: a gust, and leaves blowing across', camus_myth_of_sisyphus: 'the hillside: a small stone pushed up, rolling back' };
 let storyHinted = false;
-function trainerStoryView(s, { greet = null } = {}) {
+function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
   setNav('trainer');
+  if (img) s.img = img; // coming back to it: the same painting as before
+  // Met before (the day's idea comes back each time the app opens, until you answer it): no need to sit through it
+  // again. It is not read out by itself, the choices are there at once, and a line offers it again or moves on.
+  const again = (s.seen ?? 0) > 0 || Boolean(task);
+  let quietCard = false; // coming back to a half-written thought: not read out again
   // A passage with a visitor of its own (the pond's rises, the river's current, the cave's firelight…) is shown on a
   // painting where that visitor belongs, if its painting is not one.
   const fits = passagePaintings(s.id);
@@ -3590,6 +3643,7 @@ function trainerStoryView(s, { greet = null } = {}) {
   // and the answer (or a spoken "skip") is heard.
   const voiceMode = () => trainerAloud() || trainerContemplate();
   async function reflectOn() {
+    pinTask('thoughts');
     const card = h('div', { class: 'reflect-card', 'aria-live': 'polite' }, h('p', { class: 'muted small' }, 'A moment…'));
     choiceRow.replaceWith(card); pushBox?.remove();
     const r = await getReflection();
@@ -3626,6 +3680,7 @@ function trainerStoryView(s, { greet = null } = {}) {
       try {
         if (s.today && !s.answered) { await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: text, date: today() } }).catch(() => null); s.answered = true; trainerLog(s, 'respond'); }
         const out = await api(`/api/trainer/reflect/${r.id}`, { method: 'POST', body: { text, skipped, via: byVoice ? 'voice' : 'typed', date: today() } });
+        pinTask(null);
         card.replaceWith(h('div', { class: 'trainer-after' },
           h('div', { class: 'eyebrow' }, skipped ? 'Your thoughts' : r.label), !skipped && h('p', { class: 'muted small' }, r.question),
           h('blockquote', { class: 'kept' }, text),
@@ -3648,10 +3703,12 @@ function trainerStoryView(s, { greet = null } = {}) {
         !skipped && h('button', { type: 'button', class: 'link', onclick: () => drawCard(card, r, true) }, 'Skip — just share my thoughts')));
     // Said "skip" and went straight on: those words are their thoughts, sent as they are.
     if (said) { ta.value = said; byVoice = true; submit(); return; }
-    if (voiceMode()) readAndListen(); else ta.focus({ preventScroll: true });
+    if (voiceMode() && !quietCard) readAndListen(); else ta.focus({ preventScroll: true });
+    quietCard = false;
   }
   // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
   function respondTo(label, pushed) {
+    pinTask({ respond: label, pushed: pushed ?? null });
     const question = pushed ?? s.prompt ?? 'What do you think?';
     const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A line or two, or more.', 'aria-label': question });
     const send = h('button', { type: 'button', class: 'btn' }, 'Send');
@@ -3665,6 +3722,7 @@ function trainerStoryView(s, { greet = null } = {}) {
           ? await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: ta.value, date: today() } })
           : await api('/api/trainer/respond', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } });
         if (s.today) trainerLog(s, 'respond');
+        pinTask(null);
         box.replaceWith(h('div', { class: 'trainer-after' }, h('blockquote', { class: 'kept' }, ta.value.trim()),
           r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
           h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
@@ -3716,13 +3774,23 @@ function trainerStoryView(s, { greet = null } = {}) {
   let reflection = null;
   const getReflection = () => (reflection ??= api(`/api/trainer/reflect?node=${encodeURIComponent(s.id)}&date=${today()}`).catch(() => { reflection = null; return null; }));
   const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); getReflection(); };
-  if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
-  else setTimeout(reveal, 90000); // a long story read aloud: the questions come anyway in the end
+  if (again) setTimeout(reveal, 0); // met before: the choices at once
+  else if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
+  else setTimeout(reveal, 90000);
+  // Met before: say so, and offer it again (read out, if that is how they take stories), their thoughts, or something new.
+  const times = (s.seen ?? 0) <= 1 ? 'once before' : (s.seen ?? 0) === 2 ? 'twice before' : `${s.seen} times before`;
+  const againLine = again && h('div', { class: 'trainer-again' },
+    h('p', { class: 'muted small' }, task ? 'Back where you were.' : `You have been here ${times}.`),
+    h('div', { class: 'trainer-words' },
+      (trainerAloud() || trainerContemplate()) && word(trainerContemplate() ? 'Contemplate it again' : 'Hear it again', () => { againLine.remove(); if (trainerContemplate()) contemplateIt(); else listen(); }),
+      !task && word('Straight to my thoughts', () => { againLine.remove(); reveal(); reflectOn(); }),
+      !task && word('Something new', act({ go: 'more' })))); // a long story read aloud: the questions come anyway in the end
   render(h('article', { class: 'trainer-story' },
     greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
     h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
     h('h1', {}, s.title),
     h('div', { class: 'trainer-voice' }, listenBtn, czBtn, always),
+    againLine,
     ...storyParas,
     (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation, 'Read it ↗', 'fulltext', s.id)),
     later));
@@ -3736,8 +3804,12 @@ function trainerStoryView(s, { greet = null } = {}) {
       if (r.found) return trainerNext({});
       status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
     } })].filter(Boolean));
-  if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
+  if (again) { /* met before: nothing starts by itself */ }
+  else if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
   else if (trainerContemplate()) contemplateIt();
+  // Coming back mid-way (the phone had closed the app): back into what they were doing.
+  if (task === 'thoughts') { quietCard = true; reflectOn(); }
+  else if (task?.respond) respondTo(task.respond, task.pushed);
   startPassage(s.id);
   // Opened from a link to this passage (to see its moving painting): say where to look, or why nothing moves.
   if (params.get('story') === s.id && !storyHinted) {
@@ -3747,6 +3819,7 @@ function trainerStoryView(s, { greet = null } = {}) {
   }
   // Remembered last, so "pick up where you left off" above still means the place before this story.
   remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
+  pinNext = null; pinPlace = { kind: 'story', id: s.id, img: s.img, title: s.title, task: task ?? null }; // what to come back to
 }
 
 // ── The Campus: every room, every door unlocked ──

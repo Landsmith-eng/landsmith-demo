@@ -124,3 +124,21 @@ test('the honest push is plain, and written for the passage when Claude is there
     await get(); assert.equal(asked.length, 1); // kept for the day
   } finally { srv.close(); }
 });
+
+test('a passage met before says so, and the day\'s idea stops coming back once they move on from it', async () => {
+  const { db, server, call } = await boot();
+  try {
+    const first = (await call(`/api/trainer/next?date=${D}`)).json.story;
+    assert.equal(first.today, true); assert.equal(first.seen, 0);
+    const again = (await call(`/api/trainer/next?date=${D}`)).json.story; // the app opened again
+    assert.equal(again.id, first.id); assert.equal(again.seen, 1);
+    assert.equal((await call(`/api/trainer/next?date=${D}`)).json.story.seen, 2);
+    const other = (await call(`/api/trainer/next?date=${D}&from=${first.id}&how=more`)).json.story; // "Something new"
+    assert.notEqual(other.id, first.id); assert.equal(other.seen, 0);
+    const reopened = (await call(`/api/trainer/next?date=${D}`)).json.story; // opened again later that day
+    assert.notEqual(reopened.id, first.id, 'the day\'s idea is not forced again once they moved on from it');
+    const tomorrow = (await call(`/api/trainer/next?date=2026-11-02`)).json.story;
+    assert.equal(tomorrow.today, true);
+    assert.ok(db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE action = 'shown'").get().n >= 5);
+  } finally { server.close(); }
+});

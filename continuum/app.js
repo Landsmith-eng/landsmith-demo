@@ -507,6 +507,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     log: db.prepare('INSERT INTO trainer_log (user_id, node_id, action, img, local_date) VALUES (?, ?, ?, ?, ?)'),
     recent: db.prepare('SELECT node_id, action, img FROM trainer_log WHERE user_id = ? ORDER BY id DESC LIMIT 120'),
     shownCount: db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE user_id = ? AND action = 'shown'"),
+    shownBefore: db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE user_id = ? AND node_id = ? AND action = 'shown'"),
+    passedToday: db.prepare("SELECT 1 FROM trainer_log WHERE user_id = ? AND node_id = ? AND action = 'more' AND local_date = ? LIMIT 1"),
     byRoom: db.prepare(`SELECT n.room, l.action, COUNT(*) AS n FROM trainer_log l JOIN nodes n ON n.id = l.node_id
       WHERE l.user_id = ? AND l.action IN ('more', 'respond', 'deeper', 'look') GROUP BY n.room, l.action`),
     edges: db.prepare('SELECT from_id, to_id, relation FROM edges WHERE from_id = ? OR to_id = ?'),
@@ -600,7 +602,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     if (asked && nodeOk(states, asked)) n = asked;
     // The day's own idea first, while it is unanswered.
     if (!n && !req.query.from && !q.writtenOn.get(uid, date)) {
-      const pick = todaysPick(uid, date); if (pick) { n = q.node.get(pick); today = true; lure.shown(uid, date); }
+      // (Unless they have already moved on from it today: then it does not come back every time the app opens.)
+      const pick = todaysPick(uid, date); if (pick && !tnq.passedToday.get(uid, pick, date)) { n = q.node.get(pick); today = true; lure.shown(uid, date); }
     }
     if (!n) {
       const count = {}; for (const r of tnq.byRoom.all(uid)) (count[r.room] ??= {})[r.action] = r.n;
@@ -626,8 +629,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const fresh = PAINTINGS.filter((p) => !seen.has(p));
     const img = [own, roomImg].find((p) => p && !seen.has(p)) ?? (fresh.length ? fresh[hash(`${uid}|${n.id}|${recent.length}`) % fresh.length] : own ?? roomImg);
     const k = tnq.shownCount.get(uid).n;
+    const before = tnq.shownBefore.get(uid, n.id).n; // how many times this story has been shown before: a return, not a first meeting
     tnq.log.run(uid, n.id, 'shown', img, date);
-    res.json({ story: trainerStory(n, uid, date, { img, today, k, states }) });
+    res.json({ story: { ...trainerStory(n, uid, date, { img, today, k, states }), seen: before } });
   });
   const pickToday = (uid, date) => q.pickFor.get(uid, date)?.node_id ?? null;
   app.post('/api/trainer/log', auth, (req, res) => {
