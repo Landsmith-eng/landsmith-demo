@@ -1199,3 +1199,8 @@ html.talk-calm.peek.speaking .talk-compose {
 html.can-speak.page-listen .listen { display: inline-flex; }
 .say.page { border-radius: 4px; transition: background .2s, box-shadow .2s; }
 .say.page.now { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Listen from here: a small button by the tap. */
+.listen-here { position: fixed; z-index: 70; padding: 9px 16px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: rgba(10, 16, 14, .88); color: var(--accent); font: inherit; font-size: 15px; box-shadow: 0 6px 22px rgba(0, 0, 0, .35); backdrop-filter: blur(6px); }
+.listen-here[hidden] { display: none; }
+.unfinished-where { margin: 2px 0 0; font-weight: 600; }

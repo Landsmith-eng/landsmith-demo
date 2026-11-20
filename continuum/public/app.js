@@ -61,6 +61,7 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error ?? `http_${res.status}`), { status: res.status });
+  if (body && method !== 'GET') markSent(body);
   return data;
 }
 
@@ -1216,9 +1217,39 @@ function pageVoice() {
     for (const t of said) { spans.push(mark); spoken.push(t); }
   }
   const voice = { spans, spoken, btn: listenBtn.querySelector('span'), clips: new Map() };
-  pageVoiceCache = { first, spans, voice };
+  pageVoiceCache = { first, spans, voice }; registerSay(voice);
   return voice;
 }
+
+// ── Listen from here ──
+// Tap any words on a screen (while nothing is being read) and a small "Listen from here" appears by the tap: it reads
+// from that part on, to the end. Each part that can be read is known with its reader and its place in it.
+const sayAt = new WeakMap(); // a part on the screen -> { voice, k }: its reader, and the first sentence it holds
+function registerSay(voice) { voice.spans.forEach((sp, k) => { if (!sayAt.has(sp) || sayAt.get(sp).voice !== voice) sayAt.set(sp, { voice, k }); }); }
+const hereChip = h('button', { type: 'button', class: 'listen-here', hidden: true }, '▶ Listen from here');
+document.body.append(hereChip);
+let hereHit = null; let hereTimer = 0;
+const hideHere = () => { hereChip.hidden = true; hereHit = null; clearTimeout(hereTimer); };
+hereChip.addEventListener('click', (e) => { e.stopPropagation(); const hit = hereHit; hideHere(); if (hit) playFrom(hit.voice, hit.k); });
+addEventListener('scroll', () => { if (!hereChip.hidden) hideHere(); }, { passive: true });
+document.addEventListener('click', (e) => {
+  if (e.target === hereChip) return;
+  hideHere();
+  if (!e.target.closest('#view') || e.target.closest('button, a, input, textarea, select, label, summary')) return;
+  if (getSelection()?.toString().trim()) return; // choosing words to keep, not asking to listen
+  const root = document.documentElement; if (root.classList.contains('staged') || !root.classList.contains('can-speak')) return;
+  let sp = e.target.closest('.say'); let hit = sp && sayAt.get(sp);
+  if (!hit && root.classList.contains('page-listen')) {
+    const part = e.target.closest(PAGE_PARTS);
+    if (part) { if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; pageVoice(); sp = part.querySelector(':scope > .say.page'); hit = sp && sayAt.get(sp); }
+  }
+  if (!hit || (talkPlayer.view === hit.voice && talkPlayer.state === 'playing')) return; // while it reads, a tap on a part jumps there already
+  hereHit = hit; hereChip.hidden = false;
+  const w = hereChip.offsetWidth || 170;
+  const y = e.clientY < 140 ? e.clientY + 18 : e.clientY - 54;
+  Object.assign(hereChip.style, { left: `${Math.max(10, Math.min(innerWidth - w - 10, e.clientX - w / 2))}px`, top: `${Math.max(60, y)}px` });
+  hereTimer = setTimeout(hideHere, 4500);
+});
 function readPage() {
   if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; // not reading this page now: take it as it is now
   const v = pageVoice();
@@ -1959,6 +1990,20 @@ function showJournal() {
           } }, 'Remove'));
       })))
       : h('p', { class: 'muted' }, 'Nothing yet. Write today\'s answer, or leave a note on any idea you walk to: "Your notes" is near the end of every idea.');
+    const unsent = unfinished();
+    const unfinishedBlock = unsent.length && h('section', { class: 'diary-block unfinished' }, h('h2', {}, 'Unfinished'),
+      h('p', { class: 'muted small' }, 'Started and not sent yet, kept on this phone.'),
+      h('ul', { class: 'path' }, unsent.map((u) => {
+        const li = h('li', {},
+          h('div', { class: 'eyebrow diary-date' }, new Date(u.at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
+          u.where && h('p', { class: 'unfinished-where' }, u.where),
+          u.asked && h('p', { class: 'muted small' }, u.asked),
+          h('blockquote', { class: 'kept' }, u.text),
+          h('div', { class: 'row', style: 'gap:18px;justify-content:flex-start' },
+            u.place && h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => pickUp(u) }, 'Pick it up →'),
+            h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => { saveUnfinished(unfinished().filter((x) => x.id !== u.id)); li.remove(); } }, 'Discard')));
+        return li;
+      })));
     const st = await api('/api/stance').catch(() => null);
     const journey = st && (st.journey.answered
       ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'), journeyView(st.journey),
@@ -2009,7 +2054,7 @@ function showJournal() {
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), unfinishedBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2351,6 +2396,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       let reply = ''; let view = null; let safety = null;
       try {
         const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), via: spoken ? 'voice' : 'typed', ...(sendAs ? { mode: sendAs } : {}) }) });
+        if (res.ok) markSent({ text });
         if (!res.ok) {
           const e = await res.json().catch(() => ({}));
           throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
@@ -2957,6 +3003,42 @@ function savePin() {
   store.set(PIN_KEY, JSON.stringify({ place: pinPlace, drafts, y: Math.round(scrollY), at: Date.now() }));
 }
 let pinTimer = 0;
+
+// ── Unfinished ──
+// Anything typed in a box and not sent is kept on this phone, with where it was written (so it can be picked up
+// there), and listed under You › Unfinished until it is sent or discarded. Sending it (whatever screen it is sent
+// from) clears it. Kept for thirty days.
+const UNFINISHED_KEY = 'continuum.unfinished'; const UNFINISHED_MS = 30 * 86400_000;
+function unfinished() {
+  let list = []; try { list = JSON.parse(store.get(UNFINISHED_KEY) ?? '[]'); } catch { /* none */ }
+  return list.filter((u) => u && u.text && Date.now() - u.at < UNFINISHED_MS);
+}
+const saveUnfinished = (list) => store.set(UNFINISHED_KEY, JSON.stringify(list.slice(0, 40)));
+const placeKey = (pl) => (pl ? `${pl.kind}:${pl.id ?? ''}` : 'here');
+function keepUnfinished(el) {
+  const boxes = [...view.querySelectorAll('textarea, input[type=text]')]; const k = boxKey(el, boxes.indexOf(el));
+  const id = `${placeKey(pinPlace)}|${k}`; const text = el.value.trim();
+  const list = unfinished().filter((u) => u.id !== id);
+  if (text.length >= 3) {
+    const where = pinPlace?.title ?? document.querySelector('#view h1')?.textContent ?? '';
+    const asked = el.getAttribute('aria-label') && el.getAttribute('aria-label') !== el.getAttribute('placeholder') ? el.getAttribute('aria-label') : '';
+    list.unshift({ id, place: pinPlace, k, where, asked, text: el.value, at: Date.now() });
+  }
+  saveUnfinished(list);
+}
+// A send carrying the words (anywhere in what was sent) clears them.
+function markSent(body) {
+  const said = []; const walk = (v) => { if (typeof v === 'string') said.push(v.trim()); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(body); if (!said.length) return;
+  const list = unfinished(); const left = list.filter((u) => { const t = u.text.trim().slice(0, 60); return !said.some((x) => x.includes(t) || (x.length >= 3 && t.startsWith(x))); });
+  if (left.length !== list.length) saveUnfinished(left);
+}
+let unfinishedTimer = 0;
+document.addEventListener('input', (e) => {
+  const el = e.target; if (!el.closest?.('#view') || !el.matches('textarea, input[type=text]') || el.type === 'search') return;
+  clearTimeout(unfinishedTimer); unfinishedTimer = setTimeout(() => keepUnfinished(el), 600);
+});
+function pickUp(u) { if (u.place) { resume(u.place); refill({ drafts: [{ k: u.k, v: u.text }] }); } }
 document.addEventListener('visibilitychange', () => { if (document.hidden) savePin(); });
 addEventListener('pagehide', savePin);
 document.addEventListener('input', (e) => { if (e.target.closest?.('#view')) { clearTimeout(pinTimer); pinTimer = setTimeout(savePin, 700); } });
@@ -3723,7 +3805,7 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
     const P = parts.map((t) => sentences(t).map((x) => h('span', { class: 'say' }, x, ' '))); const spans = P.flat();
     const readBtn = h('button', { type: 'button', class: 'link small' }, '🔊 Read it to me');
     // Spoken with a pause after a label or title (a full stop for the voice, not on the screen).
-    const view = { spans, spoken: spans.map((x) => { const t = x.textContent.trim().replace(/\s*·\s*/g, ', '); return /[.!?…"”]$/.test(t) ? t : `${t}.`; }), btn: readBtn, clips: new Map() };
+    const view = { spans, spoken: spans.map((x) => { const t = x.textContent.trim().replace(/\s*·\s*/g, ', '); return /[.!?…"”]$/.test(t) ? t : `${t}.`; }), btn: readBtn, clips: new Map() }; registerSay(view);
     const readAndListen = async () => { const done = await playFrom(view, 0); readBtn.textContent = '🔊 Read it to me'; if (done && dict && document.body.contains(ta)) dict.start(); };
     readBtn.addEventListener('click', () => (talkPlayer.view === view ? togglePlay(view) : readAndListen()));
     async function submit() {
@@ -3788,7 +3870,7 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
   const storyParas = s.story.split('\n\n').map((para) => h('p', { class: 'plain' }, ...sentences(para).map((t) => {
     const sp = h('span', { class: 'say' }, t, ' '); spans.push(sp); spokenParts.push(t); return sp;
   })));
-  const voice = { spans, spoken: spokenParts, btn: listenBtn, clips: new Map() };
+  const voice = { spans, spoken: spokenParts, btn: listenBtn, clips: new Map() }; registerSay(voice);
   spans.forEach((sp, k) => sp.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, k); }));
   // Contemplate: the words alone over the painting, a line at a time as they are spoken. Leaving it brings the questions.
   const contemplateIt = () => { stopTalkVoice(); contemplate({ paras: [s.title.replace(/[^.!?]$/, '$&.'), ...s.story.split('\n\n')], src: s.img, onLeave: () => setTimeout(reveal, 600) }); };
