@@ -17,6 +17,7 @@ const busy = () => document.hidden || document.documentElement.matches('.map-ful
 // Two layers: shadows (blended into the painting) and light things (an egret, white sails) laid softly on top.
 let layer = null; let lightLayer = null; let perch = null; // perch: above the words, for a butterfly or bee on a letter
  let timer = 0; let active = null; let lastTouch = performance.now();
+let passage = null; let unfit = ''; // the open story whose own visitor this is (see startPassage); a screen size it could not draw at
 function svg(viewBox, w, inner) {
   const s = document.createElementNS(NS, 'svg');
   s.setAttribute('viewBox', viewBox); s.setAttribute('width', w); s.setAttribute('aria-hidden', 'true');
@@ -28,6 +29,7 @@ const wait = (ms, run) => new Promise((r) => { const t = setTimeout(r, ms); run.
 const frames = (run, fn) => new Promise((resolve) => {
   const t0 = performance.now();
   const step = (t) => { if (run.stopped) return resolve(); if (fn(t - t0) === false) return resolve(); run.raf = requestAnimationFrame(step); };
+  run.cancel.push(resolve); // shooed: end here, so whoever waits on it carries on
   run.raf = requestAnimationFrame(step);
 });
 const fadeOut = async (el, run, ms = 2500) => { el.style.transition = `opacity ${ms}ms ease`; el.classList.add('gone'); await wait(ms, run); };
@@ -595,46 +597,101 @@ async function ripples(run, sc) {
   await wait(4000, run);
 }
 
-// ── Rises: a fish nipping at the surface from below. Rings spread from the spot and fade, each a pale crest with a
-// faint darker trough beside it (as ripples look on real water), smaller and flatter farther off. The fish moves on
-// between rises, a little way in a wandering line, now and then nipping twice in quick succession. ──
+// ── Passage drawings. Each is drawn on a sheet over the whole screen and keyed to what the painting holds (its water,
+// its lamp, its hill, its table), so it sits on the painted thing rather than at a fixed spot on the glass. Every loop
+// draws fresh random values for each pass, so no two passes are the same. ──
+const uid = () => Math.random().toString(36).slice(2, 8);
+// A sheet in screen pixels (0..W across, 0..H down).
+function sheet(parent, inner, cls = '') {
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`); s.setAttribute('aria-hidden', 'true');
+  s.setAttribute('class', `creature sheet ${cls}`.trim()); s.innerHTML = inner; parent.append(s); return s;
+}
+const smooth = (p) => p * p * (3 - 2 * p);
+const at = (sc, x, y) => { const r = rectOf([x, y, x, y], sc); return { x: r.x, y: r.y }; };
+const restUntilStopped = (run) => new Promise((r) => run.cancel.push(r));
+
+// ── Rises (a fish nipping the surface from below) ──
+// The water is drawn as one surface. Each rise sends out a packet of rings, a bright crest between darker troughs,
+// smaller and flatter farther off. Where rings from two rises cross they add together as real waves do: crest on crest
+// brighter, crest on trough cancelling, and each passes on through the other unchanged.
 function waterRect(sc) {
   const r = rectOf([sc.waterX?.[0] ?? 0, sc.water[0], sc.waterX?.[1] ?? 1, sc.water[1]], sc);
   return { x0: Math.max(14, r.x + 10), x1: Math.min(innerWidth - 14, r.x + r.w - 10) };
 }
-function rise(run, x, y, depth) {
-  const R = 12 + 44 * depth; const flat = .2 + .16 * depth; const n = depth > .35 ? 3 : 2; const life = 4200 + 1400 * depth;
-  const box = (stroke, width, parent, cls) => {
-    const el = svg(`${-R - 6} ${-R * flat - 6} ${2 * R + 12} ${2 * R * flat + 12}`, 2 * R + 12,
-      Array.from({ length: n }, () => `<ellipse cx="0" cy="0" fill="none" stroke="${stroke}" stroke-width="${width}" vector-effect="non-scaling-stroke"/>`).join(''));
-    el.classList.add('creature', cls); el.style.transform = `translate(${x - R - 6}px, ${y - R * flat - 6}px)`; el.style.opacity = '1'; parent.append(el); return el;
+function pond(sc) {
+  const band = waterBand(sc, .04, .98); if (!band) return null;
+  const { x0, x1 } = waterRect(sc);
+  const X = Math.floor(x0), Y = Math.floor(band[0]), w = Math.ceil(x1 - x0), h = Math.ceil(band[1] - band[0]);
+  if (w < 40 || h < 12) return null;
+  const k = Math.min(2, devicePixelRatio || 1); const PW = Math.ceil(w * k), PH = Math.ceil(h * k);
+  const cv = document.createElement('canvas'); cv.width = PW; cv.height = PH; cv.className = 'creature pond';
+  Object.assign(cv.style, { width: `${w}px`, height: `${h}px`, transform: `translate(${X}px, ${Y}px)` });
+  lightLayer.append(cv);
+  const ctx = cv.getContext('2d'); const img = ctx.createImageData(PW, PH); const px = img.data;
+  const rings = []; let prev = null; const edge = 8 * k;
+  const add = (x, y, depth, t) => {
+    rings.push({ cx: (x - X) * k, cy: (y - Y) * k, t0: t, Rm: (12 + 44 * depth) * k, flat: .2 + .16 * depth,
+      wl: (3.2 + 4.5 * depth) * k, life: 4200 + 1400 * depth, n: depth > .35 ? 3 : 2 });
   };
-  const crest = box('rgba(252,250,242,1)', .9 + .5 * depth, lightLayer, 'nip'); const trough = box('rgba(24,52,56,1)', 1.2 + .6 * depth, layer, 'nip');
-  const cr = [...crest.querySelectorAll('ellipse')]; const tr = [...trough.querySelectorAll('ellipse')];
-  const t0 = performance.now();
-  const step = (now) => {
-    if (run.stopped) { crest.remove(); trough.remove(); return; }
-    const t = now - t0; let alive = false;
-    for (let i = 0; i < n; i++) {
-      const p = (t - i * 850) / life; const on = p > 0 && p < 1; if (on) alive = true;
-      const r = 1.5 + R * Math.pow(Math.max(0, Math.min(1, p)), .7); const a = on ? Math.min(1, p / .06) * Math.pow(1 - p, 1.8) * (i ? .7 : 1) : 0; // brightest as it opens, fading as it spreads; the later rings softer
-      cr[i].setAttribute('rx', r); cr[i].setAttribute('ry', r * flat); cr[i].setAttribute('opacity', (.55 * a).toFixed(3));
-      tr[i].setAttribute('rx', r + 1.6); tr[i].setAttribute('ry', r * flat + .9); tr[i].setAttribute('cy', .9); tr[i].setAttribute('opacity', (.4 * a).toFixed(3));
+  const draw = (t) => {
+    // The packets alive now: radius, strength, wavelength.
+    const live = [];
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const r = rings[i]; let any = false;
+      for (let j = 0; j < r.n; j++) {
+        const p = (t - r.t0 - j * 850) / r.life; if (p >= 1) continue; any = true; if (p <= 0) continue;
+        const R = 1.5 * k + r.Rm * Math.pow(p, .7); const A = Math.min(1, p / .06) * Math.pow(1 - p, 1.8) * (j ? .7 : 1);
+        const reach = R + 2 * r.wl;
+        live.push({ cx: r.cx, cy: r.cy, R, A, wl: r.wl, flat: r.flat, x0: r.cx - reach, x1: r.cx + reach, y0: r.cy - reach * r.flat, y1: r.cy + reach * r.flat });
+      }
+      if (!any && t - r.t0 > 1000) rings.splice(i, 1);
     }
-    if (alive || t < 600) requestAnimationFrame(step); else { crest.remove(); trough.remove(); }
+    let box = null;
+    for (const q of live) box = box ? { x0: Math.min(box.x0, q.x0), y0: Math.min(box.y0, q.y0), x1: Math.max(box.x1, q.x1), y1: Math.max(box.y1, q.y1) } : { ...q };
+    if (box) box = { x0: Math.max(0, Math.floor(box.x0)), y0: Math.max(0, Math.floor(box.y0)), x1: Math.min(PW, Math.ceil(box.x1)), y1: Math.min(PH, Math.ceil(box.y1)) };
+    if (prev) px.fill(0, prev.y0 * PW * 4, prev.y1 * PW * 4);
+    if (box && box.x1 > box.x0 && box.y1 > box.y0) {
+      for (let y = box.y0; y < box.y1; y++) {
+        const rowQ = live.filter((q) => y >= q.y0 && y <= q.y1); if (!rowQ.length) continue;
+        const ey = Math.min(1, y / edge, (PH - 1 - y) / edge);
+        for (let x = box.x0; x < box.x1; x++) {
+          let hgt = 0;
+          for (const q of rowQ) {
+            if (x < q.x0 || x > q.x1) continue;
+            const dx = x - q.cx; const dy = (y - q.cy) / q.flat; const d = Math.sqrt(dx * dx + dy * dy) - q.R;
+            const z = d / q.wl; if (z < -2 || z > 2) continue;
+            hgt += q.A * Math.exp(-z * z / .8) * Math.cos(2 * Math.PI * z); // a crest with a trough each side
+          }
+          if (!hgt) continue;
+          const e = ey * Math.min(1, x / edge, (PW - 1 - x) / edge); const o = (y * PW + x) * 4;
+          if (hgt > 0) { px[o] = 252; px[o + 1] = 250; px[o + 2] = 242; px[o + 3] = Math.min(255, hgt * 150 * e); }
+          else { px[o] = 24; px[o + 1] = 52; px[o + 2] = 56; px[o + 3] = Math.min(255, -hgt * 120 * e); }
+        }
+      }
+    }
+    const u = prev && box ? { x0: 0, y0: Math.min(prev.y0, box.y0), x1: PW, y1: Math.max(prev.y1, box.y1) } : prev ? { x0: 0, ...prev, x1: PW } : box ? { ...box, x0: 0, x1: PW } : null;
+    if (u && u.y1 > u.y0) ctx.putImageData(img, 0, 0, 0, u.y0, PW, u.y1 - u.y0);
+    prev = box && box.y1 > box.y0 ? { y0: box.y0, y1: box.y1 } : null;
+    return rings.length;
   };
-  requestAnimationFrame(step);
+  return { add, draw, remove: () => cv.remove(), band, x0, x1, count: () => rings.length };
 }
 async function rises(run, sc, endless = false) {
   if (sc.water[0] <= 0) return; // a pond seen from straight above: flattened rings would look wrong
   const band = waterBand(sc, .1, .95); if (!band) return;
   const { x0, x1 } = waterRect(sc); if (x1 - x0 < 40) return;
+  const surface = pond(sc); if (!surface) return;
+  let lastDraw = 0; let done = false;
+  const drawing = frames(run, (t) => { const now = performance.now(); if (now - lastDraw > 30) { lastDraw = now; surface.draw(now); } return !(done && !surface.count()); });
   let x = rnd(x0, x1); let y = rnd(band[0], band[1]); let heading = rnd(0, Math.PI * 2);
   for (let k = 0; endless || k < Math.round(rnd(4, 8)); k++) {
-    if (run.stopped) return;
+    if (run.stopped) break;
     const depth = (y - band[0]) / Math.max(1, band[1] - band[0]);
-    rise(run, x, y, depth);
-    if (Math.random() < .25) { await wait(rnd(350, 650), run); rise(run, x + rnd(-6, 6), y + rnd(-2, 2), depth); } // a quick second nip
+    surface.add(x, y, depth, performance.now());
+    if (Math.random() < .25) { await wait(rnd(350, 650), run); surface.add(x + rnd(-6, 6), y + rnd(-2, 2), depth, performance.now()); } // a quick second nip
+    // Now and then a second fish rises nearby while the first rings still spread, and the rings cross.
+    if (Math.random() < .2) { await wait(rnd(700, 1600), run); const y2 = Math.max(band[0], Math.min(band[1], y + rnd(-14, 14))); surface.add(Math.max(x0, Math.min(x1, x + rnd(-60, 60))), y2, (y2 - band[0]) / Math.max(1, band[1] - band[0]), performance.now()); }
     await wait(rnd(1600, 6500), run);
     // The fish swims on: a wandering line, kept on the water.
     heading += rnd(-.9, .9); const stepPx = rnd(18, 75) * (.6 + depth);
@@ -642,115 +699,229 @@ async function rises(run, sc, endless = false) {
     if (x < x0 || x > x1) { heading = Math.PI - heading; x = Math.max(x0, Math.min(x1, x)); }
     if (y < band[0] || y > band[1]) { heading = -heading; y = Math.max(band[0], Math.min(band[1], y)); }
   }
-  await wait(3000, run);
+  done = true; await drawing; surface.remove();
 }
 
-// ── The current (Heraclitus): small flecks of light drift with the river, never the same path twice, and now and then
-// a leaf is carried past on the surface. ──
+// ── The river (Heraclitus): a small curled leaf carried across on the current, each crossing on a new line at a new
+// pace, and a few broken reflections drifting the same way, each coming back somewhere new. ──
 async function current(run, sc) {
-  const band = waterBand(sc, .08, .9); if (!band) return;
-  const { x0, x1 } = waterRect(sc); const dir = Math.random() < .5 ? 1 : -1;
-  const flecks = Array.from({ length: 9 }, () => {
-    const el = svg('0 0 24 3', 24, '<rect x="0" y="0" width="24" height="3" rx="1.5" fill="rgba(255,252,240,.95)"/>');
-    el.classList.add('creature', 'fleck'); lightLayer.append(el); return { el, born: -1e9, life: 0 };
-  });
-  const reborn = (f, t) => { f.y = rnd(band[0], band[1]); f.depth = (f.y - band[0]) / Math.max(1, band[1] - band[0]); f.x = rnd(x0, x1); f.born = t; f.life = rnd(2600, 5200); f.w = 6 + 18 * f.depth; f.n = noise(); };
-  let leaf = null; let nextLeaf = rnd(4000, 12000);
+  const band = waterBand(sc, .12, .92); if (!band) return;
+  const { x0, x1 } = waterRect(sc); const u = uid(); const span = band[1] - band[0];
+  const s = sheet(lightLayer, `<defs><linearGradient id="lt${u}" x2=".8" y2="1"><stop stop-color="#76664c"/><stop offset=".5" stop-color="#514d39"/><stop offset="1" stop-color="#8a7756"/></linearGradient>
+    <filter id="sf${u}"><feGaussianBlur stdDeviation=".45"/></filter></defs>
+    <g class="flecks" stroke="#ece6cc" stroke-linecap="round" fill="none" filter="url(#sf${u})"></g>
+    <g class="leaf" opacity="0"><g class="shape"><path d="M-10 1 Q-5-6 4-3 Q9-2 12 1 Q3 6-4 4Z" fill="url(#lt${u})"/><path d="M-8 2 Q0 0 8 1" fill="none" stroke="#a18a61" stroke-opacity=".25" stroke-width=".55"/><path d="M-10 1l-4-1" stroke="#61543e" stroke-width=".7"/></g></g>`);
+  const leaf = s.querySelector('.leaf'); const shape = s.querySelector('.shape');
+  const depthAt = (y) => (y - band[0]) / Math.max(1, span);
+  const flecks = Array.from({ length: 6 }, () => { const el = document.createElementNS(NS, 'path'); s.querySelector('.flecks').append(el); return { el, q: Math.random() }; });
+  const renew = (f) => { f.y = rnd(band[0], band[1]); f.d = depthAt(f.y); f.len = (5 + 12 * f.d) * rnd(.7, 1.3); f.speed = rnd(17, 29) * (1.5 - .6 * f.d); f.ph = rnd(0, 7); };
+  flecks.forEach(renew);
+  let pass = null;
+  const newPass = (t) => { const y = rnd(band[0] + span * .2, band[1]); const d = depthAt(y); pass = { t0: t, dur: rnd(19, 28) * (1.35 - .5 * d), y, d, amp: rnd(1.5, 4) * (.6 + d), ph: rnd(0, 7) }; };
+  newPass(-rnd(4000, 9000)); // the first leaf is already partway across, or soon arrives
+  let lastT = 0;
   await frames(run, (t) => {
+    const dt = (t - lastT) / 1000; lastT = t; const sec = t / 1000;
+    let p = (t - pass.t0) / 1000 / pass.dur; if (p >= 1) { newPass(t + rnd(0, 3000)); p = (t - pass.t0) / 1000 / pass.dur; }
+    if (p < 0) leaf.setAttribute('opacity', '0');
+    else {
+      const x = x0 - 30 + (x1 - x0 + 60) * p; const y = pass.y + pass.amp * Math.sin(p * 6 + pass.ph);
+      leaf.setAttribute('transform', `translate(${x} ${y}) scale(${.42 + .6 * pass.d})`);
+      shape.setAttribute('transform', `rotate(${8 * Math.sin(p * 7 + pass.ph)}) scale(1 ${.55 + .1 * Math.sin(p * 9 + pass.ph)})`);
+      leaf.setAttribute('opacity', (.75 * Math.min(1, p * 12, (1 - p) * 12)).toFixed(3));
+    }
     for (const f of flecks) {
-      if (t - f.born > f.life) reborn(f, t);
-      const u = (t - f.born) / f.life; const a = Math.sin(Math.PI * u);
-      f.x += dir * (.12 + .5 * f.depth);
-      f.el.style.transform = `translate(${f.x}px, ${f.y + f.n(t) * 2}px) scale(${f.w / 24}, ${.5 + .5 * f.depth})`; f.el.style.opacity = (.5 * a).toFixed(3);
-    }
-    if (!leaf && t > nextLeaf) {
-      const y = rnd(band[0] + (band[1] - band[0]) * .3, band[1]); const depth = (y - band[0]) / Math.max(1, band[1] - band[0]);
-      const el = svg('0 0 20 12', 8 + 9 * depth, '<path d="M1 6 C5 0 14 0 19 6 C14 12 5 12 1 6Z" fill="rgba(90,70,30,.95)"/>');
-      el.classList.add('creature', 'leaf'); layer.append(el);
-      leaf = { el, y, depth, x: dir > 0 ? x0 - 20 : x1 + 20, ph: rnd(0, 6) };
-    }
-    if (leaf) {
-      leaf.x += dir * (.25 + .55 * leaf.depth);
-      leaf.el.style.transform = `translate(${leaf.x}px, ${leaf.y + Math.sin(t / 800 + leaf.ph) * 1.5}px) rotate(${Math.sin(t / 1900 + leaf.ph) * 25}deg) scaleY(.6)`;
-      if (leaf.x < x0 - 40 || leaf.x > x1 + 40) { leaf.el.remove(); leaf = null; nextLeaf = t + rnd(9000, 20000); }
+      f.q += dt / f.speed; if (f.q >= 1) { f.q -= 1; renew(f); }
+      const fx = x0 - 20 + (x1 - x0 + 40) * f.q; const fy = f.y + 1.2 * Math.sin(f.q * 7 + f.ph);
+      f.el.setAttribute('d', `M${fx} ${fy}q${f.len / 2} -${.5 + f.d * .6} ${f.len} 0`);
+      f.el.setAttribute('stroke-width', (.7 + .7 * f.d).toFixed(2));
+      f.el.setAttribute('opacity', (.42 * Math.sin(Math.PI * f.q) ** 2 * (.7 + .3 * Math.sin(sec * .7 + f.ph))).toFixed(3));
     }
     return true;
   });
-  for (const f of flecks) f.el.remove(); leaf?.el.remove();
+  s.remove();
 }
 
-// ── Firelight in a dark room (Plato's cave): a low warm light breathing on the wall, and soft shadows that move
-// across it now and then, never quite clear enough to make out. ──
-function glowEl(x, y, R, color) {
-  const el = document.createElement('div'); el.className = 'creature glow';
-  Object.assign(el.style, { width: `${R * 2}px`, height: `${R * 2}px`, transform: `translate(${x - R}px, ${y - R}px)`, background: `radial-gradient(circle, ${color} 0%, transparent 70%)`, opacity: '0' });
-  return el;
-}
+// ── The cave (Plato): no fire to be seen, only its light on the wall beside you and shadows moving through it, never
+// clear enough to make out; a cool hint of daylight at the far edge. Light and shadows drift toward new places every
+// 9 to 17 seconds. On a painting whose window is on the left, the whole thing is mirrored. ──
 async function cavelight(run, sc) {
-  const W = innerWidth, H = innerHeight; const flame = candle();
-  const fire = glowEl(W * rnd(.2, .8), H * .78, Math.max(W, H) * .55, 'rgba(255,170,90,.55)'); lightLayer.append(fire);
-  const shadows = Array.from({ length: 2 }, () => {
-    const el = document.createElement('div'); el.className = 'creature cave-shadow'; lightLayer.append(el);
-    return { el, x: -200, y: H * rnd(.22, .5), w: rnd(90, 170), h: rnd(150, 240), v: 0, next: rnd(3000, 9000) };
-  });
+  const W = innerWidth, H = innerHeight; const u = uid(); const wall = W * .18;
+  const s = sheet(lightLayer, `<defs>
+    <linearGradient id="cw${u}"><stop stop-color="#b07c44" stop-opacity=".3"/><stop offset="1" stop-color="#b07c44" stop-opacity="0"/></linearGradient>
+    <linearGradient id="cd${u}"><stop stop-color="#c4c6b8" stop-opacity="0"/><stop offset="1" stop-color="#c4c6b8" stop-opacity=".09"/></linearGradient>
+    <filter id="cb${u}" x="-60%" y="-20%" width="220%" height="140%"><feGaussianBlur stdDeviation="${(W * .012).toFixed(1)} ${(H * .008).toFixed(1)}"/></filter>
+    <clipPath id="ce${u}"><rect width="${wall}" height="${H}"/></clipPath></defs>
+    <g class="art" opacity="0" ${sc.has('winleft') ? `transform="translate(${W} 0) scale(-1 1)"` : ''}>
+      <rect class="light" width="${wall}" height="${H}" fill="url(#cw${u})"/>
+      <g clip-path="url(#ce${u})"><g class="shadows" filter="url(#cb${u})" fill="#1e1c19">
+        <g transform="scale(${W / 1000} ${H / 1000})">
+          <path d="M-45 105Q55 150 35 265T100 510Q40 650 85 795L-45 940Z" opacity=".34"/>
+          <path d="M55-40Q105 150 87 340T148 655L170 1040H126Q82 690 92 510T34 140Z" opacity=".2"/></g></g></g>
+      <rect x="${W * .94}" width="${W * .06}" height="${H}" fill="url(#cd${u})"/></g>`);
+  const art = s.querySelector('.art'); const light = s.querySelector('.light'); const shadows = s.querySelector('.shadows');
+  const target = () => ({ x: rnd(-8, 8) * W / 1000, y: rnd(-7, 7) * H / 1000, s: rnd(.97, 1.035), light: rnd(.58, .92), shade: rnd(.65, .95) });
+  let a = target(), b = target(), start = 0, dur = rnd(9, 17);
   await frames(run, (t) => {
-    const f = flame(t); fire.style.opacity = (.55 * (f - .3)).toFixed(3);
-    for (const sh of shadows) {
-      if (sh.v === 0 && t > sh.next) { sh.v = (Math.random() < .5 ? 1 : -1) * rnd(.06, .14); sh.x = sh.v > 0 ? -sh.w : W + sh.w; }
-      if (sh.v) {
-        sh.x += sh.v * 16;
-        sh.el.style.transform = `translate(${sh.x}px, ${sh.y}px) scale(${1 + (f - .8) * .3}, ${1 + (f - .8) * .5})`;
-        Object.assign(sh.el.style, { width: `${sh.w}px`, height: `${sh.h}px`, opacity: (.32 * f).toFixed(3) });
-        if (sh.x < -sh.w * 2 || sh.x > W + sh.w * 2) { sh.v = 0; sh.next = t + rnd(6000, 16000); sh.el.style.opacity = '0'; }
-      }
+    const sec = t / 1000; let p = (sec - start) / dur;
+    if (p >= 1) { a = b; b = target(); start = sec; dur = rnd(9, 17); p = 0; }
+    p = smooth(p); const v = (k) => a[k] + (b[k] - a[k]) * p;
+    art.setAttribute('opacity', Math.min(1, sec / 4).toFixed(3));
+    light.setAttribute('opacity', (v('light') + .018 * Math.sin(sec * 2.3)).toFixed(3));
+    shadows.setAttribute('opacity', v('shade').toFixed(3));
+    shadows.setAttribute('transform', `translate(${v('x')} ${v('y')}) scale(${v('s')} 1)`);
+    return true;
+  });
+  s.remove();
+}
+
+// ── The evening review (Seneca): the lamp painted in the picture burns, its light on the wall breathing; over thirty
+// seconds the room dims as the day is gone over, and then it rests, still. It does not start again by itself. ──
+async function lampglow(run, sc) {
+  const W = innerWidth, H = innerHeight; const u = uid(); const c = at(sc, sc.wick[0], sc.wick[1]); const R = Math.max(W, H) * .55;
+  const s = sheet(lightLayer, `<defs>
+    <radialGradient id="lw${u}" cx="${c.x}" cy="${c.y}" r="${R}" gradientUnits="userSpaceOnUse"><stop stop-color="#e0a860" stop-opacity=".34"/><stop offset=".35" stop-color="#c08a4e" stop-opacity=".12"/><stop offset="1" stop-color="#ac7e46" stop-opacity="0"/></radialGradient>
+    <radialGradient id="ld${u}" cx="${c.x}" cy="${c.y}" r="${R * 1.3}" gradientUnits="userSpaceOnUse"><stop stop-color="#0a0806" stop-opacity=".25"/><stop offset=".25" stop-color="#0a0806" stop-opacity=".7"/><stop offset="1" stop-color="#0a0806" stop-opacity="1"/></radialGradient></defs>
+    <rect class="dusk" width="${W}" height="${H}" fill="url(#ld${u})" opacity="0"/>
+    <rect class="wash" width="${W}" height="${H}" fill="url(#lw${u})" opacity="0"/>`);
+  const wash = s.querySelector('.wash'); const dusk = s.querySelector('.dusk'); const seed = rnd(0, 100);
+  await frames(run, (t) => {
+    const sec = Math.min(30, t / 1000); const e = smooth(sec / 30); const settle = 1 - e;
+    const breath = .5 * Math.sin(sec * 3.7 + seed) + .3 * Math.sin(sec * 6.13 + seed * 2) + .2 * Math.sin(sec * 10.7 + seed * .7);
+    wash.setAttribute('opacity', ((.82 + .12 * breath * settle) * (1 - .85 * e) * Math.min(1, sec / 3)).toFixed(3));
+    dusk.setAttribute('opacity', (.42 * e).toFixed(3));
+    return t < 30000;
+  });
+  await restUntilStopped(run); // the review is done; the room stays as it is
+  s.remove();
+}
+
+// ── The butterfly dream (Zhuangzi): one small brown butterfly near one side of the picture, wandering, wings beating
+// unevenly; it is there for a while, then gone, then back on the other side or the same. ──
+async function dreamButterfly(run, sc) {
+  const W = innerWidth, H = innerHeight; const u = uid();
+  const s = sheet(lightLayer, `<defs><linearGradient id="bw${u}"><stop stop-color="#51483a"/><stop offset=".6" stop-color="#827258"/><stop offset="1" stop-color="#645642"/></linearGradient>
+    <filter id="bs${u}"><feGaussianBlur stdDeviation=".23"/></filter></defs>
+    <g class="pos" opacity="0"><g class="bank" filter="url(#bs${u})" transform="scale(.8)">
+      <g class="l" fill="url(#bw${u})"><path d="M-1-1C-5-8-11-11-14-7C-17-2-10 2-2 2Z"/><path d="M-2 1C-11 0-13 5-10 8C-6 11-2 6-1 3Z" fill="#655a45"/><path d="M-5-3Q-8-5-11-5" fill="none" stroke="#aa9670" stroke-opacity=".18" stroke-width="1.1"/></g>
+      <g class="r" fill="url(#bw${u})"><path d="M1-1C5-8 11-11 14-7C17-2 10 2 2 2Z"/><path d="M2 1C11 0 13 5 10 8C6 11 2 6 1 3Z" fill="#655a45"/></g>
+      <path d="M0-5C-1.3-4-1.2 4 0 7C1.2 4 1.3-4 0-5Z" fill="#39362b"/><path d="M-.4-4Q-3-8-3-9M.4-4Q3-8 3-9" fill="none" stroke="#494333" stroke-width=".45"/></g></g>`);
+  const pos = s.querySelector('.pos'); const bank = s.querySelector('.bank'); const L = s.querySelector('.l'); const Rw = s.querySelector('.r');
+  let start = 0, dur, side, y0, y1, ph, wph;
+  const choose = () => { dur = rnd(15, 24); side = Math.random() < .5 ? -1 : 1; y0 = rnd(.145, .21) * H; y1 = rnd(.135, .235) * H; ph = rnd(0, 7); wph = rnd(0, 30); };
+  choose();
+  await frames(run, (t) => {
+    const sec = t / 1000; let p = (sec - start) / dur; if (p >= 1) { start = sec; p = 0; choose(); }
+    const q = (p - .15) / .67; // absent, then a visible passage, then absent again
+    if (q <= 0 || q >= 1) { pos.setAttribute('opacity', '0'); return true; }
+    const x = (side < 0 ? .105 : .895) * W + (18 * Math.sin(q * 7 + ph) + 7 * Math.sin(q * 19 + ph)) * W / 1000;
+    const y = y0 + (y1 - y0) * q + (12 * Math.sin(q * 10 + ph) + 4 * Math.sin(q * 27)) * H / 1000;
+    const fade = Math.min(1, q * 7, (1 - q) * 7);
+    pos.setAttribute('opacity', (.62 * smooth(fade)).toFixed(3));
+    pos.setAttribute('transform', `translate(${x} ${y})`);
+    bank.setAttribute('transform', `scale(.8) rotate(${side * 18 + 13 * Math.sin(q * 11 + ph)})`);
+    const beat = sec * 2 * Math.PI * 6.1 + .43 * Math.sin(sec * 2.4 + wph) + wph; const open = .14 + .86 * Math.pow((Math.sin(beat) + 1) / 2, .7);
+    L.setAttribute('transform', `scale(${open.toFixed(3)} 1)`); Rw.setAttribute('transform', `scale(${Math.max(.12, open * (.94 + .06 * Math.sin(sec * 3))).toFixed(3)} 1)`);
+    return true;
+  });
+  s.remove();
+}
+
+// ── Emptiness (Nagarjuna): on a quiet table, a thin cord loops into a loose knot, holds, and lets go again: a knot that
+// is only a way the cord lies. One continuous cord through every pose; 24 to 30 seconds a round. ──
+async function knot(run, sc) {
+  const [lx, ly, ls = 1] = sc.ledge; const base = at(sc, lx, ly); const bottom = Math.min(base.y, dockTop() - 10);
+  const straight = [[40, 970], [44, 950], [48, 930], [53, 910], [58, 890], [63, 870], [68, 850], [73, 830], [78, 810], [83, 790], [88, 775]];
+  const loop = [[40, 970], [45, 942], [55, 913], [76, 883], [112, 869], [142, 844], [137, 818], [104, 814], [81, 835], [86, 863], [120, 893]];
+  const tied = [[40, 970], [45, 941], [59, 902], [84, 858], [123, 842], [143, 854], [133, 880], [99, 887], [75, 868], [90, 838], [116, 786]];
+  const spline = (p) => { let d = `M${p[0][0]} ${p[0][1]}`; for (let i = 0; i < p.length - 1; i++) { const a = p[Math.max(0, i - 1)], b = p[i], c = p[i + 1], z = p[Math.min(p.length - 1, i + 2)]; d += `C${b[0] + (c[0] - a[0]) / 6} ${b[1] + (c[1] - a[1]) / 6} ${c[0] - (z[0] - b[0]) / 6} ${c[1] - (z[1] - b[1]) / 6} ${c[0]} ${c[1]}`; } return d; };
+  // Drawn as designed for a phone (1000 units = the screen), anchored where the cord's end lies on the table.
+  const ns = 'vector-effect="non-scaling-stroke"';
+  const s = sheet(lightLayer, `<g class="art" opacity="0" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(${base.x} ${bottom}) scale(${.412 * ls} ${.86 * ls}) translate(-40 -970)">
+    <path class="c" stroke="#332c22" stroke-width="2.6" opacity=".22" transform="translate(1 1)" ${ns}/><path class="c" stroke="#8b7e65" stroke-width="1.6" opacity=".62" ${ns}/><path class="c" stroke="#c1af88" stroke-width=".5" opacity=".26" ${ns}/>
+    <g class="bridge" opacity="0"><path d="M76 866Q86 857 97 853" stroke="#3c352a" stroke-width="2.7" opacity=".5" ${ns}/><path d="M76 865Q86 856 97 852" stroke="#8b7e65" stroke-width="1.6" opacity=".62" ${ns}/><path d="M77 864Q86 856 96 852" stroke="#c1af88" stroke-width=".5" opacity=".26" ${ns}/></g></g>`);
+  const art = s.querySelector('.art'); const cords = [...s.querySelectorAll('.c')]; const bridge = s.querySelector('.bridge');
+  let start = 0, dur = rnd(24, 30), strength = rnd(.94, 1);
+  await frames(run, (t) => {
+    const sec = t / 1000; let p = (sec - start) / dur; if (p >= 1) { start = sec; p = 0; dur = rnd(24, 30); strength = rnd(.94, 1); }
+    let a, b, q, k;
+    if (p < .12) { a = straight; b = straight; q = 0; k = 0; }
+    else if (p < .39) { a = straight; b = loop; q = smooth((p - .12) / .27); k = 0; }
+    else if (p < .55) { a = loop; b = tied; q = smooth((p - .39) / .16); k = q; }
+    else if (p < .64) { a = tied; b = tied; q = 0; k = 1; }
+    else if (p < .79) { a = tied; b = loop; q = smooth((p - .64) / .15); k = 1 - q; }
+    else if (p < .96) { a = loop; b = straight; q = smooth((p - .79) / .17); k = 0; }
+    else { a = straight; b = straight; q = 0; k = 0; }
+    const d = spline(a.map((v, i) => [v[0] + (b[i][0] - v[0]) * q, v[1] + (b[i][1] - v[1]) * q]));
+    for (const c of cords) c.setAttribute('d', d);
+    bridge.setAttribute('opacity', (k * .7).toFixed(3)); art.setAttribute('opacity', (strength * Math.min(1, sec / 4)).toFixed(3));
+    return true;
+  });
+  s.remove();
+}
+
+// ── Some things are up to us (Epictetus): gusts come and go, 10 to 18 seconds each, at their own strength; reeds in the
+// corners bend together under them (where the painting has reeds there), and small leaves are carried across. ──
+async function gusts(run, sc) {
+  const W = innerWidth, H = innerHeight; const u = uid(); const foot = dockTop() + 4; const ux = W / 1000, uy = H / 1000;
+  const s = sheet(lightLayer, `<defs><linearGradient id="rg${u}" x2="0" y2="1"><stop stop-color="#3f4a2c" stop-opacity=".85"/><stop offset="1" stop-color="#2f3a24" stop-opacity=".3"/></linearGradient>
+    <filter id="rs${u}"><feGaussianBlur stdDeviation=".25"/></filter></defs>
+    <g class="art" opacity="0" filter="url(#rs${u})"><g class="reeds" fill="none" stroke="url(#rg${u})" stroke-linecap="round"></g><g class="leaves" fill="#74664b"></g></g>`);
+  const art = s.querySelector('.art');
+  const reeds = sc.has('reeds') ? Array.from({ length: 16 }, (_, i) => {
+    const el = document.createElementNS(NS, 'path'); s.querySelector('.reeds').append(el); el.setAttribute('stroke-width', rnd(.8, 1.6).toFixed(2));
+    return { el, x: (i < 8 ? rnd(-15, 190) : rnd(815, 1010)) * ux, h: rnd(45, 117) * uy, lean: rnd(-9, 11) * ux, ph: rnd(0, 7) };
+  }) : [];
+  const leaves = Array.from({ length: 3 }, (_, i) => {
+    const el = document.createElementNS(NS, 'g'); el.innerHTML = '<path d="M-7 0Q-2-4 7-1Q2 4-4 2Z"/>'; el.setAttribute('opacity', '0'); s.querySelector('.leaves').append(el);
+    return { el, start: 3 + i * 6, dur: rnd(12, 20), y: foot - rnd(.03, .09) * H, ph: rnd(0, 7) };
+  });
+  let start = 0, dur = rnd(10, 18), power = rnd(.4, 1);
+  await frames(run, (t) => {
+    const sec = t / 1000; let p = (sec - start) / dur; if (p >= 1) { start = sec; p = 0; dur = rnd(10, 18); power = rnd(.4, 1); }
+    const gust = power * Math.sin(Math.PI * p) ** 2;
+    art.setAttribute('opacity', Math.min(1, sec / 4).toFixed(3));
+    for (const r of reeds) {
+      const bend = (4 + gust * 20 + 1.7 * Math.sin(sec * 1.7 + r.ph) + gust * 2 * Math.sin(sec * 3 + r.ph)) * ux;
+      const dx = r.lean + bend * (r.h / (110 * uy)); const y = foot - r.h;
+      r.el.setAttribute('d', `M${r.x} ${foot}Q${r.x + dx * .12} ${foot - r.h * .58} ${r.x + dx} ${y}M${r.x + dx * .25} ${foot - r.h * .45}Q${r.x + dx + 9 * ux} ${foot - r.h * .67} ${r.x + dx + 14 * ux} ${foot - r.h * .72}`);
+    }
+    for (const l of leaves) {
+      let q = (sec - l.start) / l.dur;
+      if (q >= 1) { l.start = sec + rnd(2, 7); l.dur = rnd(12, 20); l.y = foot - rnd(.03, .09) * H; l.ph = rnd(0, 7); q = -1; }
+      if (q < 0) { l.el.setAttribute('opacity', '0'); continue; }
+      const x = -35 * ux + 1080 * ux * q; const y = l.y - 22 * uy * Math.sin(Math.PI * q) + 5 * uy * Math.sin(q * 10 + l.ph);
+      l.el.setAttribute('transform', `translate(${x} ${y}) rotate(${(15 + 22 * Math.sin(q * 12 + l.ph)).toFixed(1)}) scale(${(ux * 1.1).toFixed(3)} ${(ux * 1.1 * (.35 + .65 * Math.abs(Math.sin(q * 9 + l.ph)))).toFixed(3)})`);
+      l.el.setAttribute('opacity', (.5 * Math.sin(Math.PI * q) ** 2).toFixed(3));
     }
     return true;
   });
-  fire.remove(); shadows.forEach((sh) => sh.el.remove());
+  s.remove();
 }
-// ── A lamp at night (Seneca's evening review): its warm light breathing on the room, slowly dimming as the day is gone
-// over, resting low, then rising again. Where the painting has its own lamp or window light, from there. ──
-async function lampglow(run, sc) {
-  const W = innerWidth, H = innerHeight; const flame = candle();
-  const at = sc.rays?.warm ? rectOf([sc.rays.x, sc.rays.y, sc.rays.x, sc.rays.y], sc) : { x: W * rnd(.15, .85), y: H * rnd(.55, .75) };
-  const glow = glowEl(at.x, at.y, Math.max(W, H) * .42, 'rgba(255,190,110,.6)'); lightLayer.append(glow);
+
+// ── Sisyphus (Camus): far off on the painted hillside, one small rough stone goes slowly up, waits a moment at the
+// crest, and rolls back down; then again. No figure: only the stone. 23 to 30 seconds a round, three quarters of it
+// the climb. Only where a painting has a ridge marked for it (hill: [[foot x, y], [top x, y]]). ──
+async function sisyphus(run, sc) {
+  const [a, b] = sc.hill.map(([x, y]) => at(sc, x, y));
+  const s = sheet(layer, `<g class="pos" opacity="0"><ellipse cx="0" cy="2" rx="3" ry=".6" fill="#3c3930" opacity=".25"/>
+    <g class="stone"><path d="M-2.2 1.1L-2.4-.5-1-2.1.9-2.3 2.3-.9 2 1.2.5 2-1.1 1.9Z" fill="#3a372f"/><path d="M-1.7-.6L-.8-1.7.7-1.8 1.5-1 .1-.5Z" fill="#85806c" opacity=".35"/></g></g>`, 'sisy');
+  const pos = s.querySelector('.pos'); const stone = s.querySelector('.stone');
+  const route = (u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u - 4 * Math.sin(Math.PI * u) });
+  let start = 0, dur = rnd(23, 30), turn = rnd(-12, 12);
   await frames(run, (t) => {
-    const cycle = (t % 46000) / 46000; const dim = cycle < .65 ? 1 - cycle * .9 : cycle < .8 ? .41 : .41 + (cycle - .8) * 2.95;
-    glow.style.opacity = (.6 * dim * (flame(t) - .25)).toFixed(3);
+    const sec = t / 1000; let p = (sec - start) / dur; if (p >= 1) { start = sec; p = 0; dur = rnd(23, 30); turn = rnd(-12, 12); }
+    let u; let hop = 0;
+    if (p < .76) u = 1 - Math.pow(1 - p / .76, 1.14);
+    else if (p < .81) u = 1;
+    else { const q = (p - .81) / .19; u = 1 - smooth(q); hop = Math.abs(Math.sin(q * 16)) * 1.6 * (1 - q); } // it bounces a little on the way down
+    const r = route(u);
+    pos.setAttribute('transform', `translate(${r.x.toFixed(2)} ${(r.y - 1.5 - hop).toFixed(2)})`);
+    stone.setAttribute('transform', `rotate(${(-u * 920 + turn).toFixed(1)})`);
+    pos.setAttribute('opacity', (.85 * Math.min(1, sec / 5)).toFixed(3));
     return true;
   });
-  glow.remove();
-}
-// ── The butterfly dream (Zhuangzi): a butterfly that is there, then not, then somewhere else. ──
-async function dreamButterfly(run, sc) {
-  while (!run.stopped) {
-    const going = butterfly(run, sc);
-    await wait(rnd(2500, 5000), run);
-    const el = [...layer.children, ...(perch?.children ?? [])].reverse().find((c) => c.classList.contains('flutter'));
-    if (el) el.classList.add('dreaming');
-    await going; await wait(rnd(3000, 8000), run);
-  }
-}
-// ── Wind made visible (Epictetus: the archer aims; the wind is not his): gusts carry leaves across, one after another. ──
-async function gusts(run, sc) {
-  while (!run.stopped) { await leaves(run, sc); await wait(rnd(2500, 7000), run); }
-}
-// ── Sisyphus: far off on a hillside, a speck climbs, very slowly, almost to the top; then rolls back down, and begins
-// again. Only where a painting has a ridge marked for it (hill: [[foot x, y], [top x, y]]). ──
-async function sisyphus(run, sc) {
-  const [a, b] = sc.hill.map(([x, y]) => rectOf([x, y, x, y], sc)); const W = innerWidth;
-  const el = document.createElement('div'); el.className = 'creature speck'; layer.append(el);
-  const at = (p) => ({ x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p });
-  while (!run.stopped) {
-    const up = rnd(38000, 56000); const top = rnd(.86, .95);
-    await frames(run, (t) => { const p = top * Math.min(1, t / up); const q = at(p); el.style.transform = `translate(${q.x - 1.5}px, ${q.y - 3 + Math.sin(t / 900) * .3}px)`; return t < up; });
-    await wait(rnd(1200, 2600), run);
-    const down = rnd(5000, 7500);
-    await frames(run, (t) => { const u = Math.min(1, t / down); const p = top * (1 - u * u); const q = at(p); el.style.transform = `translate(${q.x - 1.5}px, ${q.y - 3 - Math.abs(Math.sin(u * 14)) * 2 * (1 - u)}px)`; return t < down; });
-    await wait(rnd(3500, 6000), run);
-    if (W !== innerWidth) break;
-  }
-  el.remove();
+  s.remove();
 }
 
 // ── Writing: on a painted page or open book, a few lines appear as if written by an unseen hand, rest, and fade. ──
@@ -808,15 +979,21 @@ const VISITORS = [
 let last = null;
 async function go(v, sc) {
   layer.classList.toggle('dark', sc.has('dark')); perch.classList.toggle('dark', sc.has('dark'));
-  const run = active = { stopped: false, raf: 0, cancel: [] };
+  const run = active = { stopped: false, raf: 0, cancel: [] }; const t0 = performance.now();
   try { await v.fn(run, sc); } catch { /* a visitor never breaks the page */ }
+  // A passage that found nowhere to draw at this size (the water cropped away with the phone turned) is not retried
+  // until the size changes.
+  if (String(v.name).startsWith('passage:') && !run.stopped && performance.now() - t0 < 1500) unfit = `${innerWidth}x${innerHeight}`;
   if (active === run) active = null;
   schedule();
 }
 function visit() {
   timer = 0;
-  if (!layer || active || reduced() || busy()) return schedule(15000);
+  if (!layer || active || reduced() || busy()) return schedule(passage ? 3000 : 15000);
   const sc = scene();
+  // While a passage is open and its visitor fits the painting, it is the one that comes (and comes back).
+  const pv = passage && PASSAGES[passage];
+  if (pv && unfit !== `${innerWidth}x${innerHeight}` && pv.ok(sc)) { last = `passage:${passage}`; return go({ name: last, fn: pv.fn }, sc); }
   const can = VISITORS.filter((v) => v.ok(sc) && v.name !== last);
   if (!can.length) return schedule();
   let pick = Math.random() * can.reduce((a, v) => a + v.w, 0);
@@ -827,7 +1004,8 @@ function visit() {
 function schedule(ms) {
   clearTimeout(timer);
   const still = performance.now() - lastTouch > 15000;
-  timer = setTimeout(visit, ms ?? (still ? rnd(12000, 26000) : rnd(28000, 55000)));
+  const pv = passage && PASSAGES[passage]; const soon = pv && layer && unfit !== `${innerWidth}x${innerHeight}` && pv.ok(scene()); // an open passage's visitor comes straight back
+  timer = setTimeout(visit, ms ?? (soon ? 1200 : still ? rnd(12000, 26000) : rnd(28000, 55000)));
 }
 function shoo() {
   if (!active) return;
@@ -842,8 +1020,9 @@ export function startCreatures() {
   lightLayer = document.createElement('div'); lightLayer.id = 'creatures-light'; lightLayer.setAttribute('aria-hidden', 'true');
   const motif = document.getElementById('motif'); if (motif) motif.after(layer, lightLayer); else document.body.prepend(layer, lightLayer);
   perch = document.createElement('div'); perch.id = 'creatures-perch'; perch.setAttribute('aria-hidden', 'true'); document.body.append(perch);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) shoo(); });
-  addEventListener('resize', shoo);
+  // Away and back, or the phone turned: the visitor leaves, and the visits (and an open passage's own) start again.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) shoo(); else schedule(); });
+  addEventListener('resize', () => { shoo(); schedule(); });
   for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastTouch = performance.now(); }, { passive: true });
   // A new picture: whoever was visiting the old one leaves.
   const wall = document.getElementById('wallpaper');
@@ -888,11 +1067,12 @@ export function sceneFor(name) {
 const water = (s) => (s.has('lake') || s.has('sea')) && s.water && !s.has('city');
 const PASSAGES = {
   singer_drowning_child: { fn: (run, sc) => rises(run, sc, true), ok: (s) => water(s) && s.has('lake') && !s.has('marsh') && s.water[0] > 0 },
-  heraclitus_same_river: { fn: current, ok: (s) => water(s) && s.has('lake') },
-  plato_cave: { fn: cavelight, ok: (s) => s.has('in') && s.has('dark') && !s.chart }, // a room with walls, not a dome open to the stars
-  seneca_evening_review: { fn: lampglow, ok: (s) => s.has('in') && s.has('dark') },
+  heraclitus_same_river: { fn: current, ok: (s) => water(s) && s.has('lake') && s.water[0] > 0 && s.water[1] - s.water[0] > .12 },
+  plato_cave: { fn: cavelight, ok: (s) => s.has('walls') }, // a plain wall at the side, no window there
+  seneca_evening_review: { fn: lampglow, ok: (s) => Boolean(s.wick) }, // a painted lamp or candle to burn
   zhuangzi_butterfly_dream: { fn: dreamButterfly, ok: (s) => s.flowers || (s.has('garden') && s.has('sky')) },
-  epictetus_up_to_us: { fn: gusts, ok: (s) => s.canopy || (s.has('garden') && s.has('out')) },
+  nagarjuna_emptiness: { fn: knot, ok: (s) => Boolean(s.ledge) }, // a quiet table for the cord
+  epictetus_up_to_us: { fn: gusts, ok: (s) => s.has('reeds') },
   camus_myth_of_sisyphus: { fn: sisyphus, ok: (s) => Boolean(s.hill) },
 };
 // The paintings a passage's visitor fits ('/img/....webp'); [] when it has none.
@@ -903,7 +1083,7 @@ export function passagePaintings(id) {
 let passageTimer = 0;
 // Start the passage's visitor on the painting now showing (after a moment, once the story has settled). false if none fits.
 export function startPassage(id) {
-  clearTimeout(passageTimer);
+  clearTimeout(passageTimer); passage = PASSAGES[id] ? id : null; unfit = '';
   const p = PASSAGES[id]; if (!p || !layer || reduced()) return false;
   passageTimer = setTimeout(() => {
     const sc = scene(); if (!p.ok(sc)) return;
@@ -912,4 +1092,4 @@ export function startPassage(id) {
   }, 2200);
   return true;
 }
-export function stopPassage() { clearTimeout(passageTimer); if (active && String(last ?? '').startsWith('passage:')) shoo(); }
+export function stopPassage() { clearTimeout(passageTimer); passage = null; if (active && String(last ?? '').startsWith('passage:')) shoo(); }

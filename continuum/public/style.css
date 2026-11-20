@@ -817,7 +817,7 @@ details.wt-part summary, details.diary-block summary { cursor: pointer; color: v
 @keyframes legs { from { transform: skewX(-25deg); } to { transform: skewX(25deg); } }
 .piper-el .piper { transition: rotate .15s ease; }
 .piper-el.peck .piper { rotate: 22deg; }
-.creature > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
+.creature:not(.sheet) > g { transform: scaleX(var(--flip, 1)); transform-box: fill-box; transform-origin: center; }
 /* The cat: legs in pairs, a slight bob, the tail always moving; standing still to look about. */
 /* The bird: wings beating in flight; folded, with feet, when it lands; a peck and a hop. */
 .flier .wing { transform-box: fill-box; transform-origin: 30% 100%; animation: bird-flap .2s ease-in-out infinite alternate; }
@@ -1186,13 +1186,8 @@ html.talk-calm.peek.speaking .talk-compose {
 .reflect-ways .link { padding: 0; }
 .reflect-card .say.now { background: color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 4px; }
 .source-down { font-style: italic; }
-/* Passage visitors */
-/* Rings from a fish nipping the surface (class "nip": ".rise" is the text reveal, which blurs). */
-#creatures .creature.nip, #creatures-light .creature.nip { opacity: 1; }
-#creatures.dark .creature.nip { filter: none; }
-.creature.fleck { opacity: 0; }
-.creature.glow { border-radius: 50%; mix-blend-mode: soft-light; filter: blur(8px); }
-.creature.cave-shadow { border-radius: 45% 45% 40% 40%; background: rgba(10, 6, 4, .9); filter: blur(22px); opacity: 0; }
-.creature.speck { width: 3px; height: 3px; border-radius: 50%; background: rgba(40, 46, 38, .95); opacity: .55; }
-.creature.flutter.dreaming { animation: dream-fade 9s ease-in-out infinite; }
-@keyframes dream-fade { 0%, 100% { opacity: .5; } 40% { opacity: .5; } 55% { opacity: 0; } 70% { opacity: 0; } 85% { opacity: .5; } }
+/* Passage visitors: drawn on a sheet the size of the screen, or (the pond) on a canvas over the water; their own
+   strengths are set in the drawing, so the layers' usual faintness does not apply ("rise" is the text reveal: not used). */
+.creature.sheet { width: 100%; height: 100%; overflow: visible; will-change: auto; }
+#creatures .creature.sheet, #creatures-light .creature.sheet, #creatures-light .creature.pond { opacity: 1; }
+#creatures.dark .creature.sheet { filter: none; }
