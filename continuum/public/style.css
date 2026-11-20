@@ -1195,3 +1195,7 @@ html.talk-calm.peek.speaking .talk-compose {
 .trainer-again { margin: 2px 0 16px; }
 .trainer-again p { margin: 0; }
 .trainer-again .trainer-words { margin: 6px 0 0; }
+/* Listen on every screen: the corner button, and the part being read lit as it goes. */
+html.can-speak.page-listen .listen { display: inline-flex; }
+.say.page { border-radius: 4px; transition: background .2s, box-shadow .2s; }
+.say.page.now { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }

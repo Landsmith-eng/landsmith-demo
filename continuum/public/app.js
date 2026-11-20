@@ -94,6 +94,9 @@ function render(...nodes) {
     h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
     h('button', { type: 'button', class: 'link', onclick: () => { store.del(DATE_KEY); showToday(); } }, 'use real date'));
   view.replaceChildren(...[banner, ...nodes].filter(Boolean));
+  pageVoiceCache = null;
+  // Listen in the corner on every screen, except those with their own (a story, Talk) and the idea cards (their own Listen).
+  document.documentElement.classList.toggle('page-listen', !staged && !view.querySelector('.trainer-story, .talk-compose, .talk-turn'));
   window.scrollTo(0, 0);
 }
 
@@ -1185,7 +1188,46 @@ function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {},
   button.addEventListener('click', () => { if (button.disabled) return; if (listening) { listening = false; engine?.finish(); return; } begin(); });
   return { button, start: begin, stop, active: () => listening };
 }
-listenBtn.addEventListener('click', () => (reading ? stopReading() : readStage()));
+listenBtn.addEventListener('click', () => {
+  if (document.documentElement.classList.contains('staged')) return reading ? stopReading() : readStage();
+  readPage();
+});
+
+// Listen on any other screen (You, Campus, a list, a result): what is on it, read in order, top to bottom, each part
+// lit as it is read and followed down the page, with the same pause, skip and stop as everywhere else. Tap a lit part
+// to start from there. What is read: headings, paragraphs, list lines, quotes, your own entries and their titles and
+// dates; not buttons, links, boxes for writing, or anything hidden.
+const PAGE_PARTS = 'h1, h2, h3, h4, p, li, blockquote, dt, dd, figcaption, .t, .diary-date, .eyebrow.spoken';
+let pageVoiceCache = null;
+function pageVoice() {
+  const first = view.firstElementChild;
+  if (pageVoiceCache && pageVoiceCache.first === first && document.body.contains(pageVoiceCache.spans[0] ?? null)) return pageVoiceCache.voice;
+  const skip = 'a, input, textarea, select, [aria-hidden="true"], .toast, .talk-bar, .notice.testdate';
+  const parts = [...view.querySelectorAll(PAGE_PARTS)].filter((el) => !el.closest(skip) && el.getClientRects().length && !el.querySelector(PAGE_PARTS) && /[\p{L}\d]/u.test(el.textContent));
+  const spans = []; const spoken = [];
+  for (const el of parts) {
+    const said = sentences(el.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').trim());
+    if (!said.length) continue;
+    // The part lit as a whole while any of its sentences is read.
+    let mark = el.querySelector(':scope > .say.page');
+    if (!mark) { mark = h('span', { class: 'say page' }); mark.append(...el.childNodes); el.append(mark); }
+    const at = spoken.length;
+    mark.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, at); });
+    for (const t of said) { spans.push(mark); spoken.push(t); }
+  }
+  const voice = { spans, spoken, btn: listenBtn.querySelector('span'), clips: new Map() };
+  pageVoiceCache = { first, spans, voice };
+  return voice;
+}
+function readPage() {
+  if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; // not reading this page now: take it as it is now
+  const v = pageVoice();
+  if (!v.spoken.length) return notice('There is nothing here to read aloud.');
+  // From the part in view, unless the top of the page is showing.
+  if (talkPlayer.view === v) return togglePlay(v);
+  const k = scrollY < 80 ? 0 : Math.max(0, v.spans.findIndex((sp) => sp.getBoundingClientRect().bottom > 90));
+  playFrom(v, k);
+}
 voiceBtn.addEventListener('click', () => chooseVoice());
 speech?.getVoices(); // starts loading the phone's voice list
 addEventListener('pagehide', () => { speech?.cancel(); audioEl.pause(); });
@@ -2070,7 +2112,7 @@ function setPlayState(view, state) {
   view.btn.textContent = state === 'playing' ? 'Pause' : state === 'paused' ? 'Resume' : 'Listen';
   view.btn.setAttribute('aria-pressed', String(state === 'playing'));
   view.btn.classList.remove('wants-tap');
-  view.spans.forEach((sp, k) => sp.classList.toggle('now', state !== 'idle' && k === talkPlayer.i));
+  const lit = state !== 'idle' ? view.spans[talkPlayer.i] : null; view.spans.forEach((sp) => sp.classList.toggle('now', sp === lit));
   const was = document.documentElement.classList.contains('speaking');
   talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
   document.documentElement.classList.toggle('speaking', state === 'playing');
