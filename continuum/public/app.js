@@ -710,7 +710,11 @@ function playClip(url, run, from = 0, onLength = null) {
     const done = () => { URL.revokeObjectURL(url); resolve(); };
     audioEl.onended = audioEl.onerror = done;
     if (run) run.wake = done;
-    audioEl.onloadedmetadata = () => { if (Number.isFinite(audioEl.duration)) onLength?.(audioEl.duration); if (from > 0 && from < audioEl.duration) audioEl.currentTime = from; };
+    audioEl.onloadedmetadata = () => {
+      if (Number.isFinite(audioEl.duration)) onLength?.(audioEl.duration);
+      const to = from < 0 ? -from * audioEl.duration : from; // below zero: a share of the clip
+      if (to > 0 && to < audioEl.duration) audioEl.currentTime = to;
+    };
     audioEl.src = url;
     audioEl.preservesPitch = true;
     audioEl.playbackRate = readRate();
@@ -1278,9 +1282,34 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#view') || e.target.closest('button, a, input, textarea, select, label, summary')) return;
   if (getSelection()?.toString().trim()) return; // choosing words to keep, not asking to listen
   const hit = hitFor(e.target); if (!hit) return;
+  // Two taps close together: read from the very word tapped.
+  const now = Date.now(); const again = lastTap && now - lastTap.at < 360 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 34;
+  lastTap = again ? null : { at: now, x: e.clientX, y: e.clientY };
+  clearTimeout(tapTimer);
+  if (again) { getSelection()?.removeAllRanges(); return readFromPoint(e.clientX, e.clientY, hit); }
   if (talkPlayer.view === hit.voice && talkPlayer.state === 'playing') return; // while it reads, a tap on a part jumps there already
-  offerHere(hit, e.clientX, e.clientY < 140 ? e.clientY + 18 : e.clientY - 54);
+  const x = e.clientX; const y = e.clientY < 140 ? e.clientY + 18 : e.clientY - 54;
+  tapTimer = setTimeout(() => offerHere(hit, x, y), 300);
 });
+let lastTap = null; let tapTimer = 0;
+// The word under a point, as a letter of the sentence it is in, and read from there.
+function readFromPoint(x, y, hit) {
+  const voice = hit.voice;
+  const pos = document.caretRangeFromPoint?.(x, y) ?? (() => { const c = document.caretPositionFromPoint?.(x, y); if (!c) return null; const r = document.createRange(); r.setStart(c.offsetNode, c.offset); return r; })();
+  const node = pos?.startContainer; const el = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.say');
+  if (!el || !sayAt.has(el) || sayAt.get(el).voice !== voice) return playFrom(voice, hit.k);
+  // Where in the element's shown text the tap fell.
+  let off = 0; const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) { if (walk.currentNode === node) { off += pos.startOffset; break; } off += walk.currentNode.nodeValue.length; }
+  const text = el.textContent; while (off > 0 && /\S/.test(text[off - 1])) off--; // back to the start of the word
+  // Which of the element's sentences that is, and how far into it.
+  let k = sayAt.get(el).k;
+  while (k + 1 < voice.spans.length && voice.spans[k + 1] === el && sentenceSpan(voice, k + 1).base <= off) k++;
+  const { base, len } = sentenceSpan(voice, k);
+  const c = Math.max(0, Math.round((off - base) * (voice.spoken[k].length || 1) / (len || 1)));
+  hideHere();
+  playFrom(voice, k, 0, c);
+}
 // The readable part an element belongs to, with its reader: a passage's or card's sentence, or a part of the page.
 function hitFor(el) {
   const root = document.documentElement; if (root.classList.contains('staged') || !root.classList.contains('can-speak')) return null;
@@ -2195,16 +2224,76 @@ addEventListener('pointerup', (e) => {
 const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; peek(); wakeBar(); } };
 for (const ev of ['touchmove', 'wheel']) addEventListener(ev, userScrolled, { passive: true });
 addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && e.target === document.body) userScrolled(); });
-// Keep the sentence being read in view: its start a third of the way down, or for a long sentence, the part being
-// read (from the clip's progress, or the phone voice's word position).
+// The word being said is traced in gold, letter by letter, with stardust (as in Contemplate), and no box around the
+// sentence. The sentence's words are wrapped once, each with where it starts in the sentence as shown; a letter of the
+// spoken text maps to the same share of the shown one (they differ only by small marks such as a link's title).
+const wordsIn = new WeakMap(); // a sentence's element -> [{ el, start, end }] (offsets in its shown text)
+function wordsOf(el) {
+  if (wordsIn.has(el)) return wordsIn.get(el);
+  const out = []; let pos = 0; const texts = [];
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) texts.push(walk.currentNode);
+  for (const t of texts) {
+    const parts = t.nodeValue.split(/(\s+)/); const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) frag.append(part);
+      else { const w = h('span', { class: 'w' }, part); out.push({ el: w, start: pos, end: pos + part.length }); frag.append(w); }
+      pos += part.length;
+    }
+    t.replaceWith(frag);
+  }
+  wordsIn.set(el, out);
+  return out;
+}
+// Where sentence k begins within its element's shown text (an element can hold several sentences: a paragraph read
+// as a page part), and how long it is there.
+function sentenceSpan(view, k) {
+  const el = view.spans[k]; const text = el.textContent;
+  let first = k; while (first > 0 && view.spans[first - 1] === el) first--;
+  if (first === k) return { el, base: 0, len: text.trim().length || 1 };
+  let from = 0;
+  for (let j = first; j <= k; j++) {
+    const probe = view.spoken[j].slice(0, 14); const at = text.indexOf(probe, from);
+    if (at < 0) return { el, base: Math.round(text.length * (k - first) / (k - first + 1)), len: view.spoken[k].length };
+    if (j === k) return { el, base: at, len: view.spoken[k].length };
+    from = at + Math.max(1, view.spoken[j].length - 2);
+  }
+  return { el, base: 0, len: text.length };
+}
+function traceAt(view, k, c) {
+  const p = talkPlayer; if (p.view !== view || p.i !== k || !view.spans[k]?.isConnected) return;
+  const { el, base, len } = sentenceSpan(view, k);
+  const shown = base + Math.round(c * len / (view.spoken[k].length || 1));
+  const word = wordsOf(el).find((w) => shown < w.end && w.end > base) ?? null;
+  if (!word || word.el === p.word) return;
+  p.word = word.el; glowWord(word.el); followTalk();
+}
+// With the natural voice: each letter's start time from the clip (or, without them, letters spread over its length).
+function traceClip(view, k, starts) {
+  cancelAnimationFrame(talkPlayer.traceRaf);
+  const step = () => {
+    const p = talkPlayer; if (p.view !== view || p.i !== k || p.state === 'idle') return;
+    const t = audioEl.currentTime; let c = 0;
+    if (starts?.length) { while (c + 1 < starts.length && starts[c + 1] <= t + .04) c++; }
+    else if (audioEl.duration) c = Math.floor((t / audioEl.duration) * view.spoken[k].length);
+    if (t > 0) traceAt(view, k, c);
+    p.traceRaf = requestAnimationFrame(step);
+  };
+  talkPlayer.traceRaf = requestAnimationFrame(step);
+}
+// Keep the word being said near the middle of the screen (above the controls), moving only when it drifts out of a
+// comfortable band; before the first word, the sentence's start.
 function followTalk(jump = false) {
   const p = talkPlayer; const sp = p.view?.spans[p.i];
   if (!sp || !p.follow || !document.body.contains(sp)) return;
-  const r = sp.getBoundingClientRect(); const vh = innerHeight;
+  const vh = innerHeight;
   const room = (talkBar.hidden ? document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? vh : talkBar.getBoundingClientRect().top) - 16;
-  const at = r.height > vh * .3 ? r.top + r.height * Math.min(1, p.part) : r.top;
-  const want = vh * .32;
-  if (jump || at < 70 || at > room - 40 || (r.height > vh * .3 && Math.abs(at - want) > vh * .15)) window.scrollBy({ top: at - want, behavior: 'smooth' });
+  const target = p.word && sp.contains(p.word) ? p.word : sp;
+  const r = target.getBoundingClientRect();
+  const at = target === sp && r.height > vh * .3 ? r.top + r.height * Math.min(1, p.part) : r.top;
+  const want = Math.min(vh * .42, room - 90);
+  if (jump || at < Math.max(70, vh * .22) || at > Math.min(room - 40, vh * .62)) window.scrollBy({ top: at - want, behavior: 'smooth' });
 }
 audioEl.addEventListener('timeupdate', () => {
   if (talkPlayer.state !== 'playing' || !audioEl.duration) return;
@@ -2223,6 +2312,7 @@ function setPlayState(view, state) {
   view.btn.setAttribute('aria-pressed', String(state === 'playing'));
   view.btn.classList.remove('wants-tap');
   const lit = state !== 'idle' ? view.spans[talkPlayer.i] : null; view.spans.forEach((sp) => sp.classList.toggle('now', sp === lit));
+  if (state === 'idle') { cancelAnimationFrame(talkPlayer.traceRaf); talkPlayer.word = null; }
   const was = document.documentElement.classList.contains('speaking');
   talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
   document.documentElement.classList.toggle('speaking', state === 'playing');
@@ -2237,14 +2327,16 @@ function stopTalkVoice() {
   speech?.cancel(); audioEl.pause();
   const v = p.view; p.view = null; p.run = null; p.state = 'idle'; setPlayState(v, 'idle');
 }
-async function playFrom(view, i, offset = 0) {
+// fromChar: start the first sentence at this letter of it (a double-tapped word), not at its beginning.
+async function playFrom(view, i, offset = 0, fromChar = null) {
   stopTalkVoice();
   const p = talkPlayer; const run = { stop: false, wake: null };
-  Object.assign(p, { view, i, state: 'playing', run, follow: true, part: 0 });
+  Object.assign(p, { view, i, state: 'playing', run, follow: true, part: 0, word: null });
   setPlayState(view, 'playing'); followTalk(true);
   const plan = await voicePlan();
+  // Each sentence's clip comes with every letter's start time, so the word being said can be traced.
   const clip = (k) => {
-    if (!view.clips.has(k)) view.clips.set(k, fetchBlob(view.spoken[k], plan.el).catch((e) => { view.clips.delete(k); throw e; }));
+    if (!view.clips.has(k)) view.clips.set(k, fetchTimed(view.spoken[k], plan.el).catch((e) => { view.clips.delete(k); throw e; }));
     return view.clips.get(k);
   };
   let useEl = 'el' in plan;
@@ -2252,10 +2344,13 @@ async function playFrom(view, i, offset = 0) {
     p.part = 0; setPlayState(view, 'playing'); followTalk();
     if (useEl) {
       try {
-        const blob = await tryTwice(() => clip(p.i));
+        const { blob, starts } = await tryTwice(() => clip(p.i));
         if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
         if (run.stop) return false;
-        const at = offset; offset = 0;
+        // A double-tapped word: its letter's start time in this clip (or, without timings, the same share of it).
+        let at = offset; offset = 0;
+        if (fromChar != null) { const c = Math.min(fromChar, view.spoken[p.i].length - 1); at = starts?.length ? starts[Math.min(c, starts.length - 1)] ?? 0 : -(c / (view.spoken[p.i].length || 1)); fromChar = null; }
+        traceClip(view, p.i, starts);
         if (await playClip(URL.createObjectURL(blob), run, at, (d) => { (view.durs ??= {})[p.i] = d; }) === 'blocked') {
           // The browser wants a tap first: ask for one, on the reply itself.
           stopTalkVoice(); view.btn.textContent = '▶ Tap to hear it'; view.btn.classList.add('wants-tap');
@@ -2267,8 +2362,8 @@ async function playFrom(view, i, offset = 0) {
       }
     } else {
       // The phone's voice cannot start part-way into a sentence: a skip into one starts it from its beginning.
-      offset = 0; const len = view.spoken[p.i].length || 1;
-      await sayPhone(view.spoken[p.i], plan.phone ?? null, run, (c) => { p.part = c / len; followTalk(); });
+      offset = 0; fromChar = null; const len = view.spoken[p.i].length || 1; const k = p.i;
+      await sayPhone(view.spoken[p.i], plan.phone ?? null, run, (c) => { p.part = c / len; traceAt(view, k, c); followTalk(); });
     }
     if (run.stop || p.state === 'paused') return false; // paused: stay on this sentence
     p.i++;

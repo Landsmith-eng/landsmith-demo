@@ -42,6 +42,7 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 - **Minutes** (this file), its shared page (`scripts/minutes_page.mjs`), and `CLAUDE.md` asking every session to read and add to it.
 
 **Minor / fixes**
+- **Reading aloud follows the word, in gold.** Everywhere a passage, reply, card or page is read aloud, the word being said is traced letter by letter with stardust (as in Contemplate), and the box behind the sentence is gone. The spoken word is kept near the middle of the screen. **Double-tap a word** to start reading from that exact word (Jon, after ElevenLabs' reader: "begin reading on the word tapped… centers the highlighted word and sentence"). With the natural voice it seeks to the word using each letter's timing; the phone's own voice can only start at the sentence.
 - **Listen from here** now also comes from choosing words (press and hold, then drag), not only a tap: the button appears just below the chosen words and reads from there. Jon could not find the feature; choosing words had been ignored on purpose (it was kept for "Keep these words", which only applies on an idea's page).
 
 **Decisions and conversations**

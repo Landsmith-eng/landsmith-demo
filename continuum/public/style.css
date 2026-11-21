@@ -1211,3 +1211,8 @@ html.can-speak.page-listen .listen { display: inline-flex; }
 .plan-card h2 { margin: 0 0 4px; }
 .plan-card.mine h2::after { content: ' ✓'; color: var(--accent); }
 .toast.allowance .link { color: var(--accent); }
+/* Reading aloud anywhere (a passage, a reply, a card, a page): the word being said is traced in gold, letter by letter,
+   with stardust, as in Contemplate; no box around the sentence. */
+.say span.ch.lit { animation: letter-glow 1.9s ease-out both; }
+.talk-turn .say.now, .trainer-story .say.now, .reflect-card .say.now, .say.page.now { background: none; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .say span.ch.lit { animation-duration: .9s; } }
