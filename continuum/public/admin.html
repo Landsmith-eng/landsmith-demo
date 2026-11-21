@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Continuum Retention</title>
+  <link rel="preload" href="/fonts/lora-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+    th { font-weight: 600; color: var(--muted); }
+    .dots { display: flex; gap: 3px; flex-wrap: wrap; }
+    .dots span { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
+    .dots span.open { background: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .dots span.wrote { background: var(--accent); }
+    .scroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Did they come back?</h1>
+    <p class="muted small">Each square is one day since the tester's first visit. Dark = wrote a response; light = opened only.</p>
+    <form id="f" class="row" style="justify-content:flex-start">
+      <input id="k" type="password" placeholder="Admin key" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
+      <button class="btn">Load</button>
+    </form>
+    <h2 style="margin-top:28px">Claude use and plans</h2>
+    <p class="muted small">What each tester's conversations with Claude have cost this month (at list prices), against their plan's allowance. While testing, leave the governor on <b>Measuring</b>: no one is limited and testers see nothing. After the trial, switch it <b>On</b>: people near their allowance get a quiet heads-up, and past it, Claude rests for them (everything else still works) and they are offered a bigger plan. Answers are never made cheaper or shorter.</p>
+    <div id="gov" class="muted small">Load to see.</div>
+    <h2 style="margin-top:28px">Source sites</h2>
+    <p class="muted small">When a book's site did not answer (last 7 days): the site and the time only. Readers were sent to a mirror, Standard Ebooks or the Internet Archive instead, or told it was unavailable.</p>
+    <div id="sources" class="muted small">Load to see.</div>
+    <h2 style="margin-top:28px">Invite someone</h2>
+    <p class="muted small">Makes a personal link to Continuum. Send it to them; opening it signs them in on that phone.</p>
+    <form id="inv" class="row" style="justify-content:flex-start">
+      <input id="invname" type="text" placeholder="Their first name" maxlength="40" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
+      <button class="btn">Make a link</button>
+    </form>
+    <p id="invout" style="margin-top:10px;word-break:break-all"></p>
+    <p id="summary" style="margin-top:16px"></p>
+    <div class="scroll"><table id="t" hidden><thead><tr><th>Tester</th><th>Days</th><th>Came back</th><th>Walk steps</th><th>Last seen (UTC)</th></tr></thead><tbody></tbody></table></div>
+  </main>
+  <script type="module">
+    const DAYS = 14;
+    const $ = (s) => document.querySelector(s);
+    // The key in the box always wins; it is remembered for this visit only.
+    const key = () => ($('#k').value.trim() || sessionStorage.getItem('continuum.admin') || '').trim();
+
+    $('#inv').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      sessionStorage.setItem('continuum.admin', key());
+      const res = await fetch('/admin/api/invite', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#invname').value }) });
+      const j = await res.json().catch(() => ({}));
+      $('#invout').textContent = res.ok ? `${j.name}: ${j.link}`
+        : res.status === 403 ? 'That admin key does not match. Copy CONTINUUM_ADMIN_KEY again from Render (Environment), paste it in the box above, and try again.'
+          : j.error === 'name_required' ? 'Type a name first.'
+            : `The server said no (${res.status}${j.error ? `: ${j.error}` : ''}). If Render is still deploying, wait a minute and try again.`;
+    });
+    async function loadSources() {
+      const r = await fetch('/admin/api/sources', { headers: { 'x-admin-key': key() } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      const box = $('#sources'); if (!r) { box.textContent = ''; return; }
+      box.textContent = r.by_site.length ? r.by_site.map((x) => `${x.host}: ${x.failures} ${x.failures === 1 ? 'failure' : 'failures'}, last ${x.last} UTC`).join(' · ') : 'No failures in the last 7 days.';
+    }
+    // The governor: the switch, each tester's month and plan, and requests for a bigger plan.
+    const usd = (n) => '$' + n.toFixed(2);
+    async function loadUsage() {
+      const box = $('#gov');
+      const r = await fetch('/admin/api/usage', { headers: { 'x-admin-key': key() } }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (!r) { box.textContent = 'Could not load.'; return; }
+      const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, attrs); e.append(...kids); return e; };
+      const sw = el('button', { type: 'button', className: 'btn ghost', textContent: r.mode === 'on' ? 'Governor: On. Switch to Measuring' : 'Governor: Measuring. Switch On' });
+      sw.addEventListener('click', async () => {
+        const to = r.mode === 'on' ? 'watch' : 'on';
+        if (to === 'on' && !confirm("Switch the governor on? People past their plan's allowance will find Claude resting until the month turns or their plan changes.")) return;
+        await fetch('/admin/api/governor', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ mode: to }) });
+        loadUsage();
+      });
+      const total = r.people.reduce((a, p) => a + p.usd, 0);
+      const t = el('table');
+      t.append(el('thead', {}, el('tr', {}, ...['Tester', 'Plan', 'This month (' + r.month + ')', 'Of allowance', 'Calls'].map((x) => el('th', { textContent: x })))));
+      const tb = el('tbody');
+      for (const p of r.people) {
+        const pick = el('select');
+        for (const pl of r.plans) pick.append(el('option', { value: pl.id, textContent: pl.name + (pl.usd ? ' (' + usd(pl.usd) + ' a month)' : ''), selected: pl.id === p.plan }));
+        pick.addEventListener('change', async () => {
+          await fetch('/admin/api/users/' + p.id + '/plan', { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ plan: pick.value }) });
+          loadUsage();
+        });
+        tb.append(el('tr', {}, el('td', { textContent: p.name }), el('td', {}, pick), el('td', { textContent: usd(p.usd) }),
+          el('td', { textContent: p.plan === 'unlimited' ? '-' : Math.round(p.share * 100) + '%' }), el('td', { textContent: String(p.calls) })));
+      }
+      t.append(tb);
+      const reqs = r.requests.length ? el('p', {}, 'Asked for a bigger plan: ' + r.requests.map((q) => q.name + ' -> ' + q.plan + ' (' + q.at.slice(0, 10) + ')').join(' · ')) : '';
+      box.replaceChildren(el('p', {}, sw), el('p', { textContent: 'All testers this month: ' + usd(total) + '.' }), el('div', { className: 'scroll' }, t), reqs);
+    }
+    async function load() {
+      loadSources(); loadUsage();
+      const res = await fetch('/admin/api/stats', { headers: { 'x-admin-key': key() } });
+      if (!res.ok) { $('#summary').textContent = res.status === 403 ? 'Wrong key, or CONTINUUM_ADMIN_KEY is not set on the server.' : 'Failed to load.'; return; }
+      const { testers } = await res.json();
+      const body = $('#t tbody');
+      body.replaceChildren();
+      for (const t of testers) {
+        const start = t.open_days[0];
+        const open = new Set(t.open_days), wrote = new Set(t.response_days);
+        const dots = document.createElement('div');
+        dots.className = 'dots';
+        for (let i = 0; i < DAYS; i++) {
+          const s = document.createElement('span');
+          const d = start && new Date(Date.parse(start) + i * 86400000).toISOString().slice(0, 10);
+          if (d && wrote.has(d)) s.className = 'wrote'; else if (d && open.has(d)) s.className = 'open';
+          s.title = d ?? '';
+          dots.append(s);
+        }
+        const tr = document.createElement('tr');
+        // The name, with a pencil to correct a misspelling (it changes everywhere it shows).
+        const who = document.createElement('span'); who.textContent = `${t.name} `;
+        const fix = document.createElement('button'); fix.type = 'button'; fix.className = 'link'; fix.textContent = '✎'; fix.title = 'Correct the name';
+        fix.addEventListener('click', async () => {
+          const name = prompt('The correct name:', t.name); if (!name || name.trim() === t.name) return;
+          const res = await fetch(`/admin/api/users/${t.id}`, { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+          if (res.ok) load(); else alert('Could not change the name.');
+        });
+        const nameCell = document.createElement('span'); nameCell.append(who, fix);
+        const cells = [nameCell, dots, t.came_back ? `Yes (${t.open_days.length} days)` : (start ? 'Not yet' : 'Never opened'), String(t.walk_steps), t.last_seen ?? 'n/a'];
+        for (const c of cells) { const td = document.createElement('td'); td.append(c); tr.append(td); }
+        body.append(tr);
+      }
+      const back = testers.filter((t) => t.came_back).length;
+      $('#summary').textContent = `${back} of ${testers.length} testers came back on a second day.`;
+      $('#t').hidden = false;
+    }
+
+    $('#f').addEventListener('submit', (e) => { e.preventDefault(); sessionStorage.setItem('continuum.admin', key()); load(); });
+    if (key()) load();
+  </script>
+</body>
+</html>
