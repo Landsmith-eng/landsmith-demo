@@ -60,6 +60,8 @@ async function api(path, { method = 'GET', body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  // (Said at once for something they did; a screen loading things in the background says it where it is shown.)
+  if (res.status === 402 && data.error === 'allowance') { if (method !== 'GET') allowanceToast(data.allowance); throw Object.assign(new Error('allowance'), { status: 402, allowance: data.allowance }); }
   if (!res.ok) throw Object.assign(new Error(data.error ?? `http_${res.status}`), { status: res.status });
   if (body && method !== 'GET') markSent(body);
   return data;
@@ -1001,6 +1003,44 @@ function showKeepBar() {
 document.addEventListener('selectionchange', () => { clearTimeout(keepTimer); keepTimer = setTimeout(showKeepBar, 250); });
 
 // A short message at the top of the screen that fades away.
+// ── Plans and the monthly allowance ──
+// Only conversations with Claude count toward a plan's allowance (Talk, Thoughts, problems worked through); the
+// stories, the map, voice and practice are always open. Shown as a share of the month, never as money.
+const renewsOn = (a) => new Date(`${a.renews}T12:00:00Z`).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+const allowanceText = (a) => `You have used this month's conversations on the ${a.name} plan. They renew on ${renewsOn(a)}, or a bigger plan opens them again now. The stories, the map and everything else still work.`;
+const plansLink = (label = 'See the plans') => h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPlans() }, label);
+const allowanceNote = (a) => h('p', { class: 'muted small allowance-note' }, `You have used about ${Math.round(a.share * 100)}% of this month's conversations on ${a.name}. `, plansLink());
+let toastedAllowance = 0;
+function allowanceToast(a) {
+  if (!a || Date.now() - toastedAllowance < 20000) return; toastedAllowance = Date.now();
+  const n = h('div', { class: 'toast allowance', role: 'status' }, allowanceText(a), ' ', plansLink());
+  document.body.append(n); setTimeout(() => n.remove(), 9000);
+}
+function showPlans() {
+  setNav('you');
+  return guarded(async () => {
+    const a = await api('/api/me/allowance');
+    pageBg = TAB_BG.you;
+    const pct = Math.min(100, Math.round(a.share * 100));
+    const where = a.mode === 'on'
+      ? h('div', { class: 'plan-now' }, h('p', {}, `${a.name}: ${pct}% of this month's conversations used. ${pct >= 100 ? 'They renew' : 'It renews'} on ${renewsOn(a)}.`),
+        h('div', { class: 'plan-bar', role: 'img', 'aria-label': `${pct}% used` }, h('span', { style: `width:${pct}%` })))
+      : h('p', {}, 'While Continuum is being tested, everything is open to you, with no allowance. Plans start after the trial.');
+    const card = (p) => {
+      const mine = p.id === a.plan;
+      const btn = mine ? h('p', { class: 'muted small' }, 'Your plan')
+        : h('button', { type: 'button', class: 'btn ghost', onclick: async (e) => {
+          const b = e.currentTarget; b.disabled = true;
+          try { await api('/api/plan/request', { method: 'POST', body: { plan: p.id } }); b.replaceWith(h('p', { class: 'muted small' }, `Asked for ${p.name}. You will hear back soon.`)); }
+          catch { b.disabled = false; notice('Could not send that. Try again.'); }
+        } }, `Ask for ${p.name}`);
+      return h('div', { class: `plan-card${mine ? ' mine' : ''}` }, h('h2', {}, p.name), h('p', {}, p.line), btn);
+    };
+    render(h('h1', {}, 'Your plan'), where,
+      h('p', { class: 'muted small' }, 'Only conversations with Claude count toward a plan: Talk, Thoughts on a passage, problems worked through. The stories, the map, the voice and the practices are always open, on every plan. Every plan gets the same answers, in full.'),
+      ...a.plans.map(card));
+  });
+}
 function notice(text) {
   const n = h('div', { class: 'toast', role: 'status' }, text);
   document.body.append(n); setTimeout(() => n.remove(), 6000);
@@ -2004,6 +2044,8 @@ function showJournal() {
             h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => { saveUnfinished(unfinished().filter((x) => x.id !== u.id)); li.remove(); } }, 'Discard')));
         return li;
       })));
+    const al = await api('/api/me/allowance').catch(() => null);
+    const planLine = al?.mode === 'on' && h('p', { class: 'muted small plan-line' }, `Your plan: ${al.name} · ${Math.min(100, Math.round(al.share * 100))}% of this month used · `, plansLink('Plans'));
     const st = await api('/api/stance').catch(() => null);
     const journey = st && (st.journey.answered
       ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'), journeyView(st.journey),
@@ -2054,7 +2096,7 @@ function showJournal() {
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), unfinishedBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, unfinishedBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2399,6 +2441,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         if (res.ok) markSent({ text });
         if (!res.ok) {
           const e = await res.json().catch(() => ({}));
+          if (e.error === 'allowance') throw Object.assign(new Error(allowanceText(e.allowance)), { allowance: e.allowance });
           throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
         }
         const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
@@ -2422,9 +2465,10 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
               if (safety) out.prepend(helpCard(safety));
               if (m.offer) out.append(offerDeeper(m.offer));
               const walk = journeyOffer(reply, sendAs ?? current); if (walk) out.append(walk);
+              if (m.allowance) out.append(allowanceNote(m.allowance));
               keepInView(out);
             }
-            else if (m.t === 'error') throw new Error(m.error);
+            else if (m.t === 'error') throw Object.assign(new Error(m.error), { allowance: m.allowance });
           }
         }
         summary.stale();
@@ -2437,6 +2481,8 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         out.classList.remove('thinking');
         if (!reply) out.remove();
         status.textContent = e.message;
+        if (e.allowance) status.append(' ', plansLink());
+        if (!reply && !ta.value.trim()) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); } // not sent: the words go back in the box
       } finally { send.disabled = false; }
     }
     send.addEventListener('click', submit);
@@ -3781,6 +3827,7 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
     const card = h('div', { class: 'reflect-card', 'aria-live': 'polite' }, h('p', { class: 'muted small' }, 'A moment…'));
     choiceRow.replaceWith(card); pushBox?.remove();
     const r = await getReflection();
+    if (!r && reflectBlocked) { card.replaceChildren(h('p', { class: 'muted small' }, allowanceText(reflectBlocked), ' ', plansLink()), h('button', { type: 'button', class: 'link', onclick: () => { card.replaceWith(choiceRow); } }, 'Back')); return; }
     if (!r) { card.replaceChildren(h('p', { class: 'muted small' }, 'Could not reach the trainer. ', h('button', { type: 'button', class: 'link', onclick: () => { card.replaceWith(choiceRow); } }, 'Back'))); return; }
     drawCard(card, r, false);
   }
@@ -3906,7 +3953,8 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
   ].filter(Boolean);
   // The prompt for Thoughts is fetched once the questions appear, so it is ready (or nearly) when Thoughts is tapped.
   let reflection = null;
-  const getReflection = () => (reflection ??= api(`/api/trainer/reflect?node=${encodeURIComponent(s.id)}&date=${today()}`).catch(() => { reflection = null; return null; }));
+  let reflectBlocked = null; // past the month's allowance: said on the card when Thoughts is tapped
+  const getReflection = () => (reflection ??= api(`/api/trainer/reflect?node=${encodeURIComponent(s.id)}&date=${today()}`).catch((e) => { reflection = null; reflectBlocked = e.allowance ?? null; return null; }));
   const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); getReflection(); };
   if (again) setTimeout(reveal, 0); // met before: the choices at once
   else if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));

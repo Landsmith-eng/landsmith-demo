@@ -3,6 +3,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { dirname, join } from 'node:path';
 import { rooms } from './content/rooms.js';
 import { themes } from './content/themes.js';
@@ -356,11 +357,12 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     };
   }
 
+  app.use((req, res, next) => claudeGate(req, res, next)); // the usage governor, before any screen that starts Claude (see below)
   function auth(req, res, next) {
     const user = q.userByToken.get(req.get('x-continuum-token') ?? '');
     if (!user) return res.status(401).json({ error: 'invite_required' });
     req.user = user;
-    next();
+    asking.run({ uid: user.id }, next); // every call to Claude made while answering them counts toward their allowance
   }
 
   // The user's walk so far: which day of it this is (days they wrote, counting today), ideas met, and the current run
@@ -727,6 +729,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
 
   // What to tell someone when Claude does not answer: plainly, and when it comes back if Anthropic said.
   function claudeTrouble(e) {
+    if (e?.allowance) return `You have used this month's conversations on the ${e.allowance.name} plan. They renew on ${new Date(`${e.allowance.renews}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}, or a bigger plan opens them again now. The stories, the map and everything else still work.`;
     const m = String(e?.error?.error?.message ?? e?.message ?? '');
     if (/usage limit/i.test(m)) {
       const when = m.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
@@ -741,17 +744,80 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
   // to and read from the prompt cache, tokens written back (thinking included), and an estimate in dollars at the
   // model's list prices. Kept in the database (settings: usage:<date>) through restarts. Counts only, never content.
   const PRICE = { in: 4, out: 20, read: .2, write5m: 5, write1h: 8 }; // dollars per million tokens (Claude Opus 5.5)
+  const asking = new AsyncLocalStorage(); // who the current request is for, so each call to Claude is counted to them
   const usageGet = db.prepare('SELECT v FROM settings WHERE k = ?'); const usageSet = db.prepare('INSERT OR REPLACE INTO settings (k, v) VALUES (?, ?)');
   const usageDay = (d) => { try { return JSON.parse(usageGet.get(`usage:${d}`)?.v ?? 'null') ?? {}; } catch { return {}; } };
   const costOf = (u) => (u.in * PRICE.in + u.out * PRICE.out + u.read * PRICE.read + u.w5 * PRICE.write5m + u.w1 * PRICE.write1h) / 1e6;
   if (talk) talk.onUsage = ({ kind, usage }) => {
     const d = new Date().toISOString().slice(0, 10); const day = usageDay(d);
+    const uid = asking.getStore()?.uid;
+    if (uid) {
+      const w1u = usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+      const one = costOf({ in: usage.input_tokens ?? 0, out: usage.output_tokens ?? 0, read: usage.cache_read_input_tokens ?? 0, w1: w1u,
+        w5: usage.cache_creation?.ephemeral_5m_input_tokens ?? Math.max(0, (usage.cache_creation_input_tokens ?? 0) - w1u) });
+      gov.add.run(uid, d.slice(0, 7), one);
+    }
     const k = (day[kind] ??= { calls: 0, in: 0, out: 0, read: 0, w5: 0, w1: 0 });
     const w1 = usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
     const w5 = usage.cache_creation?.ephemeral_5m_input_tokens ?? Math.max(0, (usage.cache_creation_input_tokens ?? 0) - w1);
     k.calls += 1; k.in += usage.input_tokens ?? 0; k.out += usage.output_tokens ?? 0; k.read += usage.cache_read_input_tokens ?? 0; k.w5 += w5; k.w1 += w1;
     usageSet.run(`usage:${d}`, JSON.stringify(day));
   };
+  // ── The usage governor ──
+  // Each person has a plan, and each plan a monthly allowance of Claude (in dollars at list prices; shown to people
+  // as a share, never as money). The governor has two modes, switched on the admin page:
+  //   watch (alpha testing): it measures and limits no one, and people see nothing of it;
+  //   on (after alpha): near the allowance a quiet heads-up; past it, Claude rests for that person until the month
+  //   turns or they move to a bigger plan, and everything else in the app goes on as before.
+  // Quality is never traded down: a call either runs in full, on the same model, or does not run.
+  const PLANS = [
+    { id: 'free', name: 'Free', usd: 1.5, line: 'A few conversations a week, the daily idea, and everything on the map.' },
+    { id: 'plus', name: 'Plus', usd: 8, line: 'A conversation most days, Thoughts on every passage, problems worked through.' },
+    { id: 'deep', name: 'Deep', usd: 25, line: 'As much as a daily practice asks: long conversations, courses and programmes.' },
+    { id: 'unlimited', name: 'Unlimited', usd: Infinity, line: 'No allowance (given by the owner).', hidden: true },
+  ];
+  const planOf = (u) => PLANS.find((p) => p.id === u?.plan) ?? PLANS[0];
+  const gov = {
+    add: db.prepare('INSERT INTO usage_month (user_id, month, usd, calls) VALUES (?, ?, ?, 1) ON CONFLICT(user_id, month) DO UPDATE SET usd = usd + excluded.usd, calls = calls + 1'),
+    used: db.prepare('SELECT usd, calls FROM usage_month WHERE user_id = ? AND month = ?'),
+    user: db.prepare('SELECT id, name, plan FROM users WHERE id = ?'),
+    setPlan: db.prepare('UPDATE users SET plan = ? WHERE id = ?'),
+    request: db.prepare('INSERT INTO plan_requests (user_id, plan) VALUES (?, ?)'),
+    requests: db.prepare('SELECT r.plan, r.at, u.name, u.id AS user_id FROM plan_requests r JOIN users u ON u.id = r.user_id ORDER BY r.id DESC LIMIT 50'),
+  };
+  let govSaved = null; // the switch, read once and kept (it is checked on every request)
+  const govMode = () => { if (govSaved === null) { try { govSaved = JSON.parse(usageGet.get('governor')?.v ?? 'null')?.mode === 'on' ? 'on' : 'watch'; } catch { govSaved = 'watch'; } } return govSaved; };
+  const thisMonth = () => new Date().toISOString().slice(0, 7);
+  const renews = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10); };
+  function allowance(uid) {
+    const u = gov.user.get(uid); const plan = planOf(u); const used = gov.used.get(uid, thisMonth())?.usd ?? 0;
+    const share = Number.isFinite(plan.usd) ? used / plan.usd : 0;
+    return { mode: govMode(), plan: plan.id, name: plan.name, share: Math.round(share * 100) / 100, over: share >= 1, near: share >= .8, renews: renews(), used };
+  }
+  // Past the allowance, with the governor on: no more calls for them (the client wrapper asks this before each one).
+  if (talk) talk.blocked = () => { const uid = asking.getStore()?.uid; if (!uid || govMode() !== 'on') return null; const a = allowance(uid); return a.over ? a : null; };
+  // The screens whose whole point is Claude say so before starting, rather than failing part-way.
+  // (Only starting new work: reading a conversation, a plan or a sheet already written is never stopped.)
+  const CLAUDE_ROUTES = [['POST', /^\/api\/talk$/], ['GET', /^\/api\/trainer\/reflect$/], ['POST', /^\/api\/cases(\/\d+\/(answer|start|checkin|session|approach))?$/],
+    ['POST', /^\/api\/lure\/topic$/], ['POST', /^\/api\/help\/find$/]];
+  function claudeGate(req, res, next) {
+    if (govMode() !== 'on' || !CLAUDE_ROUTES.some(([m, re]) => m === req.method && re.test(req.path))) return next();
+    const user = q.userByToken.get(req.get('x-continuum-token') ?? ''); if (!user) return next();
+    const a = allowance(user.id);
+    return a.over ? res.status(402).json({ error: 'allowance', allowance: { ...a, used: undefined } }) : next();
+  }
+  // Their own plan and how much of this month's allowance is used (a share only); the plans to choose from.
+  app.get('/api/me/allowance', auth, (req, res) => {
+    const a = allowance(req.user.id);
+    res.json({ ...a, used: undefined, plans: PLANS.filter((p) => !p.hidden).map(({ id, name, line }) => ({ id, name, line })) });
+  });
+  // Asking for a bigger plan. Before payments exist, the owner sees the request on the admin page and moves them.
+  app.post('/api/plan/request', auth, (req, res) => {
+    const plan = PLANS.find((p) => p.id === req.body?.plan && !p.hidden); if (!plan) return res.status(400).json({ error: 'bad' });
+    gov.request.run(req.user.id, plan.id);
+    console.log(`Plan request: ${req.user.name} asks for ${plan.name}.`);
+    res.json({ ok: true });
+  });
   // The tally for the last few days: totals, the share of the prompt read from the cache, and the costliest kinds.
   app.get('/api/diag/usage', auth, (req, res) => {
     const days = Math.min(31, Math.max(1, Number(req.query.days) || 7)); const out = [];
@@ -1581,6 +1647,25 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
   const personName = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40) : '');
   const renameUser = db.prepare('UPDATE users SET name = ? WHERE id = ?');
   // Correcting a tester's name (a misspelling at invite): it changes everywhere it shows.
+  // The governor on the admin page: the switch (watch for alpha, on after), each tester's plan and month so far, and
+  // requests for a bigger plan.
+  app.get('/admin/api/usage', admin, (req, res) => {
+    const users = db.prepare('SELECT id, name, plan FROM users ORDER BY id').all();
+    res.json({ mode: govMode(), month: thisMonth(), plans: PLANS.map(({ id, name, usd }) => ({ id, name, usd: Number.isFinite(usd) ? usd : null })),
+      people: users.map((u) => { const a = allowance(u.id); const m = gov.used.get(u.id, thisMonth()); return { id: u.id, name: u.name, plan: a.plan, usd: Number((m?.usd ?? 0).toFixed(3)), calls: m?.calls ?? 0, share: a.share }; }),
+      requests: gov.requests.all() });
+  });
+  app.post('/admin/api/governor', admin, (req, res) => {
+    const mode = req.body?.mode === 'on' ? 'on' : 'watch';
+    usageSet.run('governor', JSON.stringify({ mode, at: new Date().toISOString() })); govSaved = mode;
+    console.log(`Usage governor: ${mode}.`);
+    res.json({ mode });
+  });
+  app.post('/admin/api/users/:id/plan', admin, (req, res) => {
+    const plan = PLANS.find((p) => p.id === req.body?.plan); const u = gov.user.get(Number(req.params.id));
+    if (!plan || !u) return res.status(400).json({ error: 'bad' });
+    gov.setPlan.run(plan.id, u.id); res.json({ ok: true, plan: plan.id });
+  });
   app.post('/admin/api/users/:id', admin, (req, res) => {
     const name = personName(req.body?.name); if (!name) return res.status(400).json({ error: 'name_required' });
     const r = renameUser.run(name, Number(req.params.id));
@@ -2181,10 +2266,12 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       }
       const r = await risk;
       if (r && r.risk !== 'none') send({ t: 'safety', risk: r.risk, imminent: Boolean(r.imminent) });
-      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources, offer: keep && depth < 3 && reply.includes('[[go_deeper]]') ? depth + 1 : null });
+      // Near the end of this month's allowance (governor on): a quiet heads-up under the reply.
+      const al = govMode() === 'on' ? allowance(uid) : null;
+      send({ t: 'done', refs: talkRefs(states, referencedIds(reply)), sources, offer: keep && depth < 3 && reply.includes('[[go_deeper]]') ? depth + 1 : null, ...(al?.near ? { allowance: { ...al, used: undefined } } : {}) });
     } catch (e) {
       console.warn(`Talk: the request to Claude failed: ${e.status ?? ''} ${e.message}`);
-      send({ t: 'error', error: claudeTrouble(e) });
+      send({ t: 'error', error: claudeTrouble(e), ...(e?.allowance ? { allowance: { ...e.allowance, used: undefined } } : {}) });
     }
     res.end();
   });

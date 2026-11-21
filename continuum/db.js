@@ -160,6 +160,21 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 -- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
 -- choose their next ideas and, later, to compare what they say now with what they said then.
+-- What each person's use of Claude has cost this month (dollars, at list prices), for the usage governor.
+CREATE TABLE IF NOT EXISTS usage_month (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  month TEXT NOT NULL,                  -- YYYY-MM (UTC)
+  usd REAL NOT NULL DEFAULT 0,
+  calls INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, month)
+);
+-- Asking for a bigger plan (before payments exist, a request the owner sees on the admin page).
+CREATE TABLE IF NOT EXISTS plan_requests (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  plan TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS views (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -408,7 +423,7 @@ CREATE TABLE IF NOT EXISTS settings (
 const LATER_COLUMNS = [['nodes', 'misreading', 'TEXT'], ['nodes', 'analysis_url', 'TEXT'], ['nodes', 'image', 'TEXT'], ['nodes', 'room', 'TEXT'],
   ['nodes', 'opinions', 'TEXT'], ['nodes', 'as_of', 'TEXT'], ['cases', 'prefer', 'TEXT'],
   ['talks', 'vias', 'TEXT'], ['talks', 'sources', 'TEXT'], ['talks', 'summary', 'TEXT'],
-  ['users', 'depth', 'INTEGER'], ['talks', 'depth', 'INTEGER'], ['talks', 'role', 'TEXT'], ['path_runs', 'first_practice', 'TEXT']];
+  ['users', 'depth', 'INTEGER'], ['users', 'plan', 'TEXT'], ['talks', 'depth', 'INTEGER'], ['talks', 'role', 'TEXT'], ['path_runs', 'first_practice', 'TEXT']];
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });

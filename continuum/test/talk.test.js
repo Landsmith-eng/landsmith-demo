@@ -239,3 +239,42 @@ test('talk is cached: the map for an hour, the conversation as it grows, the ins
     assert.ok(day.usd > 0 && day.kinds[0].read >= 15200);
   } finally { server.close(); }
 });
+
+test('the usage governor: measures while testing, then near the allowance a heads-up, past it Claude rests and a bigger plan is offered', async () => {
+  const big = { input_tokens: 100, output_tokens: 80000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }; // $1.60: past Free's allowance
+  const turns = [1, 2, 3, 4].map((i) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: `Answer ${i}.` }], usage: big }));
+  const fake = fakeClaude(turns);
+  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }), { adminKey: 'k' });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const admin = (path, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-key': 'k', 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).then((r) => r.json());
+  try {
+    // Testing (watch): counted to them, never limited, and they see nothing of it.
+    let out = await lines(await call('/api/talk', { text: 'One.', date: D }));
+    assert.equal(out.at(-1).t, 'done'); assert.equal(out.at(-1).allowance, undefined);
+    out = await lines(await call('/api/talk', { id: out[0].id, text: 'Two.', date: D }));
+    assert.equal(out.at(-1).t, 'done', 'not limited while measuring');
+    let u = await admin('/admin/api/usage');
+    assert.equal(u.mode, 'watch'); assert.equal(u.people[0].plan, 'free'); assert.ok(u.people[0].usd > 3 && u.people[0].calls >= 2);
+    let me = await (await call('/api/me/allowance')).json();
+    assert.equal(me.mode, 'watch'); assert.equal(me.used, undefined, 'never shown in money');
+    // After the trial: on. Past Free's allowance, Talk says so before calling Claude, and no call is made.
+    await admin('/admin/api/governor', { mode: 'on' });
+    const asked = fake.requests.length;
+    const r = await call('/api/talk', { text: 'Three.', date: D });
+    assert.equal(r.status, 402); const j = await r.json();
+    assert.equal(j.error, 'allowance'); assert.equal(j.allowance.name, 'Free'); assert.ok(j.allowance.over);
+    assert.equal(fake.requests.length, asked, 'no call to Claude past the allowance');
+    me = await (await call('/api/me/allowance')).json();
+    assert.ok(me.over && me.plans.some((p) => p.id === 'plus') && !me.plans.some((p) => p.id === 'unlimited'));
+    // They ask for a bigger plan; the owner sees it and moves them; Talk opens again, with a heads-up near the end.
+    assert.equal((await (await call('/api/plan/request', { plan: 'plus' })).json()).ok, true);
+    u = await admin('/admin/api/usage'); assert.equal(u.requests[0].plan, 'plus');
+    await admin(`/admin/api/users/${u.people[0].id}/plan`, { plan: 'plus' });
+    out = await lines(await call('/api/talk', { text: 'Three.', date: D }));
+    assert.equal(out.at(-1).t, 'done');
+    db.prepare('UPDATE usage_month SET usd = 6.6').run(); // under Plus's allowance, but past 80% of it
+    out = await lines(await call('/api/talk', { text: 'Four.', date: D }));
+    assert.equal(out.at(-1).t, 'done'); assert.equal(out.at(-1).allowance.name, 'Plus'); assert.ok(out.at(-1).allowance.near);
+    assert.equal(out.at(-1).allowance.used, undefined);
+  } finally { server.close(); }
+});

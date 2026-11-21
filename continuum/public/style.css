@@ -1204,3 +1204,10 @@ html.can-speak.page-listen .listen { display: inline-flex; }
   background: rgba(10, 16, 14, .88); color: var(--accent); font: inherit; font-size: 15px; box-shadow: 0 6px 22px rgba(0, 0, 0, .35); backdrop-filter: blur(6px); }
 .listen-here[hidden] { display: none; }
 .unfinished-where { margin: 2px 0 0; font-weight: 600; }
+/* Plans: the month so far, and the plans to choose from. */
+.plan-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .14); overflow: hidden; margin: 6px 0 14px; }
+.plan-bar span { display: block; height: 100%; background: var(--accent); }
+.plan-card { border-top: 1px solid rgba(255, 255, 255, .14); padding: 14px 0 10px; }
+.plan-card h2 { margin: 0 0 4px; }
+.plan-card.mine h2::after { content: ' ✓'; color: var(--accent); }
+.toast.allowance .link { color: var(--accent); }

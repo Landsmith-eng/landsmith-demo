@@ -23,10 +23,13 @@ const kindOf = (body) => {
 function meter(client, talk) {
   const m = client?.beta?.messages; if (!m || m.metered) return client;
   const note = (msg, body) => { if (msg?.usage) try { talk.onUsage?.({ kind: kindOf(body), usage: msg.usage, model: msg.model }); } catch { /* a tally never breaks a call */ } };
-  if (typeof m.create === 'function') { const create = m.create.bind(m); m.create = async (body, opts) => { const r = await create(body, opts); note(r, body); return r; }; }
+  // The usage governor (talk.blocked, set by the app): someone past this month's allowance gets no further calls.
+  // Never a lesser answer: a call either runs in full or does not run.
+  const gate = () => { const why = talk.blocked?.(); if (why) throw Object.assign(new Error('allowance'), { status: 402, allowance: why }); };
+  if (typeof m.create === 'function') { const create = m.create.bind(m); m.create = async (body, opts) => { gate(); const r = await create(body, opts); note(r, body); return r; }; }
   if (typeof m.stream === 'function') {
     const stream = m.stream.bind(m);
-    m.stream = (body, opts) => { const st = stream(body, opts); st?.finalMessage?.().then((r) => note(r, body), () => {}); return st; };
+    m.stream = (body, opts) => { gate(); const st = stream(body, opts); st?.finalMessage?.().then((r) => note(r, body), () => {}); return st; };
   }
   m.metered = true;
   return client;
