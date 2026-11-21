@@ -1270,26 +1270,49 @@ const hereChip = h('button', { type: 'button', class: 'listen-here', hidden: tru
 document.body.append(hereChip);
 let hereHit = null; let hereTimer = 0;
 const hideHere = () => { hereChip.hidden = true; hereHit = null; clearTimeout(hereTimer); };
-hereChip.addEventListener('click', (e) => { e.stopPropagation(); const hit = hereHit; hideHere(); if (hit) playFrom(hit.voice, hit.k); });
+hereChip.addEventListener('click', (e) => { e.stopPropagation(); const hit = hereHit; hideHere(); getSelection()?.removeAllRanges(); if (hit) playFrom(hit.voice, hit.k); });
 addEventListener('scroll', () => { if (!hereChip.hidden) hideHere(); }, { passive: true });
 document.addEventListener('click', (e) => {
   if (e.target === hereChip) return;
   hideHere();
   if (!e.target.closest('#view') || e.target.closest('button, a, input, textarea, select, label, summary')) return;
   if (getSelection()?.toString().trim()) return; // choosing words to keep, not asking to listen
-  const root = document.documentElement; if (root.classList.contains('staged') || !root.classList.contains('can-speak')) return;
-  let sp = e.target.closest('.say'); let hit = sp && sayAt.get(sp);
+  const hit = hitFor(e.target); if (!hit) return;
+  if (talkPlayer.view === hit.voice && talkPlayer.state === 'playing') return; // while it reads, a tap on a part jumps there already
+  offerHere(hit, e.clientX, e.clientY < 140 ? e.clientY + 18 : e.clientY - 54);
+});
+// The readable part an element belongs to, with its reader: a passage's or card's sentence, or a part of the page.
+function hitFor(el) {
+  const root = document.documentElement; if (root.classList.contains('staged') || !root.classList.contains('can-speak')) return null;
+  let sp = el?.closest?.('.say'); let hit = sp && sayAt.get(sp);
   if (!hit && root.classList.contains('page-listen')) {
-    const part = e.target.closest(PAGE_PARTS);
+    const part = el?.closest?.(PAGE_PARTS);
     if (part) { if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; pageVoice(); sp = part.querySelector(':scope > .say.page'); hit = sp && sayAt.get(sp); }
   }
-  if (!hit || (talkPlayer.view === hit.voice && talkPlayer.state === 'playing')) return; // while it reads, a tap on a part jumps there already
+  return hit ?? null;
+}
+function offerHere(hit, x, y, ms = 4500) {
   hereHit = hit; hereChip.hidden = false;
   const w = hereChip.offsetWidth || 170;
-  const y = e.clientY < 140 ? e.clientY + 18 : e.clientY - 54;
-  Object.assign(hereChip.style, { left: `${Math.max(10, Math.min(innerWidth - w - 10, e.clientX - w / 2))}px`, top: `${Math.max(60, y)}px` });
-  hereTimer = setTimeout(hideHere, 4500);
+  Object.assign(hereChip.style, { left: `${Math.max(10, Math.min(innerWidth - w - 10, x - w / 2))}px`, top: `${Math.max(60, Math.min(innerHeight - 70, y))}px` });
+  clearTimeout(hereTimer); hereTimer = setTimeout(hideHere, ms);
+}
+// Choosing words (press and hold, then drag) offers it too, from where the chosen words begin; on an idea's page,
+// choosing words offers to keep them instead (see Keeping words).
+let selTimer = 0;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(() => {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return;
+    const start = sel.getRangeAt(0).startContainer; const el = start.nodeType === 1 ? start : start.parentElement;
+    if (!el?.closest('#view') || el.closest('input, textarea')) return;
+    const hit = hitFor(el); if (!hit) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    offerHere(hit, r.left + Math.min(r.width, 200) / 2, r.bottom + 14, 8000); // below the words: the phone's own copy menu sits above them
+  }, 350);
 });
+hereChip.addEventListener('pointerdown', (e) => e.preventDefault()); // a tap on it keeps the chosen words chosen until it reads
 function readPage() {
   if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; // not reading this page now: take it as it is now
   const v = pageVoice();

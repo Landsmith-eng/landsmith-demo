@@ -39,6 +39,11 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 **Major**
 - **Usage governor and plans.** Every call to Claude is counted to the person whose request made it (monthly, in dollars at list price). Plans: Free, Plus, Deep (and Unlimited, owner-assigned). Two modes on the admin page: *Measuring* (default, for alpha: no limits, testers see nothing) and *On* (after alpha: a heads-up under a Talk reply at 80%; past 100% Claude rests for that person with the renewal date and a link to the plans). New **Your plan** screen (shares of the month, never money) with "Ask for Plus/Deep"; requests appear on the admin page, where the owner sets plans. A Talk message that could not be sent goes back in the box.
 
+- **Minutes** (this file), its shared page (`scripts/minutes_page.mjs`), and `CLAUDE.md` asking every session to read and add to it.
+
+**Minor / fixes**
+- **Listen from here** now also comes from choosing words (press and hold, then drag), not only a tap: the button appears just below the chosen words and reads from there. Jon could not find the feature; choosing words had been ignored on purpose (it was kept for "Keep these words", which only applies on an idea's page).
+
 **Decisions and conversations**
 - Jon: "I don't want to compromise the quality of the responses. A usage governor for each should spark a need to upgrade their use package (after we complete alpha testing)." This replaced Claude's suggestion to move background jobs to a cheaper model.
 - Jon asked for these minutes (this file), for people and for Claude's own searches.
