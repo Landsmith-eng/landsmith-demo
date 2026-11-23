@@ -160,6 +160,15 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 -- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
 -- choose their next ideas and, later, to compare what they say now with what they said then.
+-- Thumbs up or down on a passage: one per person per passage, changed or cleared at will. They feed the trainer's
+-- read on what lands (which rooms to bring more of).
+CREATE TABLE IF NOT EXISTS votes (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL REFERENCES nodes(id),
+  vote INTEGER NOT NULL,                -- 1 up, -1 down
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, node_id)
+);
 -- What each person's use of Claude has cost this month (dollars, at list prices), for the usage governor.
 CREATE TABLE IF NOT EXISTS usage_month (
   user_id INTEGER NOT NULL REFERENCES users(id),

@@ -142,3 +142,29 @@ test('a passage met before says so, and the day\'s idea stops coming back once t
     assert.ok(db.prepare("SELECT COUNT(*) AS n FROM trainer_log WHERE action = 'shown'").get().n >= 5);
   } finally { server.close(); }
 });
+
+test('thumbs and saving show on the passage; recently read lists newest first and finds by a loose word', async () => {
+  const { db, server, call } = await boot();
+  try {
+    const a = (await call(`/api/trainer/next?date=${D}`)).json.story;
+    assert.equal(a.saved, false); assert.equal(a.vote, 0);
+    const b = (await call(`/api/trainer/next?date=${D}&from=${a.id}&how=more`)).json.story;
+    assert.equal((await call('/api/vote', { node_id: b.id, vote: 1 })).json.vote, 1);
+    assert.equal((await call('/api/vote', { node_id: b.id, vote: -1 })).json.vote, -1, 'a thumb can be changed');
+    assert.equal((await call('/api/vote', { node_id: b.id, vote: 7 })).status, 400);
+    await call('/api/favorite', { node_id: b.id, on: true });
+    const again = (await call(`/api/trainer/next?date=${D}&id=${b.id}`)).json.story;
+    assert.equal(again.saved, true); assert.equal(again.vote, -1);
+    await call('/api/vote', { node_id: b.id, vote: 0 });
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM votes').get().n, 0, 'taken back');
+    // Recently read: newest first, each once, with the painting it was shown on.
+    const r = (await call('/api/recent')).json.items;
+    assert.equal(r[0].id, b.id); assert.ok(r.some((x) => x.id === a.id)); assert.equal(new Set(r.map((x) => x.id)).size, r.length);
+    assert.ok(r[0].img && r[0].snippet.length > 20 && r[0].title);
+    // A loose search: a word from the passage in another form, any case.
+    const word = (db.prepare('SELECT plain_face FROM nodes WHERE id = ?').get(b.id).plain_face.match(/\b[a-z]{7,}\b/i) ?? [''])[0];
+    const found = (await call(`/api/recent?q=${encodeURIComponent(word.toUpperCase() + 's')}`)).json.items;
+    assert.ok(found.some((x) => x.id === b.id), `found by "${word}s"`);
+    assert.equal((await call('/api/recent?q=zzqqxx')).json.items.length, 0);
+  } finally { server.close(); }
+});

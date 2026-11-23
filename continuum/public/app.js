@@ -98,6 +98,7 @@ function render(...nodes) {
     h('button', { type: 'button', class: 'link', onclick: () => { store.del(DATE_KEY); showToday(); } }, 'use real date'));
   view.replaceChildren(...[banner, ...nodes].filter(Boolean));
   pageVoiceCache = null;
+  noteScreen();
   // Listen in the corner on every screen, except those with their own (a story, Talk) and the idea cards (their own Listen).
   document.documentElement.classList.toggle('page-listen', !staged && !view.querySelector('.trainer-story, .talk-compose, .talk-turn'));
   window.scrollTo(0, 0);
@@ -1045,6 +1046,116 @@ function showPlans() {
       ...a.plans.map(card));
   });
 }
+// ── Back ──
+// Every screen drawn goes on a stack, and into the phone's history, so the phone's back button (or the arrow on a
+// passage) returns to the screen before, exactly as it was (the same passage on the same painting), instead of closing
+// the app. Look and Contemplate close first. At the first screen, back says "Press back again to exit"; a second
+// press within a few seconds leaves. A screen is re-opened by calling its function again with the same arguments.
+const navKey = Math.random().toString(36).slice(2, 8); // entries from before a reload are not this stack's
+const navStack = []; let navAt = -1; let pendingNav = null; let restoreTo = null; let exitArmed = 0;
+const navId = (args) => { try { return JSON.stringify(args, (k, v) => (typeof v === 'function' ? undefined : v && typeof v === 'object' && k !== '' && 'id' in v ? `#${v.id}` : v)); } catch { return String(Math.random()); } };
+function navigable(name, fn, keep = (a) => a) {
+  return function navigated(...args) { if (restoreTo == null) pendingNav = { name, fn, args: keep(args), id: navId(keep(args)) }; return fn.apply(this, args); };
+}
+function noteScreen() {
+  if (restoreTo != null) { navAt = restoreTo; restoreTo = null; pendingNav = null; showBackArrow(); return; }
+  const e = pendingNav; pendingNav = null; if (!e) return;
+  const top = navStack[navAt];
+  if (top && top.name === e.name && top.id === e.id) { navStack[navAt] = e; return; } // the same screen again: no new step
+  navStack.length = navAt + 1; navStack.push(e); navAt = navStack.length - 1;
+  if (navAt === 0) {
+    // The first screen: a root entry to fall back to (the exit), and the screen itself above it.
+    history.replaceState({ nav: 0, k: navKey, root: true }, '');
+    history.pushState({ nav: 0, k: navKey }, '');
+  } else history.pushState({ nav: navAt, k: navKey }, '');
+  showBackArrow();
+}
+const backLayers = []; let skipPops = 0;
+// Look, Contemplate: open over the screen; back closes them first.
+function backCloses(close) { backLayers.push(close); history.pushState({ ...(history.state ?? {}), layer: backLayers.length }, ''); }
+function backDone(close) { const i = backLayers.indexOf(close); if (i < 0) return; backLayers.splice(i, 1); skipPops++; history.back(); }
+addEventListener('popstate', (ev) => {
+  if (skipPops) { skipPops--; return; }
+  if (backLayers.length) { backLayers.pop()(); return; }
+  const st = ev.state;
+  if (st?.k === navKey && st.root) {
+    // Back at the very first screen: once more leaves the app; otherwise it stays, ready for the next back.
+    exitArmed = Date.now(); notice('Press back again to exit.');
+    setTimeout(() => { if (Date.now() - exitArmed >= 2900 && history.state?.root) history.pushState({ nav: 0, k: navKey }, ''); }, 3000);
+    return;
+  }
+  const e = st?.k === navKey ? navStack[st.nav] : null;
+  if (!e) return; // an entry from before the app reloaded: stay where we are
+  if (st.nav === navAt) return;
+  stopTalkVoice?.();
+  restoreTo = st.nav; e.fn(...e.args);
+});
+// The arrow on a passage (and the screens that have one) shows only when there is somewhere to go back to.
+function showBackArrow() { document.querySelectorAll('.back-arrow').forEach((b) => { b.hidden = navAt <= 0; }); }
+const backArrow = () => h('button', { type: 'button', class: 'back-arrow', 'aria-label': 'Back', hidden: navAt <= 0, onclick: () => history.back() },
+  icon('<path d="M15 5l-7 7 7 7"/>'), h('span', {}, 'Back'));
+
+// ── Small outline icons ──
+function icon(paths) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'ico');
+  s.innerHTML = paths; // fixed drawings from this file, never user text
+  return s;
+}
+const ICONS = {
+  again: '<path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4v5h5"/><path d="M10.5 9.2l4.5 2.8-4.5 2.8z"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
+  share: '<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.3 10.8l7.4-4.1M8.3 13.2l7.4 4.1"/>',
+  save: '<path d="M6.5 3.5h11v17l-5.5-3.8-5.5 3.8z"/>',
+  up: '<path d="M7.5 11v9h-3v-9z"/><path d="M7.5 11l3.6-7.2a1.9 1.9 0 0 1 3.5 1.3L14 9.5h5a2 2 0 0 1 2 2.4l-1.3 6.5A2 2 0 0 1 17.7 20H7.5"/>',
+  down: '<g transform="rotate(180 12 12)"><path d="M7.5 11v9h-3v-9z"/><path d="M7.5 11l3.6-7.2a1.9 1.9 0 0 1 3.5 1.3L14 9.5h5a2 2 0 0 1 2 2.4l-1.3 6.5A2 2 0 0 1 17.7 20H7.5"/></g>',
+};
+// A passage (or a kept line) as text to copy or share: the words, then who wrote them, the work, and a link, so a saved
+// quote keeps its source.
+function quoteText({ title, text, thinker, year, citation, url, id }) {
+  const cite = (citation ?? '').replace(/\s*Summary, not (a )?quotation\.?$/, '').trim();
+  const link = url || (id ? `${location.origin}/?story=${encodeURIComponent(id)}` : location.origin);
+  return [title, '', text.trim(), '', `— ${[thinker, year != null ? (year < 0 ? `${-year} BCE` : year) : null].filter(Boolean).join(', ') || 'Continuum'}`, cite ? `Source: ${cite}` : '', link, '', 'From Continuum'].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim();
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {
+    const ta = h('textarea', { style: 'position:fixed;opacity:0' }); ta.value = text; document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch { /* none */ } ta.remove(); return ok;
+  }
+}
+// The row of icons under a passage or quote: each optional. Quiet until touched.
+function actionRow({ quote, onAgain = null, node = null, saved = false, vote = 0, onSaved = null }) {
+  const btn = (name, label, fn, pressed = null) => {
+    const b = h('button', { type: 'button', class: `act act-${name}`, 'aria-label': label, title: label }, icon(ICONS[name]));
+    if (pressed != null) b.setAttribute('aria-pressed', String(pressed));
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(b); }); return b;
+  };
+  const row = h('div', { class: 'acts', role: 'toolbar', 'aria-label': 'Passage actions' });
+  if (onAgain) row.append(btn('again', 'Play it again', () => onAgain()));
+  row.append(btn('copy', 'Copy, with its source', async () => notice(await copyText(quoteText(quote)) ? 'Copied, with its source.' : 'Could not copy on this phone.')));
+  row.append(btn('share', 'Share', async () => {
+    const text = quoteText(quote);
+    if (navigator.share) { try { await navigator.share({ title: quote.title, text }); return; } catch (e) { if (e?.name === 'AbortError') return; } }
+    notice(await copyText(text) ? 'Copied. Paste it wherever you want to share it.' : 'Could not share on this phone.');
+  }));
+  if (node) {
+    let on = Boolean(saved);
+    const sv = btn('save', on ? 'Saved' : 'Save', async (b) => {
+      on = !on; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Saved' : 'Save');
+      try { await api('/api/favorite', { method: 'POST', body: { node_id: node, on } }); if (on) notice('Saved. You will find it in You.'); onSaved?.(on); }
+      catch { on = !on; b.setAttribute('aria-pressed', String(on)); notice('Could not save that. Try again.'); }
+    }, on);
+    let v = vote; const ups = []; // the two thumbs, one choice (tap again to take it back)
+    const thumb = (dir) => btn(dir > 0 ? 'up' : 'down', dir > 0 ? 'This landed' : 'Not for me', async () => {
+      const was = v; v = v === dir ? 0 : dir; ups.forEach(([d, b]) => b.setAttribute('aria-pressed', String(v === d)));
+      try { await api('/api/vote', { method: 'POST', body: { node_id: node, vote: v } }); }
+      catch { v = was; ups.forEach(([d, b]) => b.setAttribute('aria-pressed', String(v === d))); }
+    }, vote === dir);
+    const tu = thumb(1); const td = thumb(-1); ups.push([1, tu], [-1, td]);
+    row.append(sv, tu, td);
+  }
+  return row;
+}
 function notice(text) {
   const n = h('div', { class: 'toast', role: 'status' }, text);
   document.body.append(n); setTimeout(() => n.remove(), 6000);
@@ -1448,6 +1559,7 @@ function gaze(src, { extra = [], hint: hintText = 'Drag to look around · pinch 
   const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, live, shadows, lights, ...extra, hint, close);
   document.body.append(box);
   document.documentElement.classList.add('gazing');
+  backCloses(leave); // the phone's back button returns from the picture
   let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false, x0 = 0, y0 = 0;
   const fit = () => {
     base = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight);
@@ -1523,7 +1635,7 @@ function gaze(src, { extra = [], hint: hintText = 'Drag to look around · pinch 
     box.classList.remove('in'); document.documentElement.classList.remove('gazing');
     liveOut(); creaturesInto(null);
     setTimeout(() => box.remove(), still ? 0 : 600);
-    lookBtn.focus(); onLeave?.();
+    lookBtn.focus(); backDone(leave); onLeave?.();
   }
   return { leave };
 }
@@ -2047,6 +2159,36 @@ function showToday() {
 
 // The diary of discovery: new roads chosen from the user's own writing, the threads they have found between ideas they
 // met, and everything they wrote or kept, newest first.
+// What they have read, newest first (title, when, a few lines), each opening the exact passage again (on the same
+// painting); a search box finds one by any word in it, loosely ("courage" finds "courageous").
+const whenRead = (date) => {
+  const d = Math.round((Date.parse(`${today()}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86400000);
+  return d <= 0 ? 'Today' : d === 1 ? 'Yesterday' : d < 7 ? new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'long' }) : new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+function recentlyRead(first) {
+  if (!first?.items?.length) return null;
+  const list = h('ul', { class: 'path recent-list' }); let shown = 8; let items = first.items;
+  const more = h('button', { type: 'button', class: 'link small', style: 'padding:0' }, 'Show more');
+  const draw = () => {
+    list.replaceChildren(...items.slice(0, shown).map((it) => h('li', {}, h('button', { type: 'button', class: 'recent-item', onclick: () => (it.kind === 'story' ? trainerNext({ id: it.id }, { img: it.img }) : walkTo(it.id, [])) },
+      h('span', { class: 't' }, it.title), h('span', { class: 'muted small recent-meta' }, [it.thinker, whenRead(it.date)].filter(Boolean).join(' · ')),
+      h('span', { class: 'muted small recent-snippet' }, it.snippet)))));
+    if (!items.length) list.replaceChildren(h('li', { class: 'muted small' }, 'Nothing you have read matches that.'));
+    more.hidden = items.length <= shown;
+  };
+  more.addEventListener('click', () => { shown += 12; draw(); });
+  const find = h('input', { type: 'search', class: 'recent-search', id: 'recent-search', placeholder: 'Find something you read…', 'aria-label': 'Search what you have read', enterkeyhint: 'search' });
+  let t = 0; let asked = 0;
+  find.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const mine = ++asked; const r = await api(`/api/recent?q=${encodeURIComponent(find.value.trim())}`).catch(() => null);
+      if (mine !== asked || !r) return; items = r.items; shown = 8; draw();
+    }, 250);
+  });
+  draw();
+  return h('section', { class: 'diary-block recent' }, h('h2', {}, 'Recently read'), find, list, more);
+}
 const ENTRY_LABEL = { answer: 'Your answer', note: 'Your note', kept: 'A line you kept', highlight: 'Words you kept' };
 function showJournal() {
   setNav('journal');
@@ -2076,6 +2218,7 @@ function showJournal() {
           h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: open(e.id) }, h('span', { class: 't' }, e.title)),
           e.prompt && h('p', { class: 'muted small' }, e.prompt),
           e.kind === 'kept' || e.kind === 'highlight' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body),
+          (e.kind === 'kept' || e.kind === 'highlight') && actionRow({ quote: { title: e.title, text: e.body, thinker: e.thinker ?? null, id: e.id } }),
           e.kind === 'highlight' && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: async (ev) => {
             const li = ev.currentTarget.closest('li');
             await api(`/api/highlight/${e.hid}`, { method: 'DELETE' }).then(() => li.remove()).catch(() => notice('Could not remove it. Try again.'));
@@ -2097,6 +2240,7 @@ function showJournal() {
         return li;
       })));
     const al = await api('/api/me/allowance').catch(() => null);
+    const recentBlock = recentlyRead(await api('/api/recent').catch(() => null));
     const planLine = al?.mode === 'on' && h('p', { class: 'muted small plan-line' }, `Your plan: ${al.name} · ${Math.min(100, Math.round(al.share * 100))}% of this month used · `, plansLink('Plans'));
     const st = await api('/api/stance').catch(() => null);
     const journey = st && (st.journey.answered
@@ -2148,7 +2292,7 @@ function showJournal() {
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, unfinishedBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -4086,6 +4230,7 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
       !task && word('Straight to my thoughts', () => { againLine.remove(); reveal(); reflectOn(); }),
       !task && word('Something new', act({ go: 'more' })))); // a long story read aloud: the questions come anyway in the end
   render(h('article', { class: 'trainer-story' },
+    backArrow(),
     greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
     h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
     h('h1', {}, s.title),
@@ -4093,6 +4238,8 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
     againLine,
     ...storyParas,
     (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation, 'Read it ↗', 'fulltext', s.id)),
+    actionRow({ quote: { title: s.title, text: s.story, thinker: s.thinker, year: s.year, citation: s.citation, url: s.url, id: s.id },
+      onAgain: () => (trainerContemplate() ? contemplateIt() : playFrom(voice, 0)), node: s.id, saved: s.saved, vote: s.vote ?? 0, onSaved: (on) => { s.saved = on; } }),
     later));
   // A tap on the story says "ready": the questions come at once.
   view.querySelector('.trainer-story')?.addEventListener('click', (e) => { if (!e.target.closest('a, button, textarea')) reveal(); });
@@ -4672,5 +4819,18 @@ function wake() {
 for (const ev of ['pointerdown', 'keydown', 'mousemove']) addEventListener(ev, wake, { passive: true });
 document.addEventListener('scroll', () => { if (scrollY < 40) wake(); }, { passive: true }); // back at the top: show them again
 wake();
+// Every screen function, wrapped so that drawing it is a step the back button can return to.
+showPractice = navigable('practice', showPractice); showPlans = navigable('plans', showPlans); showReview = navigable('review', showReview);
+showGallery = navigable('gallery', showGallery); showMap = navigable('map', showMap); showToday = navigable('today', showToday);
+showJournal = navigable('you', showJournal); showTalk = navigable('talk', showTalk); showPrivacy = navigable('privacy', showPrivacy);
+showPaths = navigable('paths', showPaths); showPathOutcome = navigable('path-outcome', showPathOutcome); showTalkHistory = navigable('talks', showTalkHistory);
+showHomework = navigable('homework', showHomework); showStance = navigable('stance', showStance); walkTo = navigable('idea', walkTo);
+showMind = navigable('mind', showMind); showFindHelp = navigable('find-help', showFindHelp); showHandover = navigable('handover', showHandover);
+showTherapies = navigable('therapies', showTherapies); showTherapy = navigable('therapy', showTherapy); showSchool = navigable('school', showSchool);
+showSurvey = navigable('survey', showSurvey); showSurveyResult = navigable('survey-result', showSurveyResult); showThink = navigable('think', showThink);
+showTrainer = navigable('trainer', showTrainer); showCampus = navigable('campus', showCampus); showWorkThrough = navigable('work', showWorkThrough);
+showParthenon = navigable('parthenon', showParthenon); showTopic = navigable('topic', showTopic); renderCase = navigable('case', renderCase);
+// A passage comes back exactly as it was: the same story on the same painting, without the greeting or a half-done task.
+trainerStoryView = navigable('story', trainerStoryView, ([st]) => [st]);
 if (store.get('continuum.join')) joinFromLink(store.get('continuum.join'));
 else arrive();

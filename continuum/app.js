@@ -588,9 +588,51 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     return {
       id: n.id, title: n.title, thinker: n.thinker, year: n.year, type: n.type, field: n.field, room: n.room, room_name: roomName.get(n.room) ?? null,
       story: n.plain_face, prompt: n.prompt, citation: n.source_citation, url: n.source_url, analysis_url: n.analysis_url, img, today,
+      saved: Boolean(voteq.saved.get(uid, n.id)), vote: voteq.get.get(uid, n.id)?.vote ?? 0,
       ...choicesFor(n, uid, k, states, date),
     };
   }
+  // ── Votes, and what was read ──
+  const voteq = {
+    get: db.prepare('SELECT vote FROM votes WHERE user_id = ? AND node_id = ?'),
+    set: db.prepare("INSERT INTO votes (user_id, node_id, vote) VALUES (?, ?, ?) ON CONFLICT(user_id, node_id) DO UPDATE SET vote = excluded.vote, at = datetime('now')"),
+    clear: db.prepare('DELETE FROM votes WHERE user_id = ? AND node_id = ?'),
+    saved: db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND node_id = ?'),
+    byRoom: db.prepare(`SELECT n.room, SUM(v.vote = 1) AS up, SUM(v.vote = -1) AS down FROM votes v JOIN nodes n ON n.id = v.node_id
+      WHERE v.user_id = ? GROUP BY n.room`),
+  };
+  // Thumbs up or down on a passage (vote 1 or -1; 0 takes it back).
+  app.post('/api/vote', auth, (req, res) => {
+    const n = q.node.get(String(req.body?.node_id ?? '')); const vote = Number(req.body?.vote);
+    if (!n || ![1, -1, 0].includes(vote)) return res.status(400).json({ error: 'bad' });
+    if (vote) voteq.set.run(req.user.id, n.id, vote); else voteq.clear.run(req.user.id, n.id);
+    res.json({ vote });
+  });
+  // What they have read, newest first: passages the trainer showed them and ideas they opened, each once (its latest
+  // time), with the painting it was shown on, so it reopens as it was. q: a loose search (every word, any form of it,
+  // in the title, the thinker, the passage, the field or the room).
+  // (Within the same second, the later row first.)
+  const recentQ = db.prepare(`SELECT node_id, MAX(at) AS at, MAX(local_date) AS date, kind, img, MAX(seq) AS seq FROM (
+      SELECT node_id, at, local_date, 'story' AS kind, img, id AS seq FROM trainer_log WHERE user_id = :uid AND action = 'shown'
+      UNION ALL SELECT node_id, at, local_date, 'idea' AS kind, NULL AS img, id AS seq FROM events WHERE user_id = :uid AND kind = 'walk' AND node_id IS NOT NULL)
+    GROUP BY node_id ORDER BY at DESC, seq DESC LIMIT 400`);
+  const stem = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').replace(/(ings?|ed|es|s|ly)$/, (m, _x, i, str) => (str.length - m.length >= 4 ? '' : m));
+  app.get('/api/recent', auth, (req, res) => {
+    const words = String(req.query.q ?? '').split(/\s+/).map(stem).filter((w) => w.length >= 2).slice(0, 8);
+    const out = [];
+    for (const r of recentQ.all({ uid: req.user.id })) {
+      const n = q.node.get(r.node_id); if (!n) continue;
+      if (words.length) {
+        const hay = [n.title, n.thinker, n.plain_face, n.field, roomName.get(n.room), n.source_citation].filter(Boolean).join(' ').toLowerCase();
+        if (!words.every((w) => hay.includes(w))) continue;
+      }
+      // The latest painting it was shown on (for a passage).
+      const img = r.kind === 'story' ? db.prepare("SELECT img FROM trainer_log WHERE user_id = ? AND node_id = ? AND action = 'shown' AND img IS NOT NULL ORDER BY id DESC LIMIT 1").get(req.user.id, n.id)?.img ?? null : null;
+      out.push({ id: n.id, title: n.title, thinker: n.thinker, date: r.date, at: r.at, kind: r.kind, img, snippet: clip(n.plain_face ?? '', 170) });
+      if (out.length >= 60) break;
+    }
+    res.json({ items: out });
+  });
   app.get('/api/trainer/next', auth, (req, res) => {
     const date = localDate(req.query.date); const uid = req.user.id;
     const from = q.node.get(String(req.query.from ?? '')); const how = String(req.query.how ?? '');
@@ -609,6 +651,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     }
     if (!n) {
       const count = {}; for (const r of tnq.byRoom.all(uid)) (count[r.room] ??= {})[r.action] = r.n;
+      for (const r of voteq.byRoom.all(uid)) { const c = (count[r.room] ??= {}); c.up = r.up; c.down = r.down; }
       const lastRooms = recent.filter((r) => r.action === 'shown').slice(0, 5).map((r) => q.node.get(r.node_id)?.room);
       const cands = tnq.stories.all().filter((x) => nodeOk(states, x) && x.id !== pickToday(uid, date) && !shownIds.has(x.id));
       const pool = cands.length ? cands : tnq.stories.all().filter((x) => nodeOk(states, x) && x.id !== from?.id);
@@ -617,6 +660,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
         const c = count[x.room] ?? {}; const total = (c.more ?? 0) + (c.respond ?? 0) + (c.deeper ?? 0) + (c.look ?? 0) + 2;
         let v = (hash(`${uid}|${x.id}|${recent.length}`) % 1000) / 1000;
         v += 1.2 * ((c.respond ?? 0) + (c.deeper ?? 0) + .5 * (c.look ?? 0)) / total - .8 * (c.more ?? 0) / total;
+        v += 1.1 * ((c.up ?? 0) - (c.down ?? 0)) / ((c.up ?? 0) + (c.down ?? 0) + 2); // what they said landed, and what did not
         if (how === 'near' && from && x.room === from.room) v += 3;
         if (how === 'far' && from && x.room !== from.room && !lastRooms.includes(x.room)) v += 3;
         if (!how && lastRooms.slice(0, 2).includes(x.room)) v -= .6;

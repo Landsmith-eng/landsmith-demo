@@ -34,6 +34,21 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 
 ---
 
+## 2026-11-23
+
+**Major**
+- **Back works like a phone app.** Every screen is a step in the phone's history: Android's back button returns to the screen before, exactly as it was (the same passage on the same painting), and forward works too. Look and Contemplate close first. At the first screen, back says "Press back again to exit"; a second press within three seconds leaves. An accidental "More, please" is undone with back.
+- **A back arrow** at the top of a passage, shown whenever there is somewhere to go back to.
+- **Recently read** in You: newest first, each passage once with its thinker, when it was read and a few lines; tapping reopens the exact passage on its painting. A search box finds anything read by a loose keyword (any case, plural or "-ing" forms; every word must match the title, thinker, passage, field, room or citation).
+- **Icons under each passage**: Play again, Copy, Share, Save, This landed, Not for me. They are small outlines, quiet until touched, and a choice made shows filled in. Copy and Share include the author, the work (citation) and a link, so a saved quote keeps its source. Save uses the existing favourites (shown in You). The thumbs are kept per passage and weigh on which rooms the trainer brings next. Kept lines in You get Copy and Share too.
+
+**Decisions and conversations**
+- From testing (Jon): back must not close the app; an in-app back arrow; a navigation stack so an accidental tap can be undone; a "Recently read" list in You, searchable by loose keyword; Claude-style outline action icons under each passage.
+
+**Suggestions / next**
+- Talk replies could carry the same icons (copy, share, thumbs); they have Listen and Repeat today.
+- A shared link to a passage (`/?story=…`) opens only for someone signed in; a public read-only view of a passage would make Share friendlier.
+
 ## 2026-11-21
 
 **Major**
