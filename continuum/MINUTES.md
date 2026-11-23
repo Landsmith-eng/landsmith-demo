@@ -45,8 +45,10 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 **Decisions and conversations**
 - From testing (Jon): back must not close the app; an in-app back arrow; a navigation stack so an accidental tap can be undone; a "Recently read" list in You, searchable by loose keyword; Claude-style outline action icons under each passage.
 
+- **Copy on Talk replies** (Jon: "Add copy"): beside Listen and Repeat, a copy icon puts the reply on the clipboard as plain text, then the ideas it drew on (with their thinkers) and any web pages it cited.
+
 **Suggestions / next**
-- Talk replies could carry the same icons (copy, share, thumbs); they have Listen and Repeat today.
+- Talk replies could also get Share and thumbs, like passages.
 - A shared link to a passage (`/?story=…`) opens only for someone signed in; a public read-only view of a passage would make Share friendlier.
 
 ## 2026-11-21

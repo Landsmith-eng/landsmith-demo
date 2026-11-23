@@ -2582,7 +2582,17 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       });
       btn.addEventListener('click', () => togglePlay(view));
       again.addEventListener('click', () => playFrom(view, 0));
-      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls chrome' }, btn, again)].filter(Boolean));
+      // Copy: the reply as plain text (ideas by their titles), then the ideas it drew on and the pages it found.
+      const copy = h('button', { type: 'button', class: 'act act-copy', 'aria-label': 'Copy, with its sources', title: 'Copy, with its sources' }, icon(ICONS.copy));
+      copy.addEventListener('click', async () => {
+        const body = text.split(/\n{2,}/).map((para) => spokenReply(para, refs)).filter(Boolean).join('\n\n');
+        const ideas = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((m) => m[1]))].map((id) => refs[id]).filter(Boolean)
+          .map((r) => `${r.title}${r.thinker ? ` (${r.thinker})` : ''}`);
+        const pages = (web ?? []).map((w) => `${w.title && w.title !== w.url ? `${w.title}: ` : ''}${w.url}`);
+        const out = [body, ideas.length ? `Ideas drawn on:\n${ideas.map((x) => `- ${x}`).join('\n')}` : '', pages.length ? `Sources:\n${pages.map((x) => `- ${x}`).join('\n')}` : '', 'From Continuum'].filter(Boolean).join('\n\n');
+        notice(await copyText(out) ? 'Copied, with its sources.' : 'Could not copy on this phone.');
+      });
+      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls chrome' }, btn, again, h('span', { class: 'acts' }, copy))].filter(Boolean));
       return view;
     }
     // A reply that lays out a path (several ideas named in order) can be walked as a journey: it leads the next days.
