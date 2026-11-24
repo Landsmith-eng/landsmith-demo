@@ -202,7 +202,9 @@ export async function answer(talk, { system, messages, onText, readIdea }) {
   };
   // The pages it cited; when a search was used without citing (the newer search can draw on its results without
   // marking them), the first few pages the search found, so the user can still see where the facts came from.
-  const done = (stop) => ({ stop, sources: [...(sources.size ? sources : new Map([...searched].slice(0, 4)))].map(([url, title]) => ({ url, title })) });
+  // A title that is really a scrap of a page (a PDF's running header, all capitals) shows as the site's name instead.
+  const tidy = (title, url) => { let host = url; try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { /* keep */ } return !title || title === url || /[/●]|\p{Lu}{4,}\s+\p{Lu}{4,}/u.test(title) ? host : title; };
+  const done = (stop) => ({ stop, sources: [...(sources.size ? sources : new Map([...searched].slice(0, 4)))].map(([url, title]) => ({ url, title: tidy(title, url) })) });
   for (let turn = 0; turn < 8; turn++) {
     const stream = talk.client.beta.messages.stream({
       model: talk.model,
