@@ -96,7 +96,7 @@ Boundaries
 // legislatures, and established news organizations (subdomains included). The wisdom itself comes from the map.
 export const TRUSTED_DOMAINS = [
   'plato.stanford.edu', 'iep.utm.edu', 'britannica.com', 'gutenberg.org', 'archive.org', 'standardebooks.org',
-  'nih.gov', 'cdc.gov', 'who.int', 'nature.com', 'science.org', 'pnas.org', 'apa.org', 'psychologytoday.com', 'pewresearch.org', 'nobelprize.org',
+  'nih.gov', 'cdc.gov', 'hhs.gov', 'who.int', 'plos.org', 'bmj.com', 'jamanetwork.com', 'thelancet.com', 'nejm.org', 'cochranelibrary.com', 'nature.com', 'science.org', 'pnas.org', 'apa.org', 'psychologytoday.com', 'pewresearch.org', 'nobelprize.org',
   'harvard.edu', 'yale.edu', 'stanford.edu', 'mit.edu', 'berkeley.edu', 'princeton.edu', 'columbia.edu', 'uchicago.edu', 'ox.ac.uk', 'cam.ac.uk', 'ucl.ac.uk',
   'supremecourt.gov', 'oyez.org', 'law.cornell.edu', 'congress.gov', 'justia.com', 'loc.gov', 'gov.uk',
   // (Some news sites cannot be searched by Anthropic's search and would make every request fail: AP, Reuters, the BBC,

@@ -2425,7 +2425,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       const found = await answer(talk, { system, messages, onText: (d) => { reply += d; }, readIdea: (id) => talkIdea(uid, date, states, id) });
       const sources = (await Promise.all(found.sources.map(async (p) => ((await pageCheck.check(p.url).catch(() => false)) ? p : null)))).filter(Boolean);
       const refs = talkRefs(states, referencedIds(reply));
-      res.json({ ok: true, text, depth, reply: reply.trim().replace(/\[\[([a-z0-9_]+)\]\]/g, (m, id) => (refs[id] ? `«${refs[id].title}»` : m)), ideas: Object.values(refs).map((r) => `${r.title}${r.thinker ? ` (${r.thinker})` : ''}`), sources });
+      res.json({ ok: true, found: found.sources.length, text, depth, reply: reply.trim().replace(/\[\[([a-z0-9_]+)\]\]/g, (m, id) => (refs[id] ? `«${refs[id].title}»` : m)), ideas: Object.values(refs).map((r) => `${r.title}${r.thinker ? ` (${r.thinker})` : ''}`), sources });
     } catch (e) { res.json({ ok: false, why: claudeTrouble(e), status: e.status ?? null, message: String(e.error?.error?.message ?? e.message ?? '').slice(0, 300) }); }
   });
   app.post('/api/talk', auth, async (req, res) => {
