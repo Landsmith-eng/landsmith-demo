@@ -34,6 +34,19 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 
 ---
 
+## 2026-11-25
+
+**Major**
+- **Voice or text replies, by choice.** Talk replies: *Match me* (spoken in, spoken back; typed in, text; the default), *Reply out loud*, or *Text only*. A quick toggle sits beside Speak and Send; the default is in You ("How Talk replies"); the old always-aloud setting carries over. While a reply is read, the words stay on screen and follow along; one tap on the conversation stops it, a double tap on a word reads from there, and when quiet a tap offers Listen from here.
+- **People they mention** join What Continuum has learned ("Your wife", "Your boss", from plain phrases in their own words; no extra call), editable like the rest. Nudges now use the profile; Talk offers to go deeper instead of quizzing.
+- **Nothing kept from a crisis message.** Talk waits for the safety check before keeping anything from a message: a flagged one adds nothing to their views, people or summary, and the summary never records crisis details. Answers to passages get the same check; a flagged answer keeps no themes and shows help (988 / 911) beside the reply. The conversation itself stays theirs (deletable from Where your words go).
+
+**Decisions and conversations**
+- Jon restated the wise-friend brief (talk about anything; curated library; 1–2 thinkers and an offer to go deeper; a private profile incl. people mentioned, what lands, skips and follow-ups, depth, interview answers; see/edit/delete; never store crisis details; voice or text replies by choice). Most of it shipped 2026-11-24; this day added the rest.
+
+**Minor / fixes**
+- Talk's sources list no longer shows the same page twice.
+
 ## 2026-11-24
 
 **Major**

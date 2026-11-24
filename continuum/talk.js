@@ -205,7 +205,12 @@ export async function answer(talk, { system, messages, onText, readIdea }) {
   // marking them), the first few pages the search found, so the user can still see where the facts came from.
   // A title that is really a scrap of a page (a PDF's running header, all capitals) shows as the site's name instead.
   const tidy = (title, url) => { let host = url; try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { /* keep */ } return !title || title === url || /[/●]|\p{Lu}{4,}\s+\p{Lu}{4,}/u.test(title) ? host : title; };
-  const done = (stop) => ({ stop, sources: [...(sources.size ? sources : new Map([...searched].slice(0, 4)))].map(([url, title]) => ({ url, title: tidy(title, url) })) });
+  const done = (stop) => {
+    const seenTitle = new Set(); // one link per page, however many copies the search returned
+    const list = [...(sources.size ? sources : new Map([...searched].slice(0, 6)))].map(([url, title]) => ({ url, title: tidy(title, url) }))
+      .filter((x) => { const k = x.title.toLowerCase().replace(/\s*[:|–-].*$/, '').trim(); if (seenTitle.has(k)) return false; seenTitle.add(k); return true; });
+    return { stop, sources: list.slice(0, sources.size ? 12 : 4) };
+  };
   for (let turn = 0; turn < 8; turn++) {
     const stream = talk.client.beta.messages.stream({
       model: talk.model,
