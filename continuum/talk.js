@@ -26,7 +26,12 @@ function meter(client, talk) {
   // The usage governor (talk.blocked, set by the app): someone past this month's allowance gets no further calls.
   // Never a lesser answer: a call either runs in full or does not run.
   const gate = () => { const why = talk.blocked?.(); if (why) throw Object.assign(new Error('allowance'), { status: 402, allowance: why }); };
-  if (typeof m.create === 'function') { const create = m.create.bind(m); m.create = async (body, opts) => { gate(); const r = await create(body, opts); note(r, body); return r; }; }
+  // The SDK's own promise is returned untouched (its streaming calls create(...).withResponse() on it); a streamed
+  // request is noted by stream() below, from its final message.
+  if (typeof m.create === 'function') {
+    const create = m.create.bind(m);
+    m.create = (body, opts) => { gate(); const p = create(body, opts); if (!body?.stream) Promise.resolve(p).then((r) => note(r, body), () => {}); return p; };
+  }
   if (typeof m.stream === 'function') {
     const stream = m.stream.bind(m);
     m.stream = (body, opts) => { gate(); const st = stream(body, opts); st?.finalMessage?.().then((r) => note(r, body), () => {}); return st; };
