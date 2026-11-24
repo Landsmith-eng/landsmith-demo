@@ -2241,6 +2241,7 @@ function showJournal() {
       })));
     const al = await api('/api/me/allowance').catch(() => null);
     const recentBlock = recentlyRead(await api('/api/recent').catch(() => null));
+    const learnedLine = h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showLearned() }, 'What Continuum has learned about you →'));
     const planLine = al?.mode === 'on' && h('p', { class: 'muted small plan-line' }, `Your plan: ${al.name} · ${Math.min(100, Math.round(al.share * 100))}% of this month used · `, plansLink('Plans'));
     const st = await api('/api/stance').catch(() => null);
     const journey = st && (st.journey.answered
@@ -2292,7 +2293,7 @@ function showJournal() {
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, learnedLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2830,6 +2831,58 @@ function helpCard({ risk, imminent }) {
 
 // Where your words go: what is kept, where, who sees it, what is sent elsewhere to make the app work, and the buttons to
 // take it all or erase it. Also: what Continuum is not.
+// ── What Continuum has learned about you ──
+// The private picture Talk and the trainer use to choose examples and challenges: each item with where it came from,
+// to reword or remove; notes of their own to add; and a way to have it all forgotten.
+const LEARNED_GROUPS = [['theme', 'What your answers keep coming back to'], ['lands', 'What lands with you'], ['flat', 'What tends to fall flat'],
+  ['practice', 'Practices you are drawn to'], ['stance', 'Where you stand in the great debates'], ['depth', 'How deep to go'], ['note', 'What you have told Continuum']];
+function showLearned() {
+  setNav('');
+  return guarded(async () => {
+    pageBg = TAB_BG.you;
+    const body = h('div', {});
+    const draw = (items) => {
+      const groups = LEARNED_GROUPS.map(([kind, title]) => {
+        const mine = items.filter((i) => i.kind === kind); if (!mine.length) return null;
+        return h('section', { class: 'diary-block learned' }, h('h2', {}, title), h('ul', { class: 'path' }, mine.map((it) => {
+          const li = h('li', {});
+          const show = () => li.replaceChildren(h('p', { class: 'learned-text' }, it.text), h('p', { class: 'muted small' }, it.edited ? `${it.from} · reworded by you` : it.from),
+            !it.fixed && h('div', { class: 'row', style: 'gap:18px;justify-content:flex-start' },
+              it.kind !== 'note' && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: edit }, 'Reword'),
+              h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: remove }, 'Remove')));
+          async function remove() {
+            const r = it.kind === 'note' ? await api(`/api/me/profile/note/${it.note}`, { method: 'DELETE' }) : await api('/api/me/profile/item', { method: 'POST', body: { key: it.key, text: null } });
+            draw(r.items); notice('Removed. Continuum will not use it.');
+          }
+          function edit() {
+            const ta = h('textarea', { rows: '2', maxlength: '300', 'aria-label': 'Reword it' }); ta.value = it.text;
+            li.replaceChildren(ta, h('div', { class: 'row', style: 'gap:12px;justify-content:flex-start' },
+              h('button', { type: 'button', class: 'btn', onclick: async () => { const r = await api('/api/me/profile/item', { method: 'POST', body: { key: it.key, text: ta.value } }); draw(r.items); } }, 'Save'),
+              h('button', { type: 'button', class: 'link small', onclick: show }, 'Cancel')));
+            ta.focus();
+          }
+          show(); return li;
+        })));
+      }).filter(Boolean);
+      const add = h('textarea', { rows: '2', maxlength: '300', placeholder: 'Something Continuum should know about you (for example: "I teach high school", "go easy on religion", "I like hard questions").', 'aria-label': 'Something to know about you' });
+      const addBtn = h('button', { type: 'button', class: 'btn ghost', onclick: async () => { if (!add.value.trim()) return; const r = await api('/api/me/profile/note', { method: 'POST', body: { text: add.value } }); draw(r.items); } }, 'Add it');
+      const forget = h('button', { type: 'button', class: 'link small danger', style: 'padding:0' }, 'Forget everything learned');
+      forget.addEventListener('click', () => {
+        forget.replaceWith(h('div', { class: 'learned-forget' }, h('p', { class: 'small' }, 'Forget everything Continuum has learned about you? It starts again from now. What you wrote, kept and said stays yours.'),
+          h('div', { class: 'row', style: 'gap:12px;justify-content:flex-start' },
+            h('button', { type: 'button', class: 'btn danger', onclick: async () => { const r = await api('/api/me/profile/forget', { method: 'POST', body: {} }); draw(r.items); notice('Forgotten. It starts again from now.'); } }, 'Forget it all'),
+            h('button', { type: 'button', class: 'link small', onclick: () => draw(items) }, 'Keep it'))));
+      });
+      body.replaceChildren(...(groups.length ? groups : [h('p', { class: 'muted' }, 'Nothing yet. As you answer passages, talk and give a thumbs up or down, Continuum starts to see what lands with you.')]),
+        h('section', { class: 'diary-block learned' }, h('h2', {}, 'Tell it something'), add, h('div', { class: 'row', style: 'justify-content:flex-start' }, addBtn)),
+        h('p', {}, forget));
+    };
+    draw((await api('/api/me/profile')).items);
+    render(h('h1', {}, 'What Continuum has learned'),
+      h('p', { class: 'muted' }, 'A private picture, built from what you do here, so conversations and passages fit you: the examples, the angles, the challenges. It is held loosely; tell Talk when it gets you wrong, or change it here. It stays with your account. It is never sold or shared, and it is not written into the server\'s logs.'),
+      body, h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go →')));
+  });
+}
 function showPrivacy(focus = null) {
   setNav('');
   const sec = (title, ...body) => h('section', { class: 'diary-block privacy' }, h('h2', {}, title), ...body);
@@ -2868,6 +2921,9 @@ function showPrivacy(focus = null) {
     focus === 'help' && help,
     sec('What is kept',
       p('Your name; what you write and say here (daily answers, notes, conversations and their summaries, problems you work through, survey answers); and what you do (which ideas you open, the days you visit), so Continuum can choose what comes next and pick up where you left off.')),
+    sec('What Continuum learns about you',
+      p('From what you do here (the themes in your answers, what lands and what falls flat, the practices you are drawn to, where you stand in the great debates, how deep you like to go) Continuum keeps a private picture of you, so Talk and the trainer can choose examples and challenges that fit. It is held loosely: tell it when it gets you wrong. It stays with your account, is never sold or shared, and is not written into the server\'s logs. You can see it, reword or remove any part, add to it, or have it all forgotten.'),
+      p(h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showLearned() }, 'What Continuum has learned about you →'))),
     sec('Where, and who can see it',
       p('In one database on Continuum\'s own server, run by Render in Oregon, USA, with a nightly copy kept for fourteen days in case something breaks. You reach it through your personal link, which works like a password: keep it private. The people who run Continuum can reach the server to keep it working; they do not read what people write.')),
     sec('What is sent elsewhere, to make it work',
@@ -4851,7 +4907,7 @@ wake();
 // Every screen function, wrapped so that drawing it is a step the back button can return to.
 showPractice = navigable('practice', showPractice); showPlans = navigable('plans', showPlans); showReview = navigable('review', showReview);
 showGallery = navigable('gallery', showGallery); showMap = navigable('map', showMap); showToday = navigable('today', showToday);
-showJournal = navigable('you', showJournal); showTalk = navigable('talk', showTalk); showPrivacy = navigable('privacy', showPrivacy);
+showJournal = navigable('you', showJournal); showTalk = navigable('talk', showTalk); showPrivacy = navigable('privacy', showPrivacy); showLearned = navigable('learned', showLearned);
 showPaths = navigable('paths', showPaths); showPathOutcome = navigable('path-outcome', showPathOutcome); showTalkHistory = navigable('talks', showTalkHistory);
 showHomework = navigable('homework', showHomework); showStance = navigable('stance', showStance); walkTo = navigable('idea', walkTo);
 showMind = navigable('mind', showMind); showFindHelp = navigable('find-help', showFindHelp); showHandover = navigable('handover', showHandover);

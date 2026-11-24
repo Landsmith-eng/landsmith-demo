@@ -1245,3 +1245,8 @@ html.can-speak.page-listen .listen { display: inline-flex; }
 .reading-answer { margin-top: 8px; }
 .answer-reply .reply-link .link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); text-underline-offset: 3px; }
 .answer-reply .reply-link .link::after { content: ' →'; color: var(--accent); }
+/* What Continuum has learned: each item, where it came from, and quiet ways to change it. */
+.learned .learned-text { margin: 0; }
+.learned li { padding: 8px 0; }
+.learned textarea { width: 100%; box-sizing: border-box; }
+.learned-forget { margin-top: 8px; }

@@ -160,6 +160,21 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 -- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
 -- choose their next ideas and, later, to compare what they say now with what they said then.
+-- What Continuum has learned about someone, as they shaped it: an item they reworded (text) or took away (text NULL),
+-- by its key; and notes they added themselves ("something to know about me").
+CREATE TABLE IF NOT EXISTS profile_overrides (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  key TEXT NOT NULL,
+  text TEXT,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, key)
+);
+CREATE TABLE IF NOT EXISTS profile_notes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  text TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- Themes noticed in an answer to a passage (by the reply to it): kept with the answer for summaries, search, Talk and
 -- nudges. source: reflect (Thoughts; ref_id is the reflection) | respond (a passage's question) | today (the day's idea).
 CREATE TABLE IF NOT EXISTS answer_themes (

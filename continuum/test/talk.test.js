@@ -125,7 +125,8 @@ test('talk: weighing an opinion adds the weigh instructions and returns web sour
     { stop_reason: 'end_turn', content: [{ type: 'text', text: 'In its strongest form: people deserve a say.', citations: [{ type: 'web_search_result_location', url: 'https://example.org/a', title: 'A source', cited_text: 'x' }] }] },
     { stop_reason: 'end_turn', content: [{ type: 'text', text: 'The county food bank sorts donations on Saturdays: https://example.org/food' }] },
   ]);
-  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }));
+  // The pages a reply cites are checked before they are shown: here every page answers.
+  const { db, server, call, lines } = await boot(createTalk({ client: fake.client }), { sourceFetch: async () => new Response('', { status: 200 }) });
   try {
     const out = await lines(await call('/api/talk', { text: 'Voting should be compulsory.', mode: 'weigh', date: D }));
     const done = out.at(-1);
@@ -276,5 +277,15 @@ test('the usage governor: measures while testing, then near the allowance a head
     out = await lines(await call('/api/talk', { text: 'Four.', date: D }));
     assert.equal(out.at(-1).t, 'done'); assert.equal(out.at(-1).allowance.name, 'Plus'); assert.ok(out.at(-1).allowance.near);
     assert.equal(out.at(-1).allowance.used, undefined);
+  } finally { server.close(); }
+});
+
+test('talk: a cited page that does not answer is left out, never shown as a dead link', async () => {
+  const fake = fakeClaude([{ stop_reason: 'end_turn', content: [
+    { type: 'text', text: 'Two sources.', citations: [{ type: 'web_search_result_location', url: 'https://alive.example/a', title: 'Alive', cited_text: 'x' }, { type: 'web_search_result_location', url: 'https://dead.example/b', title: 'Dead', cited_text: 'y' }] }] }]);
+  const { server, call, lines } = await boot(createTalk({ client: fake.client }), { sourceFetch: async (url) => new Response('', { status: String(url).includes('dead') ? 404 : 200 }) });
+  try {
+    const done = (await lines(await call('/api/talk', { text: 'What is new on sleep?', date: D }))).at(-1);
+    assert.deepEqual(done.sources, [{ url: 'https://alive.example/a', title: 'Alive' }]);
   } finally { server.close(); }
 });

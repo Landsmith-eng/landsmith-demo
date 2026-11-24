@@ -729,8 +729,89 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     recent: db.prepare('SELECT themes FROM answer_themes WHERE user_id = ? ORDER BY id DESC LIMIT 12'),
     forNode: db.prepare('SELECT themes FROM answer_themes WHERE user_id = ? AND node_id = ?'),
   };
-  // The themes noticed in their recent answers, newest first, each once: for Talk.
-  const themesText = (uid) => [...new Set(atq.recent.all(uid).flatMap((r) => { try { return JSON.parse(r.themes); } catch { return []; } }))].slice(0, 16).join('; ');
+  // ── What Continuum has learned about them ──
+  // A private, evolving picture made from what they do (nothing extra is asked of Claude to make it): themes noticed in
+  // their answers, which rooms of the map land or fall flat (thumbs, answers, going deeper, passing on), the practices
+  // they are drawn to, their answers in the seven great debates, how deep they like to go, and notes they add
+  // themselves. They can see it, reword or remove any of it, add to it, or have it all forgotten (Settings: "What
+  // Continuum has learned"). It stays with their account; it is never logged in plain text, sold or shared.
+  // Forgetting everything starts it again from that moment (profile_since), without touching what they wrote.
+  const lq = {
+    themes: db.prepare('SELECT themes FROM answer_themes WHERE user_id = ? AND at > ? ORDER BY id DESC LIMIT 200'),
+    rooms: db.prepare(`SELECT n.room, l.action, COUNT(*) AS n FROM trainer_log l JOIN nodes n ON n.id = l.node_id
+      WHERE l.user_id = ? AND l.at > ? AND l.action IN ('more', 'respond', 'deeper', 'look') GROUP BY n.room, l.action`),
+    votes: db.prepare(`SELECT n.room, SUM(v.vote = 1) AS up, SUM(v.vote = -1) AS down FROM votes v JOIN nodes n ON n.id = v.node_id
+      WHERE v.user_id = ? AND v.at > ? GROUP BY n.room`),
+    pull: db.prepare(`SELECT e.to_id AS practice, COUNT(*) AS n FROM trainer_log l JOIN edges e ON e.from_id = l.node_id AND e.relation = 'lands_on'
+      WHERE l.user_id = ? AND l.at > ? AND l.action IN ('respond', 'deeper', 'look') GROUP BY e.to_id ORDER BY n DESC LIMIT 3`),
+    stances: db.prepare('SELECT stance_id, agree, basis FROM stances WHERE user_id = ? AND agree != 0'),
+    overrides: db.prepare('SELECT key, text FROM profile_overrides WHERE user_id = ?'),
+    setOverride: db.prepare("INSERT INTO profile_overrides (user_id, key, text) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET text = excluded.text, at = datetime('now')"),
+    notes: db.prepare('SELECT id, text, at FROM profile_notes WHERE user_id = ? ORDER BY id DESC'),
+    addNote: db.prepare('INSERT INTO profile_notes (user_id, text) VALUES (?, ?)'),
+    dropNote: db.prepare('DELETE FROM profile_notes WHERE id = ? AND user_id = ?'),
+  };
+  const DEPTH_NAME = { 1: 'ideas', 2: 'your life', 3: 'all the way' };
+  const profileSince = (uid) => usageGet.get(`profile_since:${uid}`)?.v ?? '0000';
+  function profileItems(uid) {
+    const since = profileSince(uid); const items = [];
+    // Themes in their answers, most often noticed first.
+    const seen = new Map();
+    for (const r of lq.themes.all(uid, since)) { let ts = []; try { ts = JSON.parse(r.themes); } catch { /* none */ } for (const t of ts) seen.set(t, (seen.get(t) ?? 0) + 1); }
+    for (const [t, n] of [...seen].sort((a, b) => b[1] - a[1]).slice(0, 8)) items.push({ key: `theme:${t}`, kind: 'theme', text: t, from: n > 1 ? `noticed in ${n} of your answers` : 'noticed in one of your answers' });
+    // What lands and what falls flat, by room of the map.
+    const room = {};
+    for (const r of lq.rooms.all(uid, since)) (room[r.room] ??= {})[r.action] = r.n;
+    for (const r of lq.votes.all(uid, since)) Object.assign((room[r.room] ??= {}), { up: r.up, down: r.down });
+    const scored = Object.entries(room).map(([id, c]) => [id, 2 * (c.up ?? 0) + (c.respond ?? 0) + (c.deeper ?? 0) + .5 * (c.look ?? 0) - 2 * (c.down ?? 0) - .7 * (c.more ?? 0)]).filter(([id]) => roomName.get(id));
+    for (const [id] of scored.filter(([, v]) => v >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3)) items.push({ key: `lands:${id}`, kind: 'lands', text: `Ideas from ${roomName.get(id)} tend to land with you`, from: 'from what you answer, explore and give a thumbs up' });
+    for (const [id] of scored.filter(([, v]) => v <= -1.5).sort((a, b) => a[1] - b[1]).slice(0, 2)) items.push({ key: `flat:${id}`, kind: 'flat', text: `Ideas from ${roomName.get(id)} often fall flat for you`, from: 'from what you pass on and give a thumbs down' });
+    // The practices ("frogs") the passages they stay with lead to.
+    for (const r of lq.pull.all(uid, since)) { const n = q.node.get(r.practice); if (n) items.push({ key: `practice:${n.id}`, kind: 'practice', text: `Drawn to the practice "${n.title}"`, from: 'from the passages you stay with' }); }
+    // The seven great debates, where they took a side.
+    for (const a of lq.stances.all(uid)) {
+      const st = stances.find((x) => x.id === a.stance_id); if (!st) continue;
+      const side = a.agree > 0 ? st.a : st.b;
+      items.push({ key: `stance:${st.id}`, kind: 'stance', text: `On "${st.question}" you lean toward ${side.who}${Math.abs(a.agree) === 2 ? ', clearly' : ''}`, from: 'from your answers in the great debates' });
+    }
+    // How deep to go.
+    const depth = tq.userDepth.get(uid)?.depth ?? 1;
+    items.push({ key: 'depth', kind: 'depth', text: `Likes to go ${depth === 1 ? 'into ideas, not private life' : depth === 2 ? 'into your own life' : 'all the way'} (depth ${depth}: ${DEPTH_NAME[depth]})`, from: 'your choice in Talk', fixed: true });
+    // Their own rewording, or a removal.
+    const over = new Map(lq.overrides.all(uid).map((o) => [o.key, o.text]));
+    const out = items.filter((i) => !(over.has(i.key) && over.get(i.key) === null)).map((i) => (over.get(i.key) ? { ...i, text: over.get(i.key), edited: true } : i));
+    for (const n of lq.notes.all(uid)) out.push({ key: `note:${n.id}`, kind: 'note', text: n.text, from: 'you told Continuum', note: n.id });
+    return out;
+  }
+  // For Talk and replies: what has been learned, to be held loosely.
+  const profileText = (uid) => profileItems(uid).filter((i) => i.kind !== 'depth').map((i) => `${i.kind === 'note' ? 'They told us: ' : ''}${i.text}`).join('; ');
+  const themesText = profileText;
+  app.get('/api/me/profile', auth, (req, res) => res.json({ items: profileItems(req.user.id) }));
+  // Reword an item (text) or take it away (text null); a note of their own (POST note), removed by id.
+  app.post('/api/me/profile/item', auth, (req, res) => {
+    const key = typeof req.body?.key === 'string' ? req.body.key.slice(0, 200) : '';
+    if (!key || key === 'depth' || key.startsWith('note:')) return res.status(400).json({ error: 'bad' });
+    const text = typeof req.body?.text === 'string' && req.body.text.trim() ? req.body.text.trim().slice(0, 300) : null;
+    lq.setOverride.run(req.user.id, key, text);
+    res.json({ items: profileItems(req.user.id) });
+  });
+  app.post('/api/me/profile/note', auth, (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 300) : '';
+    if (!text) return res.status(400).json({ error: 'bad' });
+    lq.addNote.run(req.user.id, text);
+    res.json({ items: profileItems(req.user.id) });
+  });
+  app.delete('/api/me/profile/note/:id', auth, (req, res) => { lq.dropNote.run(Number(req.params.id), req.user.id); res.json({ items: profileItems(req.user.id) }); });
+  // Forget everything learned: the themes noticed and their own notes go, and the picture starts again from now (what
+  // they wrote, kept and voted stays theirs, but no longer feeds it).
+  app.post('/api/me/profile/forget', auth, (req, res) => {
+    const uid = req.user.id;
+    db.prepare('DELETE FROM answer_themes WHERE user_id = ?').run(uid);
+    db.prepare('DELETE FROM profile_notes WHERE user_id = ?').run(uid);
+    db.prepare('DELETE FROM profile_overrides WHERE user_id = ?').run(uid);
+    usageSet.run(`profile_since:${uid}`, new Date().toISOString().replace('T', ' ').slice(0, 19));
+    res.json({ items: profileItems(uid) });
+  });
   // A reply written for their answer (null without Claude, or if it fails: the short line stands in). save: keep the
   // themes noticed with the answer.
   async function answerReply({ uid, date, n, kind = 'question', asked = '', text, source, refId = null, save = true, depth = null }) {
@@ -738,7 +819,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const candidates = relatedTo(uid, date, n, text, asked);
     const practices = PRACTICE_ORDER.map((id) => q.node.get(id)).filter(Boolean);
     let out = null;
-    try { out = await replyToAnswer(talk, { node: n, kind, asked, answer: text, depth: depth ?? tq.userDepth.get(uid)?.depth ?? 1, candidates, practices }); }
+    try { out = await replyToAnswer(talk, { node: n, kind, asked, answer: text, depth: depth ?? tq.userDepth.get(uid)?.depth ?? 1, candidates, practices, profile: profileText(uid) }); }
     catch (e) { console.warn(`Answer reply: Claude failed (${e.status ?? ''} ${e.allowance ? 'allowance' : e.name ?? 'error'})`); return null; }
     if (!out?.reply) return null;
     if (save && out.themes.length) atq.add.run(uid, n.id, source, refId, JSON.stringify(out.themes), date);
@@ -794,6 +875,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
   // and the Internet Archive behind Gutenberg. Failures are logged by site and time only. ──
   const failQ = db.prepare('INSERT INTO source_failures (host, why) VALUES (?, ?)');
   const sources = createSources({ fetchImpl: sourceFetch, books: BOOKS, onFailure: (host, why) => { failQ.run(host, why); console.warn(`Source unavailable: ${host} (${why}) at ${new Date().toISOString()}`); } });
+  const pageCheck = sources; // the same checker, by a name the Talk handler's own `sources` does not hide
   const UNAVAILABLE = 'Source temporarily unavailable — try again later';
   app.get('/api/source/:id', auth, async (req, res) => {
     const n = q.node.get(req.params.id);
@@ -2330,6 +2412,22 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     }).filter((t) => t.turns > 0) });
   });
   // A message in, the reply streamed back as lines of JSON: {t:'text', d} while it is written, then {t:'done', refs}.
+  // For trying Talk out: one message answered exactly as Talk would (their map, what has been learned, their depth),
+  // with nothing kept: no conversation, no views noted, no themes. The reply, the ideas it named and the pages it found.
+  app.post('/api/diag/talk', auth, async (req, res) => {
+    if (!talk) return res.json({ ok: false, why: 'no ANTHROPIC_API_KEY on the server' });
+    const date = localDate(req.body?.date); const uid = req.user.id; const text = String(req.body?.text ?? '').trim().slice(0, 2000);
+    if (!text) return res.status(400).json({ error: 'bad' });
+    const states = talkStates(uid, date); const depth = [1, 2, 3].includes(Number(req.body?.depth)) ? Number(req.body.depth) : (tq.userDepth.get(uid)?.depth ?? 1);
+    const system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session: sessionText({ depth }), themes: themesText(uid) });
+    let reply = ''; const messages = [{ role: 'user', content: text }];
+    try {
+      const found = await answer(talk, { system, messages, onText: (d) => { reply += d; }, readIdea: (id) => talkIdea(uid, date, states, id) });
+      const sources = (await Promise.all(found.sources.map(async (p) => ((await pageCheck.check(p.url).catch(() => false)) ? p : null)))).filter(Boolean);
+      const refs = talkRefs(states, referencedIds(reply));
+      res.json({ ok: true, text, depth, reply: reply.trim().replace(/\[\[([a-z0-9_]+)\]\]/g, (m, id) => (refs[id] ? `«${refs[id].title}»` : m)), ideas: Object.values(refs).map((r) => `${r.title}${r.thinker ? ` (${r.thinker})` : ''}`), sources });
+    } catch (e) { res.json({ ok: false, why: claudeTrouble(e) }); }
+  });
   app.post('/api/talk', auth, async (req, res) => {
     if (!talk) return res.status(404).json({ error: 'talk_off' });
     const uid = req.user.id; const date = localDate(req.body?.date);
@@ -2369,7 +2467,10 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       // stored, logged or sent anywhere else.
       const lastReply = transcript(messages.slice(0, -1)).filter((x) => x.who === 'map').at(-1)?.text ?? '';
       const risk = riskCheck(talk, { text, before: lastReply }).catch(() => null);
-      const { sources } = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
+      const found = await answer(talk, { system, messages, onText: (d) => { reply += d; send({ t: 'text', d }); }, readIdea: (id) => talkIdea(uid, date, states, id) });
+      // Every page a reply cites is checked (quickly, and remembered for fifteen minutes) before it is shown: a page that
+      // does not answer is left out, never shown as a dead link.
+      const sources = (await Promise.all(found.sources.map(async (p) => ((await pageCheck.check(p.url).catch(() => false)) ? p : null)))).filter(Boolean);
       if (keep) {
         const pages = JSON.parse(t.sources ?? '[]');
         for (const p of sources) if (!pages.some((x) => x.url === p.url)) pages.push(p);
