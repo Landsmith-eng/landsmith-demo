@@ -54,3 +54,40 @@ test('what Continuum has learned: built from what they do, theirs to reword, rem
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM answer_themes').get().n, 0);
   } finally { server.close(); }
 });
+
+test('people they mention are learned from their own words; nothing is kept from a message the safety check flags', async () => {
+  const db = openDb(':memory:'); seedContent(db, content);
+  db.prepare('INSERT INTO users (token, name) VALUES (?, ?)').run('t', 'Sam');
+  let danger = false;
+  const client = { beta: { messages: {
+    stream() { return { on() { return this; }, async finalMessage() { return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'I hear you.' }] }; } }; },
+    create: async (params) => {
+      const props = params.output_config?.format?.schema?.properties ?? {};
+      if (props.risk) return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(danger ? { risk: 'self', imminent: false } : { risk: 'none', imminent: false }) }] };
+      if (props.themes) return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ reply: 'That is a lot to carry.', themes: ['feeling alone'], links: [], next: { kind: 'none', id: '', label: '' } }) }] };
+      throw new Error('not here');
+    },
+  } } };
+  const server = createApp(db, { talk: createTalk({ client }) }).listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'x-continuum-token': 't', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.text());
+  const people = () => db.prepare('SELECT who, n FROM people_mentioned ORDER BY who').all().map((r) => `${r.who}:${r.n}`);
+  try {
+    await post('/api/talk', { text: 'My wife and I keep arguing about my mom visiting.', date: D });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(people(), ['mother:1', 'wife:1']);
+    const items = await fetch(`${base}/api/me/profile`, { headers: { 'x-continuum-token': 't' } }).then((r) => r.json());
+    assert.ok(items.items.some((i) => i.kind === 'people' && i.text === 'Your wife'));
+    // A message the safety check flags: nothing kept about them from it.
+    danger = true;
+    await post('/api/talk', { text: 'My brother says I should just end it all, and lately I think he is right.', date: D });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(people(), ['mother:1', 'wife:1'], 'no one from a flagged message');
+    const n = JSON.parse(await fetch(`${base}/api/trainer/next?date=${D}`, { headers: { 'x-continuum-token': 't' } }).then((r) => r.text())).story;
+    const r = JSON.parse(await post('/api/trainer/respond', { node: n.id, text: 'My sister is gone and I do not want to be here either.', date: D }));
+    assert.ok(r.reply.safety, 'help with the reply'); assert.deepEqual(r.reply.themes, []);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM answer_themes').get().n, 0, 'no themes kept');
+    assert.deepEqual(people(), ['mother:1', 'wife:1']);
+  } finally { server.close(); }
+});

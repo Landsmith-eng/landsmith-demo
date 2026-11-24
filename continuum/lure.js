@@ -51,7 +51,7 @@ const ask = (talk, { system, content, schema = null, effort = 'low', max = 2000 
   output_config: schema ? { effort, format: { type: 'json_schema', schema } } : { effort }, system, messages: [{ role: 'user', content }],
 });
 
-export function createLure(db, { talk = null, hash, roomName, themesOf, log = () => {} }) {
+export function createLure(db, { talk = null, hash, roomName, themesOf, profileOf = () => '', log = () => {} }) {
   const lq = {
     all: db.prepare('SELECT l.*, n.title, n.thinker FROM lures l JOIN nodes n ON n.id = l.node_id WHERE l.user_id = ? AND l.local_date <= ? ORDER BY l.local_date'),
     get: db.prepare('SELECT l.*, n.title, n.thinker FROM lures l JOIN nodes n ON n.id = l.node_id WHERE l.user_id = ? AND l.local_date = ?'),
@@ -327,7 +327,7 @@ export function createLure(db, { talk = null, hash, roomName, themesOf, log = ()
       try {
         const j = parse(await ask(talk, { schema: NUDGE_SCHEMA,
           system: 'You write a short note from Continuum, a philosophy app, to its user, as if from a well-read friend who has been thinking about something they said: one or two sentences, under 160 characters, no greeting beyond "Hey" at most, no emoji, no exclamation marks, never needy or guilt-tripping (never "we miss you", never mention how long it has been). Pick one thing they wrote that is worth coming back to, refer to it specifically (quote a few of their words, or name the idea), and ask a real, light question about it, e.g. "Last week you wrote about Seneca and anger. Did that hold up?"',
-          content: `What they have written (newest first):\n${entries.slice(0, 8).map((e) => `${e.local_date} on "${e.title}"${e.thinker ? ` (${e.thinker})` : ''}: ${snip(e.body, 240)}`).join('\n')}\n\nToday is ${sqlTime(now).slice(0, 10)}.` }));
+          content: `${profileOf(uid) ? `What Continuum has learned about them (loose inferences; use only to choose what will speak to them, never mention it): ${profileOf(uid)}\n\n` : ''}What they have written (newest first):\n${entries.slice(0, 8).map((e) => `${e.local_date} on "${e.title}"${e.thinker ? ` (${e.thinker})` : ''}: ${snip(e.body, 240)}`).join('\n')}\n\nToday is ${sqlTime(now).slice(0, 10)}.` }));
         if (j?.text?.trim()) return j.text.trim().slice(0, 240);
       } catch (e) { log(`nudge text: ${e.message}`); }
     }

@@ -1392,6 +1392,8 @@ document.addEventListener('click', (e) => {
   hideHere();
   if (!e.target.closest('#view') || e.target.closest('button, a, input, textarea, select, label, summary')) return;
   if (getSelection()?.toString().trim()) return; // choosing words to keep, not asking to listen
+  // The tap that just stopped a reading: nothing more, but a second tap close behind it reads from that word.
+  if (Date.now() - justStopped < 300) { lastTap = { at: Date.now(), x: e.clientX, y: e.clientY }; return; }
   const hit = hitFor(e.target); if (!hit) return;
   // Two taps close together: read from the very word tapped.
   const now = Date.now(); const again = lastTap && now - lastTap.at < 360 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 34;
@@ -1402,7 +1404,7 @@ document.addEventListener('click', (e) => {
   const x = e.clientX; const y = e.clientY < 140 ? e.clientY + 18 : e.clientY - 54;
   tapTimer = setTimeout(() => offerHere(hit, x, y), 300);
 });
-let lastTap = null; let tapTimer = 0;
+let lastTap = null; let tapTimer = 0; let justStopped = 0;
 // The word under a point, as a letter of the sentence it is in, and read from there.
 function readFromPoint(x, y, hit) {
   const voice = hit.voice;
@@ -2293,7 +2295,7 @@ function showJournal() {
     const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
       h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
-    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, learnedLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), nudgeSetting(), yourDetails(), yourData);
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, learnedLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), replySetting(), nudgeSetting(), yourDetails(), yourData);
   });
 }
 
@@ -2301,6 +2303,19 @@ function showJournal() {
 // links, and are read aloud in the reading voice. The conversation is kept, so it can be picked up later.
 const TALK_KEY = 'continuum.talk';
 const SPEAK_KEY = 'continuum.talk.speak';
+// How Talk replies: 'aloud' (read out loud, always), 'text' (text only, even when you speak), 'match' (spoken in,
+// spoken back; typed in, text). The default is to match.
+const REPLY_KEY = 'continuum.talk.reply';
+const REPLY_MODES = [['match', 'Match me', 'Spoken in, spoken back; typed in, text.'], ['aloud', 'Reply out loud', 'Every reply is read aloud, with the words on screen.'], ['text', 'Text only', 'Replies are never read aloud, even when you speak.']];
+const replyMode = () => { const m = store.get(REPLY_KEY); if (REPLY_MODES.some(([k]) => k === m)) return m; return store.get(SPEAK_KEY) === 'on' ? 'aloud' : 'match'; };
+// The default, in You.
+function replySetting() {
+  const box = h('section', { class: 'diary-block' });
+  const draw = () => box.replaceChildren(h('h2', {}, 'How Talk replies'),
+    h('p', { class: 'muted small' }, REPLY_MODES.find(([k]) => k === replyMode())[2]),
+    h('div', { class: 'theme-chips' }, ...REPLY_MODES.map(([k, name]) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(replyMode() === k), onclick: () => { store.set(REPLY_KEY, k); draw(); } }, name))));
+  draw(); return box;
+}
 // Reply text with [[id]] markers: the words, and each named idea as a link (a placeholder while it streams).
 function replyNodes(text, refs, done) {
   const out = [];
@@ -2361,6 +2376,15 @@ function wakeBar(ms = 3500) {
   talkBar.classList.add('awake'); clearTimeout(barTimer); barTimer = setTimeout(() => talkBar.classList.remove('awake'), ms);
 }
 addEventListener('pointerdown', () => wakeBar(), { passive: true });
+let tapStart = null;
+addEventListener('pointerdown', (e) => { tapStart = { x: e.clientX, y: e.clientY, at: Date.now() }; }, { passive: true });
+addEventListener('pointerup', (e) => {
+  const quick = tapStart && Date.now() - tapStart.at < 400 && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 12;
+  if (quick && talkPlayer.state === 'playing' && e.target.closest?.('.talk-log') && !e.target.closest('a, button, textarea, input, .talk-bar, .talk-compose')) {
+    // One tap on the conversation stops the reading; a second tap close behind it (a double tap) reads from that word.
+    stopTalkVoice(); justStopped = Date.now(); return;
+  }
+}, { passive: true });
 addEventListener('pointerup', (e) => {
   if (!document.documentElement.classList.contains('talk-calm')) return;
   if (e.target.closest('textarea, input, select, .talk-head')) return;
@@ -2577,10 +2601,11 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
       const again = h('button', { type: 'button', class: 'chip' }, 'Repeat');
       const view = { spans: [], spoken: parts.map((t) => spokenReply(t, refs)), btn, clips: new Map() };
       view.spans = parts.map((t, k) => {
-        const sp = h('span', { class: 'say', title: 'Listen from here' }, ...replyNodes(t, refs, true), ' ');
-        sp.addEventListener('click', (e) => { if (!e.target.closest('a')) playFrom(view, k); });
-        return sp;
+        // While a reply is read, one tap stops it and a double tap on a word reads from there; when it is quiet, a tap
+        // offers "Listen from here" (as everywhere).
+        return h('span', { class: 'say' }, ...replyNodes(t, refs, true), ' ');
       });
+      registerSay(view);
       btn.addEventListener('click', () => togglePlay(view));
       again.addEventListener('click', () => playFrom(view, 0));
       // Copy: the reply as plain text (ideas by their titles), then the ideas it drew on and the pages it found.
@@ -2630,11 +2655,15 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     }
     // Spoken in, spoken back: a message said aloud is always answered aloud. A typed one is answered in text only,
     // unless replies are set to be read aloud always. (The old on/off switch: "on" is always; "off" becomes the default.)
-    const always = () => store.get(SPEAK_KEY) === 'on';
-    const speakToggle = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(always()) });
-    const label = () => { speakToggle.textContent = always() ? '🔊 Replies aloud: always' : '🎙 Replies aloud: when I speak'; speakToggle.setAttribute('aria-pressed', String(always())); };
+    // A quick toggle here (the default is in You): Match me → Reply out loud → Text only.
+    const ICON = { match: '🎙', aloud: '🔊', text: '💬' };
+    const speakToggle = h('button', { type: 'button', class: 'chip reply-toggle' });
+    const label = () => { const m = replyMode(); speakToggle.textContent = `${ICON[m]} ${REPLY_MODES.find(([k]) => k === m)[1]}`; speakToggle.setAttribute('aria-label', `Replies: ${REPLY_MODES.find(([k]) => k === m)[1]}. Tap to change.`); };
     label();
-    speakToggle.addEventListener('click', () => { store.set(SPEAK_KEY, always() ? 'voice' : 'on'); if (!always()) stopTalkVoice(); label(); });
+    speakToggle.addEventListener('click', () => {
+      const order = REPLY_MODES.map(([k]) => k); const next = order[(order.indexOf(replyMode()) + 1) % order.length];
+      store.set(REPLY_KEY, next); if (next === 'text') stopTalkVoice(); label(); notice(REPLY_MODES.find(([k]) => k === next)[2]);
+    });
     const summary = summaryPanel(() => convoId);
     const pastBtn = h('button', { type: 'button', class: 'chip', onclick: () => { stopTalkVoice(); showTalkHistory(); } }, 'Past conversations');
     const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
@@ -2745,7 +2774,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
           }
         }
         summary.stale();
-        if ((spoken || always()) && view) {
+        if (view && (replyMode() === 'aloud' || (replyMode() === 'match' && spoken))) {
           const finished = await playFrom(view, 0);
           // Your turn: after a spoken exchange, listen again (it stops by itself if nothing is said).
           if (spoken && finished && dict && document.body.contains(ta)) { status.textContent = 'Your turn. Speak, or tap to stop.'; dict.start(); }
@@ -2771,7 +2800,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
     });
     const mic = dict?.button;
     const stopMic = () => dict?.stop();
-    compose.append(h('div', { class: 'row' }, mic || h('span'), send));
+    compose.append(h('div', { class: 'row' }, mic || h('span'), speakToggle, send)); // the reply setting at hand, beside Speak and Send
     if (current === 'act') {
       log.replaceChildren(h('div', { class: 'talk-turn from-map' },
         `Where do you live? Name a town or a zip code, and I will look for current ways to act on "${practice.title}" near you: volunteering, drives, and civic roles like working the polls. The place is used only for this search and not kept.`));
@@ -2784,7 +2813,7 @@ function showTalk({ about = null, mode = 'talk', seed = null, practice = null, d
         ? 'Found with a web search, so check each one before you go.'
         : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
       modeChips,
-      h('div', { class: 'theme-chips' }, speakToggle, current !== 'act' && fresh, current !== 'act' && pastBtn,
+      h('div', { class: 'theme-chips' }, current !== 'act' && fresh, current !== 'act' && pastBtn,
         h('button', { type: 'button', class: 'chip', onclick: () => chooseVoice() }, 'Microphone and voice')),
       current !== 'act' && depthBox,
       current !== 'act' && h('div', {}, h('div', { class: 'eyebrow' }, 'A voice for this conversation'), roleRow),
@@ -2835,7 +2864,7 @@ function helpCard({ risk, imminent }) {
 // The private picture Talk and the trainer use to choose examples and challenges: each item with where it came from,
 // to reword or remove; notes of their own to add; and a way to have it all forgotten.
 const LEARNED_GROUPS = [['theme', 'What your answers keep coming back to'], ['lands', 'What lands with you'], ['flat', 'What tends to fall flat'],
-  ['practice', 'Practices you are drawn to'], ['stance', 'Where you stand in the great debates'], ['depth', 'How deep to go'], ['note', 'What you have told Continuum']];
+  ['people', 'People in your life you have mentioned'], ['practice', 'Practices you are drawn to'], ['stance', 'Where you stand in the great debates'], ['depth', 'How deep to go'], ['note', 'What you have told Continuum']];
 function showLearned() {
   setNav('');
   return guarded(async () => {
@@ -4066,7 +4095,9 @@ function answerReplyView(r, { speak = false } = {}) {
   const said = h('span', { hidden: true });
   const spans = sentences(r.text).map((t) => h('span', { class: 'say' }, t, ' '));
   const voice = { spans, spoken: spans.map((x) => x.textContent.trim()), btn: said, clips: new Map() }; registerSay(voice);
-  const box = h('div', { class: 'answer-reply' }, h('p', { class: 'ack' }, ...spans), said,
+  const help = r.safety && h('p', { class: 'answer-help' }, 'If you are struggling, or afraid of what you might do, you do not have to carry it alone: in the US, call or text 988 any time, or 911 if anyone is in danger now; elsewhere, your local emergency number. ',
+    h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy('help') }, 'More help →'));
+  const box = h('div', { class: 'answer-reply' }, help, h('p', { class: 'ack' }, ...spans), said,
     ...r.links.map((l) => h('p', { class: 'reply-link' }, h('button', { type: 'button', class: 'link', onclick: () => trainerNext({ id: l.id }) }, l.line))),
     r.next && h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: () => (r.next.kind === 'practice' ? showPractice({ practice: r.next.id }) : trainerNext({ id: r.next.id })) }, r.next.label)));
   if (speak) setTimeout(() => playFrom(voice, 0), 300);

@@ -169,6 +169,15 @@ CREATE TABLE IF NOT EXISTS profile_overrides (
   at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, key)
 );
+-- The people in their life they have mentioned ("my wife", "my boss"): how often, and when last. From their own words,
+-- never from a message the safety check flagged.
+CREATE TABLE IF NOT EXISTS people_mentioned (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  who TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 1,
+  last_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, who)
+);
 CREATE TABLE IF NOT EXISTS profile_notes (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),

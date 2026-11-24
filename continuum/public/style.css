@@ -1250,3 +1250,6 @@ html.can-speak.page-listen .listen { display: inline-flex; }
 .learned li { padding: 8px 0; }
 .learned textarea { width: 100%; box-sizing: border-box; }
 .learned-forget { margin-top: 8px; }
+.answer-help { border-left: 3px solid var(--accent); padding: 6px 10px; margin: 6px 0 10px; font-size: .92rem; }
+/* The reply setting beside Speak and Send: small, so the composer stays calm. */
+.talk-compose .reply-toggle { font-size: .82rem; padding: 6px 10px; margin: 0 auto 0 8px; opacity: .85; }

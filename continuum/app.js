@@ -752,6 +752,16 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     dropNote: db.prepare('DELETE FROM profile_notes WHERE id = ? AND user_id = ?'),
   };
   const DEPTH_NAME = { 1: 'ideas', 2: 'your life', 3: 'all the way' };
+  // The safety check's verdict: only an actual finding counts (not a missing or malformed answer).
+  const flaggedRisk = (r) => Boolean(r && ['self', 'others', 'both'].includes(r.risk));
+  const PEOPLE_RE = /\bmy (wife|husband|partner|girlfriend|boyfriend|fianc[ée]e?|ex|son|daughter|kids|children|baby|mother-in-law|father-in-law|in-laws|mother|mom|mum|father|dad|parents|sister|brother|siblings|grandmother|grandfather|grandma|grandpa|grandson|granddaughter|aunt|uncle|cousin|niece|nephew|boss|manager|colleague|coworker|co-worker|team|employees|students|teacher|friend|best friend|friends|neighbou?r|roommate|therapist|doctor|pastor|priest|rabbi|imam|dog|cat)\b/gi;
+  const PEOPLE_SAME = { mom: 'mother', mum: 'mother', dad: 'father', grandma: 'grandmother', grandpa: 'grandfather', 'co-worker': 'coworker', neighbour: 'neighbor', kids: 'children', 'fiancée': 'fiancé', fiancee: 'fiancé' };
+  const pplq = { add: db.prepare("INSERT INTO people_mentioned (user_id, who) VALUES (?, ?) ON CONFLICT(user_id, who) DO UPDATE SET n = n + 1, last_at = datetime('now')"),
+    all: db.prepare('SELECT who, n FROM people_mentioned WHERE user_id = ? AND last_at > ? ORDER BY n DESC, last_at DESC LIMIT 12') };
+  function notePeople(uid, text) {
+    const found = new Set([...String(text ?? '').matchAll(PEOPLE_RE)].map((m) => { const w = m[1].toLowerCase(); return PEOPLE_SAME[w] ?? w; }));
+    for (const who of found) pplq.add.run(uid, who);
+  }
   const profileSince = (uid) => usageGet.get(`profile_since:${uid}`)?.v ?? '0000';
   function profileItems(uid) {
     const since = profileSince(uid); const items = [];
@@ -774,6 +784,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       const side = a.agree > 0 ? st.a : st.b;
       items.push({ key: `stance:${st.id}`, kind: 'stance', text: `On "${st.question}" you lean toward ${side.who}${Math.abs(a.agree) === 2 ? ', clearly' : ''}`, from: 'from your answers in the great debates' });
     }
+    // The people in their life they have mentioned.
+    for (const p of pplq.all.all(uid, since)) items.push({ key: `person:${p.who}`, kind: 'people', text: `Your ${p.who}`, from: p.n > 1 ? `mentioned ${p.n} times` : 'mentioned once' });
     // How deep to go.
     const depth = tq.userDepth.get(uid)?.depth ?? 1;
     items.push({ key: 'depth', kind: 'depth', text: `Likes to go ${depth === 1 ? 'into ideas, not private life' : depth === 2 ? 'into your own life' : 'all the way'} (depth ${depth}: ${DEPTH_NAME[depth]})`, from: 'your choice in Talk', fixed: true });
@@ -809,6 +821,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     db.prepare('DELETE FROM answer_themes WHERE user_id = ?').run(uid);
     db.prepare('DELETE FROM profile_notes WHERE user_id = ?').run(uid);
     db.prepare('DELETE FROM profile_overrides WHERE user_id = ?').run(uid);
+    db.prepare('DELETE FROM people_mentioned WHERE user_id = ?').run(uid);
     usageSet.run(`profile_since:${uid}`, new Date().toISOString().replace('T', ' ').slice(0, 19));
     res.json({ items: profileItems(uid) });
   });
@@ -819,13 +832,16 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const candidates = relatedTo(uid, date, n, text, asked);
     const practices = PRACTICE_ORDER.map((id) => q.node.get(id)).filter(Boolean);
     let out = null;
+    const risk = riskCheck(talk, { text }).catch(() => null);
     try { out = await replyToAnswer(talk, { node: n, kind, asked, answer: text, depth: depth ?? tq.userDepth.get(uid)?.depth ?? 1, candidates, practices, profile: profileText(uid) }); }
     catch (e) { console.warn(`Answer reply: Claude failed (${e.status ?? ''} ${e.allowance ? 'allowance' : e.name ?? 'error'})`); return null; }
     if (!out?.reply) return null;
-    if (save && out.themes.length) atq.add.run(uid, n.id, source, refId, JSON.stringify(out.themes), date);
+    const flagged = await risk; const unsafe = flaggedRisk(flagged);
+    if (save && !unsafe) { if (out.themes.length) atq.add.run(uid, n.id, source, refId, JSON.stringify(out.themes), date); notePeople(uid, text); }
     const title = (id) => q.node.get(id)?.title ?? '';
     return { text: out.reply, links: out.links.map((l) => ({ id: l.id, title: title(l.id), line: l.line })),
-      next: out.next.kind === 'none' ? null : { kind: out.next.kind, id: out.next.id, label: out.next.label, title: title(out.next.id) }, themes: out.themes, considered: candidates.length };
+      next: out.next.kind === 'none' ? null : { kind: out.next.kind, id: out.next.id, label: out.next.label, title: title(out.next.id) }, themes: unsafe ? [] : out.themes, considered: candidates.length,
+      ...(unsafe ? { safety: { risk: flagged.risk, imminent: Boolean(flagged.imminent) } } : {}) };
   }
   const reflectOut = (r) => { const p = JSON.parse(r.prompt); return { id: r.id, kind: r.kind, label: REFLECT_LABEL[r.kind], text: p.text, question: p.question, parallel: p.parallel ?? null, response: r.response, skipped: Boolean(r.skipped) }; };
   app.get('/api/trainer/reflect', auth, async (req, res) => {
@@ -1694,7 +1710,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
   // Stable per user and day, so the suggestion doesn't flicker on every visit.
   const hash = (str) => { let x = 2166136261; for (const ch of str) x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return x >>> 0; };
   // The line in the water: the course each day's idea is fished from, the trail, the looking back, and the nudges.
-  const lure = createLure(db, { talk, hash, roomName, themesOf, log: (m) => console.warn(m) });
+  const lure = createLure(db, { talk, hash, roomName, themesOf, profileOf: (uid) => profileText(uid), log: (m) => console.warn(m) });
   app.nudgeTick = (now) => lure.nudgeTick(now);
 
   app.get('/api/compass', auth, (req, res) => {
@@ -2475,10 +2491,14 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
         const pages = JSON.parse(t.sources ?? '[]');
         for (const p of sources) if (!pages.some((x) => x.url === p.url)) pages.push(p);
         tq.save.run(JSON.stringify(messages), JSON.stringify(vias), JSON.stringify(pages), t.id);
+      }
+      // Nothing about them is kept from a message the safety check flags (no views, no people, no summary of it).
+      const r = await risk;
+      if (keep && !flaggedRisk(r)) {
         updateSummary(uid, t.id);
         noteFrom(uid, date, text, `In a conversation${mode ? ` (${mode})` : ''}; the reply began: ${reply.slice(0, 300)}`, 'talk');
+        notePeople(uid, text);
       }
-      const r = await risk;
       if (r && r.risk !== 'none') send({ t: 'safety', risk: r.risk, imminent: Boolean(r.imminent) });
       // Near the end of this month's allowance (governor on): a quiet heads-up under the reply.
       const al = govMode() === 'on' ? allowance(uid) : null;
