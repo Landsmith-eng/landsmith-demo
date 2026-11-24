@@ -34,6 +34,18 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 
 ---
 
+## 2026-11-24
+
+**Major**
+- **Replies to answers are written for the answer.** Answering a passage (Thoughts, its own question, or the day's idea) used to get a stock line by length ("Solid thinking.", "That's sharp.", "Noted.") or silence. Now the trainer reflects the answer back with one real insight, notices what it hints at beyond the question, connects one or two ideas found across the whole map (each line opens that passage), and offers one next step: go deeper on a link, or one of the seven practices. Under 70 words, at the person's depth, never a diagnosis or lecture; read aloud in voice mode. Every idea and practice it names is checked against the map. Without Claude, the short line stands in.
+- **Themes are kept with the answer** (e.g. "guilt about not doing enough", "worry for a grown child"): Recently read finds passages by them, and Talk knows them. `/api/diag/answer-reply` shows before and after for a sample answer, keeping nothing.
+
+**Decisions and conversations**
+- Jon: replies should engage with what was written, notice what it reveals, connect 1–2 related passages, offer one next step ("tie it back to the relevant frog", read as the seven practices), short and warm, matched to depth, and save the themes. First samples ran about 110 words; capped at 70.
+
+**Suggestions / next**
+- Nudges could use the saved themes; the Talk summary could list them.
+
 ## 2026-11-23
 
 **Major**
