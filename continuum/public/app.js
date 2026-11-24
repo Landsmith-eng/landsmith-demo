@@ -4003,6 +4003,19 @@ function dareFollowUp(d) {
     h('button', { type: 'button', class: 'trainer-word', onclick: send(false) }, 'I did not')));
   return box;
 }
+// The reply to an answer: what was noticed, the ideas it connects to (each line opens that passage), and one next step.
+// In voice mode it is read aloud, traced like everything else.
+function answerReplyView(r, { speak = false } = {}) {
+  if (!r?.text) return null;
+  const said = h('span', { hidden: true });
+  const spans = sentences(r.text).map((t) => h('span', { class: 'say' }, t, ' '));
+  const voice = { spans, spoken: spans.map((x) => x.textContent.trim()), btn: said, clips: new Map() }; registerSay(voice);
+  const box = h('div', { class: 'answer-reply' }, h('p', { class: 'ack' }, ...spans), said,
+    ...r.links.map((l) => h('p', { class: 'reply-link' }, h('button', { type: 'button', class: 'link', onclick: () => trainerNext({ id: l.id }) }, l.line))),
+    r.next && h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: () => (r.next.kind === 'practice' ? showPractice({ practice: r.next.id }) : trainerNext({ id: r.next.id })) }, r.next.label)));
+  if (speak) setTimeout(() => playFrom(voice, 0), 300);
+  return box;
+}
 async function trainerNext(params, opts = {}) {
   const qs = new URLSearchParams({ date: today(), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)) });
   try {
@@ -4132,12 +4145,13 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
       send.disabled = true;
       try {
         if (s.today && !s.answered) { await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: text, date: today() } }).catch(() => null); s.answered = true; trainerLog(s, 'respond'); }
-        const out = await api(`/api/trainer/reflect/${r.id}`, { method: 'POST', body: { text, skipped, via: byVoice ? 'voice' : 'typed', date: today() } });
+        const reading = h('p', { class: 'muted small reading-answer' }, 'Reading what you wrote…'); send.after(reading);
+        const out = await api(`/api/trainer/reflect/${r.id}`, { method: 'POST', body: { text, skipped, via: byVoice ? 'voice' : 'typed', date: today() } }).finally(() => reading.remove());
         pinTask(null);
         card.replaceWith(h('div', { class: 'trainer-after' },
           h('div', { class: 'eyebrow' }, skipped ? 'Your thoughts' : r.label), !skipped && h('p', { class: 'muted small' }, r.question),
           h('blockquote', { class: 'kept' }, text),
-          out.ack ? h('p', { class: 'ack' }, out.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
+          answerReplyView(out.reply, { speak: voiceMode() }) ?? (out.ack ? h('p', { class: 'ack' }, out.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' })),
           h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
       } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
     }
@@ -4170,16 +4184,21 @@ function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
     send.addEventListener('click', async () => {
       if (!ta.value.trim()) return;
       send.disabled = true;
+      const reading = h('p', { class: 'muted small reading-answer' }, 'Reading what you wrote…'); box.append(reading);
       try {
-        const r = s.today
+        let r = s.today
           ? await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: ta.value, date: today() } })
           : await api('/api/trainer/respond', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } });
-        if (s.today) trainerLog(s, 'respond');
+        if (s.today) {
+          trainerLog(s, 'respond');
+          // The day's idea is kept through its own route; the reply to it comes from the trainer.
+          r = await api('/api/trainer/reply', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } }).catch(() => r);
+        }
         pinTask(null);
         box.replaceWith(h('div', { class: 'trainer-after' }, h('blockquote', { class: 'kept' }, ta.value.trim()),
-          r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' }),
+          answerReplyView(r.reply, { speak: trainerAloud() || trainerContemplate() }) ?? (r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' })),
           h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
-      } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
+      } catch { reading.remove(); send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
     });
     choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
   }

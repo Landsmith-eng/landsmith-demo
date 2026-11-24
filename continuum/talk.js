@@ -154,13 +154,13 @@ export async function riskCheck(talk, { text, before = '' }) {
   try { return JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
 }
 
-export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '', session = '' }) {
+export function systemBlocks({ catalogue, diary, today, views = '', experience = '', cases = '', checks = '', session = '', themes = '' }) {
   return [
     { type: 'text', text: RULES },
     // The map (about 15,000 tokens) is kept in the prompt cache for an hour: people come back to a conversation after
     // more than five minutes, and reading it from the cache costs a twentieth of sending it again.
     { type: 'text', text: `Continuum's map (id | title | thinker, year | field | themes | in short):\n${catalogue}`, cache_control: { type: 'ephemeral', ttl: '1h' } },
-    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}${session ? `\n\n${session}` : ''}` },
+    { type: 'text', text: `Today is ${today}.\n\nTheir experience: ${experience || 'new to Continuum.'}\n\nTheir views over time (date | topic | what they said; newest first):\n${views || '(None yet.)'}${checks ? `\n\nSurveys they chose to take in the psychology room (latest of each; screenings and reflections, never diagnoses — refer to them only if relevant, gently, and suggest professional help when a screening is high):\n${checks}` : ''}${cases ? `\n\nWhat they are working through with you (a problem, the pitfalls noticed, the course set). When one of these pitfalls shows up again in what they say, name it gently and exactly, and point back to the idea that answers it:\n${cases}` : ''}${themes ? `\n\nThemes noticed in their recent answers to passages (newest first; private, for you to connect to when it fits, never to recite): ${themes}` : ''}\n\nThe user's diary of discovery (newest first):\n${diary || '(Nothing written yet.)'}${session ? `\n\n${session}` : ''}` },
   ];
 }
 
@@ -363,6 +363,74 @@ export async function summarizeTalk(talk, { previous = null, turns }) {
 // After a passage in the trainer: one prompt to react to, in one of three kinds, matched to the user's depth.
 // question: one personal question (not a quiz). try: a small thing to do today, one to five minutes, and what to notice.
 // parallel: the app supplies a real neighbouring idea from the map; the model writes only the bridge and a question.
+// ── A reply to their answer ──
+// When someone answers a passage's question (or just says what they think of it), the reply engages with what they
+// actually wrote, in light of that passage and question: it reflects it back and adds one real insight; notices what
+// the answer reveals beyond the question (a theme, a worry, a value, a tension); connects it to one or two ideas
+// elsewhere on the map, chosen from candidates the app found across the whole map; and offers one next step (go deeper
+// on that link, or a practice it bears on). Short, warm, conversational, at their depth. Never a diagnosis, never a
+// lecture, never generic praise. The themes noticed are returned to be kept with the answer.
+export const ANSWER_REPLY_SCHEMA = {
+  type: 'object',
+  properties: {
+    reply: { type: 'string' },
+    themes: { type: 'array', items: { type: 'string' } },
+    links: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, line: { type: 'string' } }, required: ['id', 'line'], additionalProperties: false } },
+    next: { type: 'object', properties: { kind: { type: 'string', enum: ['deeper', 'practice', 'none'] }, id: { type: 'string' }, label: { type: 'string' } }, required: ['kind', 'id', 'label'], additionalProperties: false },
+  },
+  required: ['reply', 'themes', 'links', 'next'],
+  additionalProperties: false,
+};
+const ANSWER_DEPTH = {
+  1: 'Depth 1 (ideas): stay with ideas and the person\'s view of them. If the answer touches something personal, acknowledge it with care at the level they shared it; do not probe.',
+  2: 'Depth 2 (your life): you may speak to their own experience as they described it, and ask about it gently.',
+  3: 'Depth 3 (all the way): you may name what lies under the surface of the answer, plainly and kindly, and ask the harder question when it is the true one.',
+};
+export async function replyToAnswer(talk, { node, kind = 'question', asked = '', answer, depth = 1, candidates = [], practices = [] }) {
+  const system = `You are Continuum's trainer, in a daily philosophy app. The user has just read a short passage and answered the question or activity that followed it. Write your reply to their answer.
+
+The reply (field "reply"): two to four short sentences, warm and conversational, as a thoughtful friend who read what they wrote closely. In order:
+1. Engage directly with what they wrote, in light of the passage and the question: reflect the heart of it back in your own words (not a quotation), and add one real insight they may not have seen. Never generic praise ("great answer", "solid thinking", "I love that").
+2. Notice what the answer reveals or hints at beyond the question: a theme, a worry, a value, or a tension. Say it tentatively ("it sounds like…", "there may be…"), as an observation, never a verdict.
+Do not mention other thinkers in "reply" except the passage's own; the connections go in "links".
+
+"links": one or two ideas from the candidate list that genuinely speak to what you noticed (not merely to the passage's topic), each with "line": one sentence connecting it, naming the thinker or tradition, such as "This echoes Seneca on reviewing the day: he asked what he had done well, not what had gone wrong." Use only ids from the list, exactly. If nothing on the list truly fits, return an empty list rather than force one.
+
+"next": one next step, with a short label (under 60 characters) said to them: either "deeper" (open one of your linked ideas; id is that idea's id; label like "Go deeper: Seneca's evening review") or "practice" (one of the seven practices the answer bears on; id from the practices list; label like "Try it: examine the day tonight"). Use "none" with empty id and label only if neither fits.
+
+"themes": one to four short themes the answer shows (lowercase, two to four words each, about the person, not the passage), such as "fear of failing others", "valuing honesty", "tension between duty and rest". They are kept privately to help the app choose ideas and look back later.
+
+${ANSWER_DEPTH[depth] ?? ANSWER_DEPTH[1]}
+Never diagnose (no conditions, disorders or labels), never lecture, never moralize, never tell them what they should feel. Match their tone: a playful answer gets a lighter reply, a heavy one a gentler one. If the answer is a single word or a shrug, keep the reply to one or two sentences and do not over-read it. American spelling. Plain words; no lists or headings in the reply.`;
+  const content = `The passage: "${node.title}"${node.thinker ? ` (${node.thinker})` : ''}
+${node.plain_face ?? ''}
+
+What they were asked${kind === 'try' ? ' (an activity to try)' : ''}: ${asked || 'What do you make of it?'}
+
+Their answer:
+${answer}
+
+Candidate ideas elsewhere on the map (id | title | thinker | in short), found by what the answer and passage share:
+${candidates.map((c) => `${c.id} | ${c.title} | ${c.thinker ?? '-'} | ${(c.plain_face ?? '').replace(/\s+/g, ' ').slice(0, 160)}`).join('\n') || '(none)'}
+
+The seven practices (id | name):
+${practices.map((p) => `${p.id} | ${p.title}`).join('\n')}`;
+  const msg = await talk.client.beta.messages.create({
+    model: talk.model, max_tokens: 6000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: ANSWER_REPLY_SCHEMA } },
+    system, messages: [{ role: 'user', content }],
+  });
+  if (msg.stop_reason !== 'end_turn') return null;
+  let out; try { out = JSON.parse(msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')); } catch { return null; }
+  // Only ideas and practices that exist, from the lists given.
+  const okIdea = new Set(candidates.map((c) => c.id)); const okPractice = new Set(practices.map((p) => p.id));
+  const links = (out.links ?? []).filter((l) => okIdea.has(l.id) && l.line?.trim()).slice(0, 2);
+  let next = out.next ?? { kind: 'none', id: '', label: '' };
+  if ((next.kind === 'deeper' && !okIdea.has(next.id)) || (next.kind === 'practice' && !okPractice.has(next.id))) next = { kind: 'none', id: '', label: '' };
+  const themes = [...new Set((out.themes ?? []).map((t) => String(t).toLowerCase().trim().slice(0, 60)).filter(Boolean))].slice(0, 4);
+  return { reply: String(out.reply ?? '').trim(), links, next, themes };
+}
+
 export const REFLECT_SCHEMA = { type: 'object', properties: { text: { type: 'string' }, question: { type: 'string' } }, required: ['text', 'question'], additionalProperties: false };
 const REFLECT_DEPTH = {
   1: 'Depth level 1 (ideas): keep to ideas and the user\'s views; nothing about their private life.',

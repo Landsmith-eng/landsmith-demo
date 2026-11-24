@@ -19,7 +19,7 @@ import { SURVEYS, surveyById, checkAnswers } from './public/surveys.js';
 import { SCHOOLS } from './content/schools.js';
 // The guide to the psychotherapies (content/therapies.js); without it, plans simply have no programme.
 const { THERAPIES = [], PROBLEMS = {} } = await import('./content/therapies.js').catch(() => ({}));
-import { RULES as CACHE_PROBE, systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, writeReflection, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
+import { RULES as CACHE_PROBE, replyToAnswer, systemBlocks, answer, referencedIds, MAX_USER_TEXT, MODES, writeProblem, writeHomework, noteViews, moderate, askBack, summarizeTalk, writeReflection, sessionText, riskCheck, interviewStep, writePlan, checkIn, sessionReply, retailor, findHelp } from './talk.js';
 // Free college courses to go further (links only); absent until content/courses.js exists.
 const { COURSES = [], COURSE_LINKS = {} } = await import('./content/courses.js').catch(() => ({}));
 import { computeLayouts, ERAS, eraOf, LANES, TIME_TICKS } from './map.js';
@@ -623,7 +623,8 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     for (const r of recentQ.all({ uid: req.user.id })) {
       const n = q.node.get(r.node_id); if (!n) continue;
       if (words.length) {
-        const hay = [n.title, n.thinker, n.plain_face, n.field, roomName.get(n.room), n.source_citation].filter(Boolean).join(' ').toLowerCase();
+        const noticed = atq.forNode.all(req.user.id, n.id).map((t) => t.themes).join(' ');
+        const hay = [n.title, n.thinker, n.plain_face, n.field, roomName.get(n.room), n.source_citation, noticed].filter(Boolean).join(' ').toLowerCase();
         if (!words.every((w) => hay.includes(w))) continue;
       }
       // The latest painting it was shown on (for a passage).
@@ -699,6 +700,52 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
       ORDER BY r.id DESC LIMIT 6`),
   };
   const REFLECT_LABEL = { question: 'Question', try: 'Try this', parallel: 'A parallel story' };
+  // ── Replying to an answer ──
+  // The ideas that might speak to an answer: every idea on the map they may see, scored by the words it shares with
+  // what they wrote (counted twice), the question and the passage's title, plus a little for the passage's own
+  // neighbours on the map; the best fourteen go to Claude to choose from.
+  const REPLY_STOP = new Set(('the a an and or but of to in on at for with is are was were be been being it this that these those i you he she we they me my your our their '
+    + 'as by from not no so if then than what when where how why who which do does did have has had just very really about into out up down over more most some any all '
+    + 'can could would should will shall may might must its im dont also there here them him her his hers mine yours ours one get got like think thing things way much many even still').split(' '));
+  const replyWords = (t) => (String(t ?? '').toLowerCase().match(/\p{L}{3,}/gu) ?? []).filter((w) => !REPLY_STOP.has(w)).map((w) => (w.length > 5 ? w.replace(/(ings?|ed|es|s|ly)$/, '') : w));
+  const storyWords = new Map(); // node id -> { title, body } word sets (the map does not change while running)
+  function relatedTo(uid, date, n, text, asked) {
+    const states = talkStates(uid, date);
+    const want = new Map(); for (const w of [...replyWords(text), ...replyWords(text), ...replyWords(asked), ...replyWords(n.title)]) want.set(w, (want.get(w) ?? 0) + 1);
+    const near = new Set(tnq.edges.all(n.id, n.id).map((e) => (e.from_id === n.id ? e.to_id : e.from_id)));
+    const scored = [];
+    for (const x of tnq.stories.all()) {
+      if (x.id === n.id || hiddenIn(states, x)) continue;
+      let ws = storyWords.get(x.id);
+      if (!ws) { ws = { title: new Set(replyWords(`${x.title} ${x.thinker ?? ''}`)), body: new Set(replyWords(`${x.plain_face} ${themesOf(x.id).map((t) => t.name).join(' ')}`)) }; storyWords.set(x.id, ws); }
+      let score = near.has(x.id) ? 2 : 0;
+      for (const [w, k] of want) { if (ws.title.has(w)) score += 3 * k; else if (ws.body.has(w)) score += k; }
+      if (score > 0) scored.push([score, x]);
+    }
+    return scored.sort((a, b) => b[0] - a[0]).slice(0, 14).map(([, x]) => x);
+  }
+  const atq = {
+    add: db.prepare('INSERT INTO answer_themes (user_id, node_id, source, ref_id, themes, local_date) VALUES (?, ?, ?, ?, ?, ?)'),
+    recent: db.prepare('SELECT themes FROM answer_themes WHERE user_id = ? ORDER BY id DESC LIMIT 12'),
+    forNode: db.prepare('SELECT themes FROM answer_themes WHERE user_id = ? AND node_id = ?'),
+  };
+  // The themes noticed in their recent answers, newest first, each once: for Talk.
+  const themesText = (uid) => [...new Set(atq.recent.all(uid).flatMap((r) => { try { return JSON.parse(r.themes); } catch { return []; } }))].slice(0, 16).join('; ');
+  // A reply written for their answer (null without Claude, or if it fails: the short line stands in). save: keep the
+  // themes noticed with the answer.
+  async function answerReply({ uid, date, n, kind = 'question', asked = '', text, source, refId = null, save = true, depth = null }) {
+    if (!talk) return null;
+    const candidates = relatedTo(uid, date, n, text, asked);
+    const practices = PRACTICE_ORDER.map((id) => q.node.get(id)).filter(Boolean);
+    let out = null;
+    try { out = await replyToAnswer(talk, { node: n, kind, asked, answer: text, depth: depth ?? tq.userDepth.get(uid)?.depth ?? 1, candidates, practices }); }
+    catch (e) { console.warn(`Answer reply: Claude failed (${e.status ?? ''} ${e.allowance ? 'allowance' : e.name ?? 'error'})`); return null; }
+    if (!out?.reply) return null;
+    if (save && out.themes.length) atq.add.run(uid, n.id, source, refId, JSON.stringify(out.themes), date);
+    const title = (id) => q.node.get(id)?.title ?? '';
+    return { text: out.reply, links: out.links.map((l) => ({ id: l.id, title: title(l.id), line: l.line })),
+      next: out.next.kind === 'none' ? null : { kind: out.next.kind, id: out.next.id, label: out.next.label, title: title(out.next.id) }, themes: out.themes, considered: candidates.length };
+  }
   const reflectOut = (r) => { const p = JSON.parse(r.prompt); return { id: r.id, kind: r.kind, label: REFLECT_LABEL[r.kind], text: p.text, question: p.question, parallel: p.parallel ?? null, response: r.response, skipped: Boolean(r.skipped) }; };
   app.get('/api/trainer/reflect', auth, async (req, res) => {
     const date = localDate(req.query.date); const uid = req.user.id; const n = q.node.get(String(req.query.node ?? ''));
@@ -724,7 +771,7 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     const r = rfq.add.run(uid, n.id, kind, JSON.stringify(prompt), date);
     res.json(reflectOut(rfq.get.get(Number(r.lastInsertRowid), uid)));
   });
-  app.post('/api/trainer/reflect/:id', auth, (req, res) => {
+  app.post('/api/trainer/reflect/:id', auth, async (req, res) => {
     const date = localDate(req.body?.date); const uid = req.user.id; const r = rfq.get.get(Number(req.params.id), uid);
     if (!r) return res.status(404).json({ error: 'not_found' });
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
@@ -738,8 +785,9 @@ export function createApp(db, { adminKey, tts = null, talk = null, talkDailyLimi
     dq.saveNote.run(uid, n.id, `${had ? `${had}\n\n` : ''}${asked}\n${text}`.slice(0, MAX_BODY), date);
     tnq.log.run(uid, n.id, 'respond', null, date);
     noteFrom(uid, date, text, `Their answer to ${skipped ? `the passage "${n.title}"` : `"${p.question}" (${REFLECT_LABEL[r.kind]}, after "${n.title}")`}.`, 'note');
+    const reply = await answerReply({ uid, date, n, kind: skipped ? 'question' : r.kind, asked: skipped ? `What do you make of "${n.title}"?` : [p.text, p.question].filter(Boolean).join(' '), text, source: 'reflect', refId: r.id });
     const rd = readReaction(text);
-    res.json({ ack: ackFor(rd.strength, hash(`${uid}|${r.id}|ack`)), reflection: reflectOut(rfq.get.get(r.id, uid)) });
+    res.json({ ack: reply ? '' : ackFor(rd.strength, hash(`${uid}|${r.id}|ack`)), reply, reflection: reflectOut(rfq.get.get(r.id, uid)) });
   });
 
   // ── Source links that do not die: checked before they are shown or opened, with Gutenberg's mirrors, Standard Ebooks
@@ -941,7 +989,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
   });
 
   // A response to a story that is not the day's own: added to the user's note on that idea (never replacing it).
-  app.post('/api/trainer/respond', auth, (req, res) => {
+  app.post('/api/trainer/respond', auth, async (req, res) => {
     const date = localDate(req.body?.date); const uid = req.user.id; const n = q.node.get(req.body?.node);
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!n) return res.status(404).json({ error: 'not_found' });
@@ -951,8 +999,29 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
     dq.saveNote.run(uid, n.id, `${had ? `${had}\n\n` : ''}${q2 ? `${q2} ` : ''}${text}`.slice(0, MAX_BODY), date);
     tnq.log.run(uid, n.id, 'respond', null, date);
     noteFrom(uid, date, text, `Their response to "${n.title}"${q2 ? ` (asked: ${q2})` : ''}.`, 'note');
+    const reply = await answerReply({ uid, date, n, asked: q2, text, source: 'respond' });
     const r = readReaction(text);
-    res.json({ ack: ackFor(r.strength, hash(`${uid}|${n.id}|${date}|ack`)) });
+    res.json({ ack: reply ? '' : ackFor(r.strength, hash(`${uid}|${n.id}|${date}|ack`)), reply });
+  });
+  // The reply alone, for an answer already kept elsewhere (the day's idea, answered through its own route).
+  app.post('/api/trainer/reply', auth, async (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id; const n = q.node.get(req.body?.node);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!n || !text || text.length > MAX_BODY) return res.status(400).json({ error: 'bad' });
+    const q2 = typeof req.body?.question === 'string' ? req.body.question.slice(0, 200) : '';
+    const reply = await answerReply({ uid, date, n, asked: q2, text, source: 'today' });
+    res.json({ reply, ack: reply ? '' : ackFor(readReaction(text).strength, hash(`${uid}|${n.id}|${date}|ack`)) });
+  });
+  // For trying the replies out: before (the short line it used to give) and after, for an answer to a passage's
+  // question, nothing kept. depth: 1 to 3 (else theirs).
+  app.post('/api/diag/answer-reply', auth, async (req, res) => {
+    const date = localDate(req.body?.date); const uid = req.user.id; const n = q.node.get(req.body?.node);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 2000) : '';
+    if (!n || !text) return res.status(400).json({ error: 'bad' });
+    const depth = [1, 2, 3].includes(Number(req.body?.depth)) ? Number(req.body.depth) : null;
+    const before = ackFor(readReaction(text).strength, hash(`${uid}|${n.id}|${date}|ack`)) || '(no reply: silence)';
+    const after = await answerReply({ uid, date, n, asked: String(req.body?.question ?? n.prompt ?? ''), text, source: 'diag', save: false, depth });
+    res.json({ passage: n.title, question: String(req.body?.question ?? n.prompt ?? ''), answer: text, before, after });
   });
 
   // Something else on their mind: today's line goes there instead (until they have answered today's).
@@ -2293,7 +2362,7 @@ ${n ? `<p style="opacity:.8">${esc(n.source_citation ?? n.title)}</p>` : ''}<p><
       const fkey = t.id ? `${t.id}|${date}|${session.length}` : null;
       let system = fkey && frozenSystem.get(fkey);
       if (!system) {
-        system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session });
+        system = systemBlocks({ catalogue: talkCatalogue(states), diary: talkDiary(uid, states), today: date, views: viewsText(uid), experience: experienceOf(uid).text, cases: casesText(uid), checks: surveysText(uid, date), session, themes: themesText(uid) });
         if (fkey) { frozenSystem.set(fkey, system); if (frozenSystem.size > 300) frozenSystem.delete(frozenSystem.keys().next().value); }
       }
       // Alongside the reply, a quiet check for signs of danger to themselves or others: help goes on screen. Nothing is

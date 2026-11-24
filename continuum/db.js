@@ -160,6 +160,19 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 -- The user's views over time: what they said they believe, want or wonder, noted from Talk and their answers. Used to
 -- choose their next ideas and, later, to compare what they say now with what they said then.
+-- Themes noticed in an answer to a passage (by the reply to it): kept with the answer for summaries, search, Talk and
+-- nudges. source: reflect (Thoughts; ref_id is the reflection) | respond (a passage's question) | today (the day's idea).
+CREATE TABLE IF NOT EXISTS answer_themes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  node_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  ref_id INTEGER,
+  themes TEXT NOT NULL,                 -- JSON array of short phrases
+  local_date TEXT NOT NULL,
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS answer_themes_user ON answer_themes(user_id, id);
 -- Thumbs up or down on a passage: one per person per passage, changed or cleared at will. They feed the trainer's
 -- read on what lands (which rooms to bring more of).
 CREATE TABLE IF NOT EXISTS votes (
