@@ -98,7 +98,9 @@ export const TRUSTED_DOMAINS = [
   'nih.gov', 'cdc.gov', 'who.int', 'nature.com', 'science.org', 'pnas.org', 'apa.org', 'psychologytoday.com', 'pewresearch.org', 'nobelprize.org',
   'harvard.edu', 'yale.edu', 'stanford.edu', 'mit.edu', 'berkeley.edu', 'princeton.edu', 'columbia.edu', 'uchicago.edu', 'ox.ac.uk', 'cam.ac.uk', 'ucl.ac.uk',
   'supremecourt.gov', 'oyez.org', 'law.cornell.edu', 'congress.gov', 'justia.com', 'loc.gov', 'gov.uk',
-  'apnews.com', 'reuters.com', 'npr.org', 'pbs.org', 'bbc.com', 'bbc.co.uk', 'nytimes.com', 'washingtonpost.com', 'theguardian.com', 'economist.com', 'theatlantic.com', 'newyorker.com',
+  // (Some news sites cannot be searched by Anthropic's search and would make every request fail: AP, Reuters, the BBC,
+  // the New York Times, the Guardian, the Economist, the Atlantic and the New Yorker are left out for that reason.)
+  'npr.org', 'pbs.org', 'washingtonpost.com',
   'smithsonianmag.com', 'scientificamerican.com', 'aeon.co', 'volunteermatch.org', 'idealist.org', 'justserve.org',
 ];
 const TOOLS = [
