@@ -289,3 +289,15 @@ test('talk: a cited page that does not answer is left out, never shown as a dead
     assert.deepEqual(done.sources, [{ url: 'https://alive.example/a', title: 'Alive' }]);
   } finally { server.close(); }
 });
+
+test('talk: a search used without citations still shows the pages it found', async () => {
+  const fake = fakeClaude([{ stop_reason: 'end_turn', content: [
+    { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'loneliness smoking' } },
+    { type: 'web_search_tool_result', tool_use_id: 's1', content: [{ type: 'web_search_result', url: 'https://www.hhs.gov/advisory', title: 'Our Epidemic of Loneliness' }, { type: 'web_search_result', url: 'https://journals.plos.org/x', title: 'Social Relationships and Mortality Risk' }] },
+    { type: 'text', text: 'Mostly, yes.' }] }]);
+  const { server, call, lines } = await boot(createTalk({ client: fake.client }), { sourceFetch: async () => new Response('', { status: 200 }) });
+  try {
+    const done = (await lines(await call('/api/talk', { text: 'Is loneliness like smoking?', date: D }))).at(-1);
+    assert.deepEqual(done.sources.map((x) => x.url), ['https://www.hhs.gov/advisory', 'https://journals.plos.org/x']);
+  } finally { server.close(); }
+});

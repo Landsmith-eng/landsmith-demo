@@ -193,8 +193,16 @@ export function systemBlocks({ catalogue, diary, today, views = '', experience =
 // onText(delta) gets the reply as it streams; readIdea(id) returns a string (or null when the idea is not available).
 export async function answer(talk, { system, messages, onText, readIdea }) {
   const sources = new Map(); // url -> title, from web search citations in this answer
-  const collect = (msg) => { for (const b of msg.content) for (const c of b.citations ?? []) if (c.url) sources.set(c.url, c.title || c.url); };
-  const done = (stop) => ({ stop, sources: [...sources].map(([url, title]) => ({ url, title })) });
+  const searched = new Map(); // url -> title, every page the searches returned
+  const collect = (msg) => {
+    for (const b of msg.content) {
+      for (const c of b.citations ?? []) if (c.url) sources.set(c.url, c.title || c.url);
+      if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const r of b.content) if (r?.url) searched.set(r.url, r.title || r.url);
+    }
+  };
+  // The pages it cited; when a search was used without citing (the newer search can draw on its results without
+  // marking them), the first few pages the search found, so the user can still see where the facts came from.
+  const done = (stop) => ({ stop, sources: [...(sources.size ? sources : new Map([...searched].slice(0, 4)))].map(([url, title]) => ({ url, title })) });
   for (let turn = 0; turn < 8; turn++) {
     const stream = talk.client.beta.messages.stream({
       model: talk.model,
