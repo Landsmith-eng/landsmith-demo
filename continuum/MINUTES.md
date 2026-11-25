@@ -44,8 +44,11 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 **Decisions and conversations**
 - Jon restated the wise-friend brief (talk about anything; curated library; 1–2 thinkers and an offer to go deeper; a private profile incl. people mentioned, what lands, skips and follow-ups, depth, interview answers; see/edit/delete; never store crisis details; voice or text replies by choice). Most of it shipped 2026-11-24; this day added the rest.
 
+- **Chinese Legalism and Confucianism, filled in** (content/branches/east2.js, 6 new passages, 31 links). Before: Mencius, Xunzi, Han Fei, Zengzi, Mozi, Laozi, Zhuangzi and Wang Yangming were on the map, but not Confucius himself, Shang Yang, Li Si or Zhu Xi; no Confucian–Legalist debate; Han Fei had no practice. Added: Confucius (Analects II.3, Legge, verified), Shang Yang (moving the log), Li Si (the burning of the books), the debate *Virtue or law* (Analects II.3 vs Han Feizi ch. 49), Zhu Xi (the Great Learning's "investigation of things", verified), and Aristotle on virtue as habit (NE II.1, Ross, verified). Links: Confucius → Zengzi, Mencius, Xunzi; Mozi and Zhuangzi against Confucius; Laozi → Han Fei (the Laozi commentary chapters); Shang Yang → Han Fei; Xunzi → Li Si and Han Fei (teacher); Mencius and Zengzi → Zhu Xi → Wang Yangming (refuted); Hobbes and Machiavelli beside the Legalists; Confucius and Xunzi beside Aristotle. Each lands on its practices; SEP entries for each (confucius, chinese-legalism, zhu-xi, aristotle-ethics).
+
 **Minor / fixes**
 - Talk's sources list no longer shows the same page twice.
+- SEP is blocked by this container's network (Jon declined adding it), so SEP links were confirmed by search listing, not by fetching.
 
 ## 2026-11-24
 
