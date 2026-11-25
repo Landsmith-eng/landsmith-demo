@@ -48,8 +48,11 @@ People: **Jon** (owner; tests on a Motorola Android phone), testers **John**, **
 
 - **The Tao and the Art of War** (content/branches/east3.js, 7 passages, 27 links). Before: Daoism was two passages (Laozi on contentment, Zhuangzi's butterfly); the Art of War was absent. Added, all verified word for word against Wikisource: Laozi on water (chs. 8, 78) and wu wei (chs. 37, 48), Legge 1891; Zhuangzi's Cook Ding (ch. 3) and drumming on a bowl at his wife's death (ch. 18), Giles 1889; Sunzi on winning without fighting, knowing the enemy and yourself, and tactics like water (chs. 3, 6), Giles 1910. Links: Laozi's water to Sunzi's water; wu wei to Zhuangzi, Confucius, Han Fei and the Gita; Cook Ding to flow and to Aristotle's habit; drumming to Lucretius and Montaigne; Sunzi to Han Fei, Machiavelli, Socrates' "know thyself", and Xunzi's rebuttal. Sunzi has no SEP or IEP entry, so its deeper link is the full Giles translation.
 
+- **The Buddha and Zen** (content/branches/east4.js, 11 passages, 41 links). Before: the Buddha on craving (daily), Nagarjuna, Shantideva, Dōgen, Nishitani, the Dalai Lama and the mindfulness therapies; no Four Noble Truths, no-self, or Zen before Dōgen. Added, verified word for word against archive.org scans: the first sermon (middle way, four truths; Rhys Davids 1881), the poisoned arrow (Warren 1896), Nagasena's chariot (no-self; Rhys Davids 1890), Kisa Gotami and the mustard seed (Burlingame 1922), loving-kindness (Metta Sutta; Fausbøll 1881), Bodhidharma's "No merit at all", Huineng's mirror verses, the finger pointing at the moon, and Baizhang's "eat when hungry" (Nukariya 1913). As labelled summaries: Zhaozhou's "Mu" and Bashō's old pond. Links run Buddha → Nagarjuna → Bodhidharma → Huineng → Baizhang and Zhaozhou → Dōgen → Bashō, with Aristotle's mean, Hume, Parfit, Peirce, Mozi, Gilgamesh, Zhuangzi, Wittgenstein, Kabat-Zinn, Neff and Fredrickson alongside.
+
 **Minor / fixes**
 - Talk's sources list no longer shows the same page twice.
+- `verify-quotes.js` silently checked nothing when given a path (`content/branches/x.js`) instead of a name; it now accepts either and fails if no passage was checked. (East2 and east3 re-checked properly: all match.)
 - SEP is blocked by this container's network (Jon declined adding it), so SEP links were confirmed by search listing, not by fetching.
 
 ## 2026-11-24

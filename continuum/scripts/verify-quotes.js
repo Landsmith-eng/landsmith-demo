@@ -6,7 +6,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 const root = process.argv[2];
-const only = process.argv[3] ? `${process.argv[3].replace(/\.js$/, '')}.js` : null;
+// The branch file may be given as a name (east2), a file name (east2.js) or a path (content/branches/east2.js).
+const only = process.argv[3] ? `${process.argv[3].replace(/^.*[\\/]/, '').replace(/\.js$/, '')}.js` : null;
 const contentIndex = new URL('../content/index.js', import.meta.url);
 if (!root) { console.error('usage: node scripts/verify-quotes.js <texts-dir> [branch-file]'); process.exit(2); }
 const files = [];
@@ -31,8 +32,10 @@ const checks = nodes.flatMap((n) => [
   n.source_face ? { ...n } : null,
   ...(n.opinions ?? []).map((o, i) => ({ id: `${n.id} [${o.role}, ${o.author}]`, file: n.file, source_face: o.quote, _i: i })),
 ].filter(Boolean));
+let seen = 0;
 for (const n of checks) {
   if (!n.source_face || (only && n.file !== only)) continue;
+  seen++;
   if (/^(Summary|Short quotation)/.test(n.source_face)) { console.log(`SKIP  ${n.id} (labelled summary/short quotation)`); continue; }
   // A paragraph wrapped entirely in [square brackets] is an editorial rendering (e.g. our English for a
   // German or Greek original) and is not matched; the citation must say whose rendering it is.
@@ -50,5 +53,6 @@ for (const n of checks) {
   if (missing.length) { bad++; console.log(`MISS  ${n.id}:`); for (const m of missing) console.log('        ' + m.slice(0, 110)); }
   else console.log(`OK    ${n.id} (${frags.length} fragment${frags.length > 1 ? 's' : ''})`);
 }
+if (only && !seen) { console.log(`\nno passages found in ${only}: check the file name`); process.exit(2); }
 console.log(bad ? `\n${bad} node(s) with unmatched text` : '\nall quoted passages matched');
 process.exit(bad ? 1 : 0);

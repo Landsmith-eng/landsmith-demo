@@ -183,6 +183,8 @@ export const COURSE_LINKS = {
   virtue_or_law: ['openstax_ip_3_3'],
   aristotle_virtue_is_habit: ['openstax_ip_9_4'],
   laozi_like_water: ['openstax_ip_9_5', 'openstax_ip_3_3'],
+  buddha_middle_way: ['openstax_ip_6_2'],
+  nagasena_chariot: ['openstax_ip_6_2'],
   laozi_wu_wei: ['openstax_ip_9_5', 'openstax_ip_3_3'],
   zhuangzi_cook_ding: ['openstax_ip_9_5'],
   zhuangzi_drumming_on_a_bowl: ['openstax_ip_9_5'],
