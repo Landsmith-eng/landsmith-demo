@@ -1,0 +1,4952 @@
+// Continuum client. Today: card -> write -> the concept, one part per screen -> walk the lineage.
+import { setMotif, motifLevel, motifFor, setSkyFocus } from '/motifs.js';
+import { mountMap } from '/mapview.js';
+import { SURVEYS, surveyById, optionsFor } from '/surveys.js';
+import { startCreatures, summon, creaturesInto, sceneFor, passagePaintings, startPassage, stopPassage, passageStatus } from '/creatures.js';
+import { startLiving, liveIn, liveOut } from '/living.js';
+const TOKEN_KEY = 'continuum.token';
+const view = document.getElementById('view');
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode: fine */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
+};
+
+// Pick up an invite token from ?u=..., keep it, and clean the URL so it isn't shared by accident.
+const DATE_KEY = 'continuum.date';
+const params = new URLSearchParams(location.search);
+if (params.get('u')) store.set(TOKEN_KEY, params.get('u'));
+// Test aid: ?day=1 means tomorrow, ?day=2 the day after, ?day=2026-11-02 pins that date;
+// ?day=clear goes back to the real date. The setting sticks until cleared.
+if (params.get('day')) {
+  const v = params.get('day').trim(); // a "+" in a URL arrives as a space, so "+1" and "1" both mean tomorrow
+  if (v === 'clear') store.del(DATE_KEY);
+  else if (/^[+-]?\d{1,3}$/.test(v)) store.set(DATE_KEY, shiftDate(realToday(), Number(v)));
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) store.set(DATE_KEY, v);
+}
+if (params.get('join')) store.set('continuum.join', params.get('join'));
+// The personal link stays in the address (so a bookmark, the browser's history or a home-screen icon keeps it, even
+// when a browser such as DuckDuckGo clears what the site stored); the other settings are cleaned away.
+const token = () => store.get(TOKEN_KEY) ?? '';
+if (params.get('day') || params.get('join') || params.get('go') || (token() && !params.get('u'))) history.replaceState(null, '', token() ? `${location.pathname}?u=${encodeURIComponent(token())}` : location.pathname);
+document.getElementById('manifest')?.setAttribute('href', `/manifest.webmanifest${token() ? `?u=${encodeURIComponent(token())}` : ''}`);
+// Errors on the phone are reported to the server window (at most a few a minute), so a glitch names itself.
+let reported = 0;
+const reportError = (message, where = '') => {
+  if (++reported > 6) return; setTimeout(() => { reported = Math.max(0, reported - 1); }, 20000);
+  fetch('/api/clientlog', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ message: String(message).slice(0, 400), where: String(where).slice(0, 200), view: document.querySelector('main h1')?.textContent?.slice(0, 80) ?? '' }) }).catch(() => {});
+};
+addEventListener('error', (e) => reportError(e.message, `${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
+addEventListener('unhandledrejection', (e) => reportError(e.reason?.message ?? e.reason, 'promise'));
+
+function fmt(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function realToday() { return fmt(new Date()); }
+function shiftDate(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return fmt(new Date(y, m - 1, d + days));
+}
+const testDate = () => store.get(DATE_KEY);
+function today() { return testDate() ?? realToday(); }
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'x-continuum-token': token(), ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  // (Said at once for something they did; a screen loading things in the background says it where it is shown.)
+  if (res.status === 402 && data.error === 'allowance') { if (method !== 'GET') allowanceToast(data.allowance); throw Object.assign(new Error('allowance'), { status: 402, allowance: data.allowance }); }
+  if (!res.ok) throw Object.assign(new Error(data.error ?? `http_${res.status}`), { status: res.status });
+  if (body && method !== 'GET') markSent(body);
+  return data;
+}
+
+// Tiny element builder; text always goes through textContent, never innerHTML.
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  return el;
+}
+
+function render(...nodes) {
+  stopTopic(); // leaving a Parthenon topic closes its live line
+  if (talkPlayer.state !== 'idle') stopTalkVoice(); // leaving a reply being read aloud stops it
+  stopPassage(); // a passage's own visitor leaves with it
+  pinPlace = pinNext; pinNext = null; // the screen being drawn is the one just remembered, or one not to come back to
+  document.documentElement.classList.remove('talk-calm', 'peek', 'speaking');
+  document.documentElement.classList.remove('map-full');
+  const staged = nodes.some((n) => n?.classList?.contains('stage'));
+  if (!staged) { unstage(); setWallpaper(pageBg ?? brightFor(currentTab ?? 'page') ?? TAB_BG[currentTab] ?? dailyPlate(), .35, { plain: true }); }
+  view.classList.toggle('glassy', !staged);
+  // On a plain page the title and the line under it stand on the picture; everything else sits on glass.
+  nodes.forEach((n, i) => { if (n?.tagName === 'P' && nodes[i - 1]?.tagName === 'H1') n.classList.add('lede'); });
+  const banner = testDate() && h('div', { class: 'notice testdate bare', role: 'status' },
+    `Test date: ${testDate()} (real date ${realToday()}). `,
+    h('button', { type: 'button', class: 'link', onclick: () => { store.set(DATE_KEY, shiftDate(testDate(), 1)); showToday(); } }, '+1 day'),
+    h('button', { type: 'button', class: 'link', onclick: () => { store.del(DATE_KEY); showToday(); } }, 'use real date'));
+  view.replaceChildren(...[banner, ...nodes].filter(Boolean));
+  pageVoiceCache = null;
+  noteScreen();
+  // Listen in the corner on every screen, except those with their own (a story, Talk) and the idea cards (their own Listen).
+  document.documentElement.classList.toggle('page-listen', !staged && !view.querySelector('.trainer-story, .talk-compose, .talk-turn'));
+  window.scrollTo(0, 0);
+}
+
+// Background pictures for the tabs (public/img/tabs/<tab>.webp). Behind a plain page they stay dim and blurred.
+const TAB_BG = {
+  practice: '/img/tabs/practice.webp', gallery: '/img/tabs/gallery.webp', journal: '/img/tabs/journal.webp', review: '/img/tabs/review.webp',
+  talk: '/img/spares/talk_two_chairs.webp', // two chairs under a plane tree, two cups: a conversation waiting
+};
+TAB_BG.think = TAB_BG.talk; TAB_BG.explore = TAB_BG.gallery; TAB_BG.you = TAB_BG.journal;
+// Plates for pages outside the tabs: the debates in a colonnade where two groups argue at either end, an owl
+// between them. Pages whose plate has not arrived yet borrow one with a kindred meaning.
+const PAGE_BG = {
+  debates: '/img/spares/debates_stoa.webp',
+  map: '/img/spares/map_observatory.webp', // an observatory open to the stars, a cat on the stair
+  homework: '/img/spares/homework_reading_room.webp', // a reading room under green lamps, a cat asleep on the books
+  weigh: '/img/spares/weigh_scales.webp', // brass scales by a window, a sparrow on one pan
+  news: '/img/rooms/now.webp', // the Now room
+  goal: '/img/spares/change_river.webp', // the braided river: a course being chosen
+  teach: '/img/spares/teach_lecture_hall.webp', // an empty lecture hall, the board wiped clean: your turn to teach
+  act: '/img/spares/act_kitchen.webp', // a community kitchen, soup served at long tables, a dog by the door
+  parthenon: '/img/spares/parthenon_fire_circle.webp', // a ring of chairs round a fire at dusk: the Parthenon's groups
+  recall: '/img/spares/recall_fog_path.webp', // a garden path in fog, a hare stopped: what is near is sharp, what is far fades
+  problem: '/img/spares/problem_crossroads.webp', // a crossroads with a blank signpost, a fox at the fork
+};
+const talkPlate = (mode) => PAGE_BG[mode] ?? TAB_BG.talk;
+// Ways in, offered from the first day: a conversation can start anywhere, and what is said shapes the walk.
+function doors() {
+  const door = (label, go) => h('button', { type: 'button', class: 'chip door', onclick: go }, label);
+  return h('div', { class: 'doors' },
+    h('div', { class: 'eyebrow' }, 'Or start a conversation'),
+    h('div', { class: 'door-row' },
+      door('A debate with a friend', () => showTalk({ mode: 'settle' })),
+      door('Something in the news', () => showTalk({ mode: 'news' })),
+      door('Weigh an opinion', () => showTalk({ mode: 'weigh' })),
+      door('Today\'s practice', () => showPractice()),
+      door('Work through a problem', () => showWorkThrough()),
+      door('A goal I have', () => showTalk({ mode: 'goal' })),
+      door('My group, in the Parthenon', () => showParthenon()),
+      door('Look something up', () => showGallery('rooms', { search: true })),
+      door('Just talk', () => showTalk())));
+}
+// Any other page gets one of the daily-life plates, the same one all day.
+const DAILY_PLATES = ['bakery_window', 'bridge_rain', 'cafe_terrace', 'fish_market', 'laundry_yard', 'library_steps', 'station', 'tram_snow'];
+// By day (7 in the morning to 5 in the afternoon, on the phone's clock) the tabs and plain pages stand on bright,
+// happy plates from public/img/bright, one per page and day; in the evening the calmer plates return. Pages with a
+// plate that carries a meaning (the debates, the Parthenon, homework…) keep it.
+let brightPlates = [];
+fetch('/api/plates').then((r) => r.json()).then((j) => { brightPlates = j.bright ?? []; }).catch(() => {});
+const daytime = () => { const hr = new Date().getHours(); return hr >= 7 && hr < 17; };
+const brightFor = (key) => {
+  if (!brightPlates.length || !daytime()) return null;
+  const n = [...`${today()}|${key}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return brightPlates[n % brightPlates.length];
+};
+// The mood plates have bright daytime twins with the same meaning: done for today (kites over the park), coming back
+// (a sail heading out at sunrise), a slow stretch (the meadow at first light), a mind changed (the barge on the river).
+const MOOD_BRIGHT = { stillness: 'kites_park', return: 'sunrise_sea_sail', patience: 'meadow_morning', change: 'sail_river_morning' };
+const moodPlate = (mood) => {
+  const twin = MOOD_BRIGHT[mood] && `/img/bright/${MOOD_BRIGHT[mood]}.webp`;
+  return (daytime() && twin && brightPlates.includes(twin) ? twin : null) ?? MOOD_BG[mood] ?? null;
+};
+const dailyPlate = () => `/img/spares/daily_${DAILY_PLATES[[...today()].reduce((a, c) => a + c.charCodeAt(0), 0) % DAILY_PLATES.length]}.webp`;
+// Plates with a meaning, shown when the situation fits: done for today (the owl), coming back after a gap (the
+// boat), a reluctant stretch (the dewy web), ready to grow or a changed mind (the braided river).
+const MOOD_BG = {
+  stillness: '/img/spares/stillness_owl.webp', return: '/img/spares/return_boat.webp',
+  patience: '/img/spares/patience_web.webp', change: '/img/spares/change_river.webp',
+};
+let currentTab = null;
+let pageBg = null; // a page's own plate in place of its tab's, set just before render
+// Four tabs: Wander (today's idea and practice), Think (talk, problems, debates, the Parthenon), Explore (the Gallery
+// and the Map), You (the diary and the week's review). Pages keep their own names (for their plates); the tab lit is
+// the one they live under.
+// Three tabs: the Trainer, the Campus (every room and door, all unlocked), and You.
+const TAB_OF = { today: 'campus', practice: 'campus', talk: 'campus', think: 'campus', gallery: 'campus', explore: 'campus', journal: 'you', review: 'you' };
+function setNav(name) {
+  currentTab = name; pageBg = null;
+  const tab = TAB_OF[name] ?? name;
+  for (const b of document.querySelectorAll('nav [data-nav]')) {
+    if (b.dataset.nav === tab) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+}
+
+const year = (y) => (y == null ? '' : y < 0 ? `${-y} BCE` : y < 1000 ? `${y} CE` : String(y));
+const who = (n) => [n.thinker, year(n.year)].filter(Boolean).join(' · ');
+const TYPE_LABEL = {
+  thinker: 'Thinker', concept: 'Concept', quote: 'Quote', dilemma: 'Dilemma',
+  puzzle: 'Puzzle', text: 'Text', practice: 'Practice', work: 'Artwork', case: 'Court case', event: 'In the news',
+};
+
+
+// "Keep this line": toggles a favourite; kept lines collect in the Diary.
+function favoriteButton(node) {
+  const btn = h('button', { type: 'button', class: 'chip keep', 'aria-pressed': String(Boolean(node.favorite)) });
+  const paint = () => { btn.textContent = node.favorite ? '★ Kept' : '☆ Keep'; btn.setAttribute('aria-pressed', String(Boolean(node.favorite))); };
+  paint();
+  btn.addEventListener('click', async () => {
+    node.favorite = !node.favorite; paint();
+    try { await api('/api/favorite', { method: 'POST', body: { node_id: node.id, on: node.favorite } }); }
+    catch { node.favorite = !node.favorite; paint(); }
+  });
+  return btn;
+}
+
+// After writing and reading: did the source change your mind? The answer picks the suggested next step,
+// so the redirect rests on what the reader said, not on guessing from their text.
+const REACTIONS = [['changed', 'Yes'], ['somewhat', 'A little'], ['unchanged', 'No']];
+const REACTION_LABEL = { changed: 'changed my mind', somewhat: 'moved me a little', unchanged: 'did not change my mind' };
+function reactionRow(node, trail) {
+  const box = h('section', { class: 'reaction' });
+  const pick = (rel, dir) => node.neighbours.find((r) => r.relation === rel && (!dir || r.dir === dir));
+  const respond = (value) => {
+    let line, next;
+    if (value === 'changed') { next = pick('extended', 'out') ?? pick('measured', 'out'); line = next ? 'Then follow where it went:' : 'That is the whole point of the walk.'; }
+    else if (value === 'unchanged') { next = pick('refuted', 'out') ?? pick('refuted', 'in'); line = next ? 'Hold your ground, and meet someone who argued against it:' : 'Holding your ground is a position too. Keep walking.'; }
+    else { next = pick('converged'); line = next ? 'Someone reached the same place from another tradition:' : 'A little is how most minds move.'; }
+    box.replaceChildren(
+      h('div', { class: 'eyebrow' }, 'Your reaction'),
+      h('p', {}, `${{ changed: 'The source changed your mind.', somewhat: 'It moved you a little.', unchanged: 'It did not change your mind.' }[value]} ${line}`),
+      next && h('div', { class: 'bubbles' }, h('button', { type: 'button', class: `bubble field-${next.field}`, onclick: () => walkTo(next.id, [...trail, node]) },
+        next.thinker && h('span', { class: 'b-who' }, next.thinker), h('span', { class: 'b-title' }, next.title))));
+  };
+  if (node.reaction) { respond(node.reaction); return box; }
+  box.append(
+    h('div', { class: 'eyebrow' }, 'Did the source change your mind?'),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, REACTIONS.map(([value, label]) => h('button', {
+      type: 'button', class: 'btn ghost',
+      onclick: async () => {
+        try { await api('/api/reaction', { method: 'POST', body: { node_id: node.id, value, date: today() } }); node.reaction = value; respond(value); }
+        catch { /* leave the buttons */ }
+      },
+    }, label))));
+  return box;
+}
+
+// Neighbour groups, read from the current node's point of view. `in` = the neighbour is the earlier idea A
+// and this node did `relation` to it; `out` = this node is A and the neighbour did `relation` to it.
+const GROUPS = [
+  ['Who came before', (r) => r.dir === 'in' && (r.relation === 'extended' || r.relation === 'taught')],
+  ['What it argued against', (r) => r.dir === 'in' && r.relation === 'refuted'],
+  ['What it tested', (r) => r.dir === 'in' && r.relation === 'measured'],
+  ['Kept the practice of', (r) => r.dir === 'in' && r.relation === 'secularized'],
+  ['The idea it echoes', (r) => r.dir === 'in' && r.relation === 'echoes'],
+  ['Same idea, no contact', (r) => r.relation === 'converged'],
+  ['Who it taught', (r) => r.dir === 'out' && r.relation === 'taught'],
+  ['Who extended it', (r) => r.dir === 'out' && r.relation === 'extended'],
+  ['Who attacked it', (r) => r.dir === 'out' && r.relation === 'refuted'],
+  ['Who measured it', (r) => r.dir === 'out' && r.relation === 'measured'],
+  ['Who kept the practice, without the deity', (r) => r.dir === 'out' && r.relation === 'secularized'],
+  ['Where it echoes: art, law, culture, the news', (r) => r.dir === 'out' && r.relation === 'echoes'],
+  ['Where it lands', (r) => r.dir === 'out' && r.relation === 'lands_on'],
+  ['Paths that land here', (r) => r.dir === 'in' && r.relation === 'lands_on'],
+];
+
+// ── The stage ────────────────────────────────────────────────────────────────────────────────────────────────
+// A concept is shown one part at a time, each part filling the screen: arrival (the title), the plain face, the
+// picture, the misreading, the source, each court opinion, your take, then each group of related ideas. As a part
+// scrolls into view it materializes (rises, sharpens, scales up); the one before it recedes. Scrolling back up
+// brings earlier parts back. A quiet animated motif for the idea runs behind it all (motifs.js).
+const rise = (el, i) => { if (el) { el.classList.add('rise'); el.style.setProperty('--i', String(i)); } return el; };
+
+function panel(kind, label, children, { wall = null, wallClass = '' } = {}) {
+  const inner = h('div', { class: 'panel-inner' });
+  children.filter(Boolean).forEach((c, i) => inner.append(rise(c, i)));
+  return h('section', { class: `panel p-${kind}`, 'data-label': label, 'data-kind': kind },
+    wall && h('div', { class: `wall ${wallClass}`, 'aria-hidden': 'true' }, h('img', { src: wall, alt: '', decoding: 'async' })),
+    inner);
+}
+
+const whoLine = (node) => [TYPE_LABEL[node.type], who(node), node.as_of && `as of ${node.as_of}`].filter(Boolean).join(' · ');
+const typeLine = (node) => [TYPE_LABEL[node.type], node.as_of && `as of ${node.as_of}`].filter(Boolean).join(' · ');
+// The concept arrives first; who said it materializes a moment later.
+const nameReveal = (node) => (node.thinker || node.year != null) && h('div', { class: 'name-reveal' },
+  h('span', { class: 'rule', 'aria-hidden': 'true' }), [node.thinker, year(node.year)].filter(Boolean).join(' · '));
+const hint = (text) => h('div', { class: 'hint', 'aria-hidden': 'true' }, text);
+
+// Related ideas lead with the idea; the thinker's name is revealed when the idea itself takes the stage.
+function bubble(r, onclick, note = r.note, label = TYPE_LABEL[r.type] ?? null) {
+  return h('button', { type: 'button', class: `bubble field-${r.field}`, title: note ?? '', onclick },
+    label && h('span', { class: 'b-who' }, label), h('span', { class: 'b-title' }, r.title),
+    note && h('span', { class: 'b-note' }, note));
+}
+
+// Where to read a source that has no link of its own: a search for the work it cites (Google Scholar for an article,
+// Google Books for a book), so every source can be reached.
+function findUrl(citation) {
+  if (!citation) return null;
+  const work = citation.split(/;|\. Summary|\. Modern translations|\. Translated|\. English translations?|\. Discussed/)[0]
+    .replace(/\([^)]*\)?/g, ' ').split(/\s,|\s\.|,?\s*§|,\s*(?:pp?|chs?|vol|Book|Part|esp)\.?\s/)[0].replace(/\s+/g, ' ').trim().slice(0, 160);
+  return /["“].*\d/.test(work) ? `https://scholar.google.com/scholar?q=${encodeURIComponent(work)}` : `https://www.google.com/search?tbm=bks&q=${encodeURIComponent(work)}`;
+}
+// A link to a passage's source. With the idea's id it goes through the server, which checks it first and falls back
+// (Gutenberg's mirrors, Standard Ebooks, the Internet Archive); checked here too as it is shown, so a source that cannot
+// be reached shows a plain note instead of a dead link. Answers kept for fifteen minutes.
+const SOURCE_VIA = { mirror: 'a Gutenberg mirror', standardebooks: 'Standard Ebooks', archive: 'the Internet Archive' };
+const sourceChecks = new Map(); // id -> { at, p }
+function sourceStatus(id) {
+  const c = sourceChecks.get(id);
+  if (c && Date.now() - c.at < 15 * 60_000) return c.p;
+  const p = api(`/api/source/${encodeURIComponent(id)}`).catch(() => null);
+  sourceChecks.set(id, { at: Date.now(), p }); return p;
+}
+function sourceLink(url, citation, label = 'Read it ↗', cls = 'fulltext', id = null) {
+  if (!url && !findUrl(citation)) return null;
+  if (!url || !id) return h('a', { href: url || findUrl(citation), target: '_blank', rel: 'noopener', class: cls }, url ? label : 'Find it ↗');
+  const a = h('a', { href: `/go/${encodeURIComponent(id)}`, target: '_blank', rel: 'noopener', class: cls }, label);
+  sourceStatus(id).then((r) => {
+    if (!r || !a.isConnected) return;
+    if (!r.ok) a.replaceWith(h('span', { class: 'muted small source-down' }, 'Source temporarily unavailable — try again later'));
+    else if (SOURCE_VIA[r.via]) a.append(h('span', { class: 'muted small' }, ` (from ${SOURCE_VIA[r.via]})`));
+  });
+  return a;
+}
+
+const ROLE_LABEL = { majority: 'Opinion of the Court', plurality: 'Plurality opinion', concurrence: 'Concurring', dissent: 'Dissenting' };
+
+// The parts of a revealed concept, in order.
+function conceptPanels(node, trail, { intro = null } = {}) {
+  const go = (id) => () => walkTo(id, [...trail, node]);
+  const P = [];
+  const themes = node.themes?.length && h('div', { class: 'theme-chips' },
+    node.themes.map((t) => h('button', { type: 'button', class: 'chip', onclick: () => showGallery('themes', { theme: t.id }) }, t.name)));
+  P.push(panel('arrival', 'Arrival', [
+    intro, h('div', { class: 'who' }, typeLine(node)), h('h1', {}, node.title), nameReveal(node), themes, hint('Scroll to begin'),
+  ]));
+  P.push(panel('plain', 'In plain words', [h('div', { class: 'eyebrow' }, node.type === 'practice' ? 'The practice' : 'In plain words'),
+    ...node.plain_face.split('\n\n').map((p) => h('p', { class: 'plain' }, p))]));
+  if (node.misreading) P.push(panel('misreading', 'Often misread', [h('div', { class: 'eyebrow' }, 'Often misread'), h('p', { class: 'plain' }, node.misreading)]));
+  if (node.source_face) {
+    P.push(panel('source', 'The source', [
+      h('div', { class: 'eyebrow' }, 'The source'),
+      h('blockquote', { class: 'quote' }, node.source_face.split('\n\n').map((p) => h('p', {}, p))),
+      h('cite', {}, node.source_citation ?? ''),
+      h('div', { class: 'srclinks' },
+        sourceLink(node.source_url, node.source_citation, 'Read the full text ↗', 'fulltext', node.id),
+        node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')),
+    ]));
+  }
+  for (const o of node.opinions ?? []) {
+    P.push(panel('opinion', ROLE_LABEL[o.role] ?? o.role, [
+      h('div', { class: 'eyebrow' }, `${ROLE_LABEL[o.role] ?? o.role} · ${o.author}`),
+      h('p', { class: 'plain' }, o.gist),
+      h('blockquote', { class: `quote role-${o.role}` }, o.quote),
+      o.echoes && bubble(o.echoes, go(o.echoes.id), o.echo_note, 'Echoes'),
+      h('button', { type: 'button', class: 'btn ghost weigh-btn', onclick: () => showTalk({ mode: 'weigh',
+        seed: `Weigh this opinion from ${node.title.split(':')[0]} (${ROLE_LABEL[o.role] ?? o.role}, ${o.author}). In plain words: ${o.gist} In its own words: "${o.quote}"` }) }, 'Weigh this opinion'),
+    ]));
+  }
+  if (node.entry) {
+    P.push(panel('yours', 'Your take', [
+      h('div', { class: 'eyebrow' }, `Your take · ${node.entry.local_date}`),
+      h('div', { class: 'yours' }, node.entry.body),
+      node.source_face && reactionRow(node, trail),
+    ]));
+  }
+  P.push(notePanel(node));
+  for (const [label, test] of GROUPS) {
+    const rows = node.neighbours.filter(test);
+    if (rows.length) P.push(panel('related', label, [h('div', { class: 'eyebrow' }, label), ...rows.map((r) => bubble(r, go(r.id)))]));
+  }
+  const compass = h('div', { class: 'compass' });
+  loadCompass(node, compass, trail);
+  P.push(panel('end', 'Keep exploring', [
+    h('h2', {}, 'Keep exploring'),
+    compass,
+    h('div', { class: 'end-links' },
+      node.year != null && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('timeline', { focus: node.id }) }, 'See it on the timeline'),
+      node.room && h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms', { focus: node.id }) }, 'See its room'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('themes') }, 'Browse the themes'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node }) }, 'Talk it through'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showHomework(node) }, 'Homework sheet'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
+      node.type !== 'practice' && h('button', { type: 'button', class: 'btn ghost', onclick: () => showParthenon({ idea: node }) }, 'Discuss it with your group'),
+      h('button', { type: 'button', class: 'btn', onclick: showToday }, 'Back to today\'s question')),
+  ]));
+  return P;
+}
+
+// A discovery note on this idea, kept in the diary. One per idea; it can be changed any time.
+function notePanel(node) {
+  const ta = h('textarea', { id: `note-${node.id}`, maxlength: '5000', rows: '4',
+    placeholder: 'What did you notice? A connection, a doubt, a question to come back to.' });
+  ta.value = node.note ?? '';
+  const status = h('span', { class: 'muted small', role: 'status' }, node.note ? 'In your diary' : '');
+  const save = h('button', { type: 'button', class: 'btn' }, node.note ? 'Update note' : 'Save to diary');
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      const r = await api('/api/note', { method: 'POST', body: { node_id: node.id, body: ta.value, date: today() } });
+      node.note = r.note;
+      status.textContent = r.note ? 'Saved to your diary' : 'Note removed';
+      save.textContent = r.note ? 'Update note' : 'Save to diary';
+      if (r.note) askBack(); else back.replaceChildren();
+    } catch { status.textContent = 'Could not save. Try again.'; } finally { save.disabled = false; }
+  });
+  // After a note, Continuum asks one question back; the answer (typed or spoken) is added to the note.
+  const back = h('div', { class: 'ask-back', 'aria-live': 'polite' });
+  async function askBack() {
+    back.replaceChildren(h('p', { class: 'muted small' }, 'Continuum is reading your note…'));
+    const r = await api('/api/note/question', { method: 'POST', body: { node_id: node.id } }).catch(() => null);
+    if (!r?.question) return back.replaceChildren();
+    const reply = h('textarea', { rows: '3', maxlength: '2000', placeholder: 'Your answer, if you have one', 'aria-label': 'Your answer' });
+    const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Add to my note');
+    reply.addEventListener('input', () => { send.disabled = !reply.value.trim(); });
+    send.addEventListener('click', async () => {
+      send.disabled = true;
+      try {
+        const x = await api('/api/note/reply', { method: 'POST', body: { node_id: node.id, question: r.question, reply: reply.value, date: today() } });
+        node.note = ta.value = x.note;
+        back.replaceChildren(h('p', { class: 'muted small' }, 'Added to your note.'),
+          h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => askBack() }, 'Ask me another'));
+      } catch { send.disabled = false; notice('Could not add that. Try again.'); }
+    });
+    back.replaceChildren(
+      h('div', { class: 'eyebrow' }, 'A question back'),
+      h('p', { class: 'ask-q' }, r.question),
+      reply, h('div', { class: 'row' }, dictation(reply)?.button,
+        h('button', { type: 'button', class: 'link small', onclick: () => back.replaceChildren() }, 'Not now'), send));
+  }
+  return panel('note', 'Your notes', [
+    h('div', { class: 'eyebrow' }, 'Your notes'),
+    h('label', { class: 'prompt unspoken', for: ta.id }, 'A note for your diary of discovery'),
+    ta, h('div', { class: 'row' }, dictation(ta)?.button, status, save), back,
+  ]);
+}
+
+// Where to go next: one suggestion from the user's own curiosity, and, when their pattern looks one-sided, a gentle
+// challenge with the reason shown. Plus a nudge toward today's practice if they haven't done it.
+async function loadCompass(node, box, trail) {
+  const c = await api(`/api/compass?from=${encodeURIComponent(node.id)}&date=${today()}`).catch(() => null);
+  if (!c) return;
+  const item = (label, s) => h('div', { class: 'compass-item' },
+    h('div', { class: 'eyebrow' }, label), h('p', { class: 'muted small' }, s.why),
+    bubble(s.entry, () => walkTo(s.entry.id, [...trail, node]), null));
+  box.replaceChildren(...[
+    c.curiosity && item('Follow your curiosity', c.curiosity),
+    c.challenge && item('A gentle challenge', c.challenge),
+    c.practice_nudge && h('button', { type: 'button', class: 'btn practice-nudge', onclick: () => showPractice() }, `${c.practice_nudge} →`),
+  ].filter(Boolean));
+}
+
+// ── Practice: wisdom is easy, practice is hard ──────────────────────────────────────────────────────────────
+// Arrive, the line you kept, the exercise (with a breathing timer), an intention. Sizes grow with the habit.
+const SIZE_LABEL = { tiny: '10 seconds', small: '1 minute', full: '5 minutes' };
+function showPractice({ practice = null, size = null } = {}) {
+  remember({ kind: 'practice', title: 'Today\'s practice' });
+  setNav('practice');
+  return guarded(async () => {
+    const plan = await api(`/api/practice?date=${today()}${practice ? `&practice=${encodeURIComponent(practice)}` : ''}`);
+    const sz = size ?? plan.size;
+    const steps = plan.practice.steps;
+    const sizeChips = h('div', { class: 'size-chips', role: 'group', 'aria-label': 'How long' },
+      ['tiny', 'small', 'full'].map((k) => h('button', {
+        type: 'button', class: `chip ${k === sz ? 'on' : ''}`, 'aria-pressed': String(k === sz),
+        onclick: () => showPractice({ practice: plan.practice.id, size: k }),
+      }, SIZE_LABEL[k])));
+    const bigger = plan.offer_bigger && sz !== plan.offer_bigger && h('button', { type: 'button', class: 'btn ghost',
+      onclick: () => showPractice({ practice: plan.practice.id, size: plan.offer_bigger }) },
+    `Three days in a row. Try ${SIZE_LABEL[plan.offer_bigger]} today?`);
+
+    // The timer: a ring that fills over the session's length; one breath in, one out, every eight seconds.
+    const secs = plan.sizes[sz];
+    const ring = h('div', { class: 'ring', role: 'timer', 'aria-live': 'off' }, h('span', { class: 'ring-num' }, String(secs)));
+    let started = 0, timer = 0;
+    const begin = h('button', { type: 'button', class: 'btn' }, 'Begin');
+    begin.addEventListener('click', () => {
+      if (timer) return;
+      started = Date.now(); ring.classList.add('running'); begin.textContent = 'Breathe';
+      begin.disabled = true;
+      timer = setInterval(() => {
+        const left = Math.max(0, secs - Math.floor((Date.now() - started) / 1000));
+        ring.style.setProperty('--p', String(1 - left / secs));
+        ring.firstChild.textContent = left ? String(left) : '✓';
+        if (!left) { clearInterval(timer); begin.textContent = 'Done'; ring.classList.add('finished'); }
+      }, 250);
+    });
+
+    const intention = h('input', { type: 'text', class: 'intention', maxlength: '500', placeholder: steps?.intention ?? 'One thing to carry with you…' });
+    const finish = h('button', { type: 'button', class: 'btn' }, plan.done_today ? 'Save again' : 'Finish');
+    const endBox = h('div', {});
+    finish.addEventListener('click', async () => {
+      clearInterval(timer);
+      const spent = started ? Math.round((Date.now() - started) / 1000) : null;
+      finish.disabled = true;
+      try {
+        const after = await api('/api/practice', { method: 'POST', body: { practice_id: plan.practice.id, size: sz, seconds: spent, intention: intention.value, date: today() } });
+        setWallpaper(moodPlate(after.mood) ?? TAB_BG.practice, wallMax); // done: the owl (by day, the kites) settles in behind
+        endBox.replaceChildren(
+          h('h2', {}, after.streak > 1 ? `Done. ${after.streak} days in a row.` : 'Done. That is how a habit starts.'),
+          h('p', { class: 'plain' }, sz === 'tiny' ? 'Ten seconds counts. Tomorrow, the same again, or a little more.' : 'Small, repeated, and yours.'),
+          h('div', { class: 'end-links' }, h('button', { type: 'button', class: 'btn ghost', onclick: showToday }, 'Back to today\'s question')));
+      } catch { finish.disabled = false; }
+    });
+
+    const exercise = sz === 'full'
+      ? h('ol', { class: 'steps' }, (steps?.full ?? [plan.practice.plain_face]).map((t) => h('li', {}, t)))
+      : h('p', { class: 'plain' }, steps?.[sz] ?? plan.practice.plain_face);
+    const panels = [
+      panel('arrival', 'Today\'s practice', [
+        h('div', { class: 'eyebrow' }, plan.streak ? `Today's practice · ${plan.streak} ${plan.streak === 1 ? 'day' : 'days'} in a row` : "Today's practice"),
+        h('h1', {}, plan.practice.title),
+        h('p', { class: 'muted' }, plan.reason),
+        plan.nudge && h('p', { class: 'nudge' }, plan.nudge),
+        plan.done_today && h('p', { class: 'muted small' }, `Done today (${SIZE_LABEL[plan.done_today.size]}). Once more is fine.`),
+        sizeChips, bigger, hint('Scroll to begin'),
+      ]),
+      plan.anchor && panel('source', 'A line you kept', [
+        h('div', { class: 'eyebrow' }, 'A line you kept'),
+        // The way on first, where it is seen; then the line, its first two sentences with the rest a tap away.
+        h('p', { class: 'kept-from' }, h('span', { class: 'muted small' }, [plan.anchor.thinker, plan.anchor.title].filter(Boolean).join(' · ')), ' ',
+          h('button', { type: 'button', class: 'link', onclick: () => walkTo(plan.anchor.id, []) }, 'Read the whole idea →')),
+        (() => {
+          const parts = sentences(plan.anchor.line); const short = parts.slice(0, 2).join(' ');
+          if (parts.length <= 2) return h('blockquote', { class: 'quote' }, plan.anchor.line);
+          const q = h('blockquote', { class: 'quote' }, short, ' ');
+          q.append(h('button', { type: 'button', class: 'link kept-more', onclick: () => q.replaceChildren(plan.anchor.line) }, '…the rest'));
+          return q;
+        })(),
+      ]),
+      panel('question', 'The practice', [
+        h('div', { class: 'eyebrow spoken' }, plan.arrive[sz]), exercise, h('div', { class: 'timer' }, ring, begin),
+      ]),
+      panel('yours', 'Before you go', [
+        h('div', { class: 'eyebrow' }, 'Before you go'), h('label', { class: 'prompt' }, steps?.intention ?? 'One thing to carry with you'),
+        intention, h('div', { class: 'row' }, h('span'), finish), endBox,
+      ]),
+      panel('related', 'Act on it', [
+        h('div', { class: 'eyebrow' }, 'Act on it near you'),
+        h('p', { class: 'plain' }, 'Practice can reach past yourself: a soup kitchen, a shelter, a gift drive, working the polls. Continuum can look for current opportunities where you live.'),
+        h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ mode: 'act', practice: plan.practice }) }, 'Find a way to act on this near you'),
+      ]),
+      panel('related', 'Other practices', [
+        h('div', { class: 'eyebrow' }, 'Or choose another practice'),
+        h('div', { class: 'theme-chips' }, plan.choices.filter((c) => c.id !== plan.practice.id).map((c) =>
+          h('button', { type: 'button', class: 'chip', onclick: () => showPractice({ practice: c.id, size: sz }) }, c.title))),
+      ]),
+    ].filter(Boolean);
+    renderStage({ id: plan.practice.id, field: 'practice' }, panels, { background: moodPlate(plan.mood) ?? TAB_BG.practice });
+  });
+}
+
+// Shows a stage: panels plus the side rail of dots, the card's links in the dock, and the motif behind.
+const rail = document.getElementById('rail');
+const dockLinks = document.getElementById('docklinks');
+let stageObserver = null;
+// How strongly the motif shows behind each kind of part: full on arrival, faint behind anything you read.
+const LEVEL = { arrival: 1, plain: .28, picture: .15, misreading: .3, source: .18, opinion: .18, yours: .3, note: .3, related: .45, end: .9, question: .3 };
+
+// The background picture: blurred and dim while a part is centred for reading, coming into focus as you scroll
+// between parts. Before writing (a closed card) it never comes fully into focus, so it cannot give the idea away.
+const wallpaper = document.getElementById('wallpaper');
+let wallMax = 1;
+// On a plain page (a tab) the picture is dim behind the text but clear in the empty space below it.
+// The picture's zoom from pinching (see below): how far in, and toward which point (percent of the screen).
+const wallZoom = { z: 1, ox: 50, oy: 50 };
+function applyWallZoom() {
+  wallpaper.style.setProperty('--wall-zoom', wallZoom.z.toFixed(3));
+  wallpaper.style.setProperty('--wall-origin', `${wallZoom.ox.toFixed(1)}% ${wallZoom.oy.toFixed(1)}%`);
+}
+function setWallpaper(src, maxFocus = 1, { plain = false } = {}) {
+  wallMax = maxFocus;
+  if (src && wallpaper.querySelector('img')?.getAttribute('src') !== src) { Object.assign(wallZoom, { z: 1, ox: 50, oy: 50 }); applyWallZoom(); }
+  wallpaper.classList.toggle('plain', plain);
+  wallpaper.classList.toggle('nolook', !plain && maxFocus < 1); // a closed card's picture stays a hint, not a view
+  if (!src) { wallpaper.classList.remove('on'); return; }
+  wallpaper.classList.toggle('bright', src.includes('/img/bright/')); // a sunlit plate needs a little more shade for the words
+  for (const img of wallpaper.querySelectorAll('img')) if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  wallpaper.classList.add('on'); focusWall();
+}
+let wallTick = 0;
+function focusWall() {
+  wallTick = 0;
+  if (!wallpaper.classList.contains('on')) return;
+  if (wallpaper.classList.contains('plain')) {
+    const bottom = Math.max(0, ...[...view.children].map((c) => c.getBoundingClientRect().bottom));
+    wallpaper.style.setProperty('--clear-from', `${Math.round(Math.min(bottom, innerHeight))}px`);
+  }
+  const panels = [...document.querySelectorAll('.stage .panel')];
+  const mid = innerHeight / 2;
+  let between = 1;
+  for (const p of panels) {
+    const r = p.getBoundingClientRect();
+    const d = Math.abs((r.top + Math.min(r.height, innerHeight) / 2) - mid) / (Math.min(r.height, innerHeight) / 2);
+    between = Math.min(between, d);
+  }
+  const f = Math.min(1, between) * wallMax; // 0 = a part is centred (reading), 1 = halfway between two parts
+  wallpaper.style.setProperty('--focus', f.toFixed(3));
+  if (document.documentElement.classList.contains('staged')) setSkyFocus(Math.min(1, between));
+}
+const queueWall = () => { if (!wallTick) wallTick = requestAnimationFrame(focusWall); };
+addEventListener('scroll', queueWall, { passive: true });
+addEventListener('resize', queueWall);
+new ResizeObserver(queueWall).observe(view);
+
+// Listen: the stage read aloud, part by part, from the part in view to the end, scrolling gently to each part as it
+// goes (so the picture comes into focus between parts). Tap again to stop. The voice is ElevenLabs when the server has
+// a key (natural, saved once per part), otherwise the phone's own text-to-speech.
+const listenBtn = document.getElementById('listen');
+const voiceBtn = document.getElementById('voice');
+const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
+if (speech) document.documentElement.classList.add('can-speak');
+let reading = null; // { stop, wake } for the run in progress
+let ttsOn = null;   // null = not asked yet
+const ttsEnabled = async () => {
+  if (ttsOn === null) ttsOn = await api('/api/tts').then((r) => r.enabled).catch(() => null); // not signed in yet: ask again later
+  if (ttsOn) document.documentElement.classList.add('can-speak');
+  return Boolean(ttsOn);
+};
+// The choice, kept on this device: 'el:<voice id>' (an ElevenLabs voice), 'phone:<name>' (one of the phone's voices),
+// or nothing (the default: ElevenLabs when the server has a key, else the phone's default voice). A bare name is a
+// choice from before natural voices existed; it is ignored once they do.
+const VOICE_KEY = 'continuum.voice';
+// Reading speed, kept on this device: 0.8 to 1.4. ElevenLabs audio plays faster or slower (pitch kept, no new clip
+// to pay for); the phone's voice speaks at that rate.
+const RATE_KEY = 'continuum.rate';
+const RATES = [['Slower', .8], ['Calm', .9], ['Normal', 1], ['Brisk', 1.15], ['Faster', 1.3]];
+const readRate = () => { const r = Number(store.get(RATE_KEY)); return RATES.some(([, v]) => v === r) ? r : .9; }; // Calm unless chosen
+async function voicePlan() {
+  const choice = store.get(VOICE_KEY) ?? '';
+  const el = await ttsEnabled();
+  if (choice.startsWith('el:') && el) return { el: choice.slice(3) };
+  const name = choice.startsWith('phone:') ? choice.slice(6) : !el && !choice.startsWith('el:') ? choice : '';
+  const phone = name && speech?.getVoices().find((v) => v.name === name);
+  if (phone) return { phone };
+  // The phone's own voice only when it was chosen, or when the server has no reading voice at all. If the server could
+  // not be asked just now (a restart, a dropped connection), it is still the reading voice: never a stranger's.
+  if (!el && ttsOn === null) await new Promise((r) => setTimeout(r, 1500));
+  if (el || (await ttsEnabled()) || ttsOn === null) return { el: null };
+  return { phone: null };
+}
+// One more try after a moment, for a clip that failed to arrive.
+const tryTwice = async (fn) => { try { return await fn(); } catch { await new Promise((r) => setTimeout(r, 1500)); return fn(); } };
+const VOICE_DOWN = 'The reading voice could not be reached just now. Tap to try again.';
+// What a listener should hear from one part: the substance only (titles, plain words, the source, questions, their
+// own writing). Labels and outline lines ("Today · 1 of 14", "In plain words", "Scroll to begin"), small print,
+// buttons, links and citations are skipped. The thinker's name is said; the year is not.
+function spokenText(p) {
+  const c = p.cloneNode(true);
+  c.querySelectorAll('button.bubble').forEach((bt) => bt.replaceWith(h('p', {}, bt.querySelector('.b-title')?.textContent ?? '')));
+  c.querySelectorAll('.name-reveal').forEach((n) => n.replaceWith(h('p', {}, n.textContent.split('·')[0].trim())));
+  c.querySelectorAll('.eyebrow:not(.spoken), .who, .muted, .unspoken, .progress, a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer').forEach((e) => e.remove());
+  c.querySelectorAll('div, h1, h2, h3, p, li, blockquote, label').forEach((e) => { e.prepend(' '); e.append('. '); });
+  return c.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').replace(/([.…]\s*){2,}/g, '. ').replace(/([!?:;,])\s*\.\s/g, '$1 ')
+    .replace(/\s+([.,!?;:])/g, '$1').replace(/^\s*\.\s*/, '').trim();
+}
+const sentences = (text) => text.match(/[^.!?…]+[.!?…]+["”’)]*|[^.!?…]+$/g)?.map((t) => t.trim()).filter((t) => /[\p{L}\d]/u.test(t)) ?? [];
+// Pieces of at most ~2,000 characters, cut at sentence ends (the server takes up to 2,500).
+function chunks(text) {
+  const out = []; let cur = '';
+  for (const s of sentences(text)) { if (cur && (cur + ' ' + s).length > 2000) { out.push(cur); cur = s; } else cur = cur ? `${cur} ${s}` : s; }
+  return cur ? [...out, cur] : out;
+}
+
+// The phone's voice, one sentence at a time (some browsers cut off a long utterance).
+// onWord(charIndex): the letter being spoken, for lighting words. From the phone's word boundaries where it gives
+// them; otherwise estimated from an even pace.
+function sayPhone(text, voice, run, onWord = null) {
+  return new Promise((resolve) => {
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.rate = .95 * readRate();
+    let heard = false; let timer = 0;
+    const end = () => { clearInterval(timer); resolve(); };
+    u.onend = u.onerror = end;
+    if (onWord) {
+      u.onboundary = (e) => { heard = true; onWord(e.charIndex); };
+      u.onstart = () => {
+        const t0 = performance.now(); const perChar = 1000 / (14.5 * u.rate);
+        timer = setInterval(() => { if (!heard) onWord(Math.floor((performance.now() - t0) / perChar)); }, 120);
+      };
+    }
+    if (run) run.wake = end;
+    speech.speak(u);
+  });
+}
+// ElevenLabs: the server returns MP3 for a piece of text; one audio element plays the pieces in turn.
+const audioEl = new Audio();
+async function fetchClip(text, voiceId) { return URL.createObjectURL(await fetchBlob(text, voiceId)); }
+async function fetchBlob(text, voiceId) {
+  const res = await fetch('/api/tts', {
+    method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
+  }
+  return res.blob();
+}
+// A clip with each letter's start time, for lighting words as they are read; an older server gives the clip alone.
+async function fetchTimed(text, voiceId) {
+  const res = await fetch('/api/tts/timed', {
+    method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' },
+    body: JSON.stringify({ text, ...(voiceId ? { voice_id: voiceId } : {}) }),
+  });
+  if (res.status === 404) { const body = await res.json().catch(() => ({})); if (body.error !== 'tts_off') return { blob: await fetchBlob(text, voiceId), starts: null }; }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(`tts_${res.status}`), { why: body.why ?? null });
+  }
+  const j = await res.json();
+  const bytes = Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0));
+  return { blob: new Blob([bytes], { type: 'audio/mpeg' }), starts: j.starts ?? null };
+}
+function playClip(url, run, from = 0, onLength = null) {
+  return new Promise((resolve) => {
+    const done = () => { URL.revokeObjectURL(url); resolve(); };
+    audioEl.onended = audioEl.onerror = done;
+    if (run) run.wake = done;
+    audioEl.onloadedmetadata = () => {
+      if (Number.isFinite(audioEl.duration)) onLength?.(audioEl.duration);
+      const to = from < 0 ? -from * audioEl.duration : from; // below zero: a share of the clip
+      if (to > 0 && to < audioEl.duration) audioEl.currentTime = to;
+    };
+    audioEl.src = url;
+    audioEl.preservesPitch = true;
+    audioEl.playbackRate = readRate();
+    // The browser refusing to play without a tap (autoplay rules) is not the end of the clip: say so, so the caller can
+    // ask for a tap instead of racing silently through every sentence.
+    audioEl.play().catch((e) => { if (e?.name === 'NotAllowedError') { URL.revokeObjectURL(url); resolve('blocked'); } else done(); });
+  });
+}
+// The tap on the microphone is the gesture that lets a reply be heard later, after it has been written: play a moment
+// of silence through the same audio element (and the phone's voice) right then, so the browser counts them as allowed.
+const SILENCE_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+function primeAudio() {
+  try { if (audioEl.paused) { audioEl.src = SILENCE_WAV; audioEl.play().then(() => audioEl.pause()).catch(() => {}); } } catch { /* nothing to prime */ }
+  try { if (speech && !speech.speaking) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speech.speak(u); } } catch { /* no phone voice */ }
+}
+
+// The reader: the stage as a queue of sentences. A clear play/pause key shows in the middle of the screen as reading
+// begins and fades away; a tap on the page brings it back, and a tap on the key pauses or plays. While the key shows
+// (or while paused), tapping any word reads on from there. The page is free to scroll: it follows along only until
+// the user scrolls it themselves. At the end of each passage the reading rests, so there is room to think.
+// ElevenLabs clips are kept for the visit, so going back costs nothing.
+const reader = { items: [], k: 0, state: 'idle', run: null, plan: null, clips: new Map(), panels: [], key: null, keyTimer: 0, follow: true, reflecting: false };
+function readerKey() {
+  if (reader.key) return reader.key;
+  reader.keyIcon = h('span', { class: 'rk-icon', 'aria-hidden': 'true' });
+  reader.keyNote = h('span', { class: 'rk-note' });
+  reader.key = h('button', { type: 'button', class: 'reader-key', 'aria-label': 'Pause' }, reader.keyIcon, reader.keyNote);
+  reader.key.addEventListener('click', (e) => { e.stopPropagation(); togglePause(); });
+  document.body.append(reader.key);
+  return reader.key;
+}
+// The key fades after a few seconds whether playing or paused (a tap on the page brings it back).
+function showKey(ms = 2200) {
+  const key = readerKey(); key.classList.add('on'); clearTimeout(reader.keyTimer);
+  reader.keyTimer = setTimeout(() => key.classList.remove('on'), ms || 3500);
+}
+function hideKey() { clearTimeout(reader.keyTimer); reader.key?.classList.remove('on'); }
+function markPanel() {
+  reader.panels.forEach((p, n) => p.classList.toggle('reading', reader.state !== 'idle' && n === reader.items[reader.k]?.p));
+  if (!reader.key) return;
+  const paused = reader.state === 'paused';
+  reader.keyIcon.textContent = paused ? '▶' : '❚❚';
+  reader.keyNote.textContent = reader.reflecting ? 'A moment to reflect. Tap to go on.' : paused ? 'Or tap any word to read from there' : '';
+  reader.key.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+}
+// Which sentence a tap landed in: the word under the finger and a few after it, found among that passage's sentences.
+const plainWords = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function sentenceAt(x, y) {
+  const cp = document.caretPositionFromPoint?.(x, y);
+  const cr = !cp && document.caretRangeFromPoint?.(x, y);
+  const node = cp ? cp.offsetNode : cr?.startContainer; let at = cp ? cp.offset : cr?.startOffset;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return -1;
+  const p = reader.panels.findIndex((pa) => pa.contains(node));
+  if (p < 0) return -1;
+  const t = node.textContent; while (at > 0 && /\S/.test(t[at - 1])) at--;
+  const words = plainWords(t.slice(at, at + 80)).split(' ').slice(0, 5);
+  const mine = reader.items.map((x, i) => [plainWords(x.text), i]).filter(([, i]) => reader.items[i].p === p);
+  for (let n = words.length; n >= 1; n--) {
+    const phrase = words.slice(0, n).join(' ');
+    const hit = phrase && mine.find(([s]) => ` ${s} `.includes(` ${phrase} `));
+    if (hit) return hit[1];
+  }
+  return mine[0]?.[1] ?? -1;
+}
+function onStageTap(e) {
+  if (reader.state === 'idle' || !e.target.closest('.stage')) return;
+  if (e.target.closest('a, button, input, textarea, select, label, .reader-key, .keep-bar')) return;
+  if (!getSelection()?.isCollapsed) return; // choosing words to keep, not tapping
+  if (reader.state === 'paused' || reader.key?.classList.contains('on')) {
+    const k = sentenceAt(e.clientX, e.clientY);
+    if (k >= 0) return jump(k);
+  }
+  showKey(reader.state === 'paused' ? 3500 : 2200);
+}
+// The user's own scrolling means they are looking somewhere: stop pulling the page along.
+const letGo = () => { if (reader.state !== 'idle') { reader.follow = false; reader.letGoAt = performance.now(); scrollGoal = null; } };
+addEventListener('touchmove', letGo, { passive: true });
+addEventListener('wheel', letGo, { passive: true });
+document.addEventListener('click', onStageTap);
+// Following along: each word of a passage in its own span, matched to the words of the sentences read aloud, so the
+// word being spoken can be lit. (The spoken text is the passage with some parts left out, so the match walks forward
+// through the page's words and skips what is not read.)
+const UNSPOKEN = '.eyebrow:not(.spoken), .who, .muted, .unspoken, .progress, a, button, input, textarea, select, cite, .hint, .wall, [aria-hidden="true"], .size-chips, .timer, .name-reveal';
+function wordSpans(panel) {
+  if (!panel.dataset.words) {
+    const walk = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.textContent.trim() && !n.parentElement.closest(UNSPOKEN) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+    const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+    for (const n of nodes) {
+      const frag = document.createDocumentFragment();
+      for (const part of n.textContent.split(/(\s+)/)) frag.append(part && /\S/.test(part) ? h('span', { class: 'w' }, part) : part);
+      n.replaceWith(frag);
+    }
+    panel.dataset.words = '1';
+  }
+  return [...panel.querySelectorAll('span.w')].map((el) => ({ el, word: plainWords(el.textContent) }));
+}
+function matchWords(items, panels) {
+  panels.forEach((panel, n) => {
+    const spans = wordSpans(panel); let at = 0;
+    for (const item of items.filter((x) => x.p === n)) {
+      item.words = [...item.text.matchAll(/\S+/g)].map((m) => {
+        const word = plainWords(m[0]); let el = null;
+        if (word) for (let j = at; j < Math.min(spans.length, at + 8); j++) if (spans[j].word === word || spans[j].word.split(' ')[0] === word.split(' ')[0]) { el = spans[j].el; at = j + 1; break; }
+        return { at: m.index, el };
+      });
+    }
+  });
+}
+function lightWord(k, charAt) {
+  const words = reader.items[k]?.words; if (!words) return;
+  let i = -1; for (let j = 0; j < words.length && words[j].at <= charAt; j++) i = j;
+  const el = words[i]?.el; if (!el || el === reader.lit) return;
+  reader.lit?.classList.remove('now'); el.classList.add('now'); reader.lit = el;
+  glowWord(el); keepInPlace(el);
+}
+// The page follows the voice: it glides so the line being read stays at the same height, a little above the middle.
+// Scrolling by hand takes over; a few seconds after the last touch, it follows again.
+let scrollGoal = null; let scrollRaf = 0;
+function keepInPlace(el) {
+  if (!reader.follow) { if (performance.now() - (reader.letGoAt ?? 0) < 5000) return; reader.follow = true; }
+  const d = el.getBoundingClientRect().top - innerHeight * .4;
+  if (Math.abs(d) < 8) return;
+  scrollGoal = Math.max(0, scrollY + d);
+  if (!scrollRaf) scrollRaf = requestAnimationFrame(glide);
+}
+function glide() {
+  scrollRaf = 0; if (scrollGoal == null || reader.state === 'idle') return;
+  const d = scrollGoal - scrollY; if (Math.abs(d) < 1) { scrollGoal = null; return; }
+  window.scrollTo(0, scrollY + d * .07);
+  scrollRaf = requestAnimationFrame(glide);
+}
+// The spoken word's letters light one after another, a spark running across them: each flares and fades, shedding a
+// few motes of stardust that drift and twinkle out. No box around the word: only the letters glow.
+const stardust = h('div', { id: 'stardust', 'aria-hidden': 'true' }); document.body.append(stardust);
+const stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function mote(x, y, into = stardust) {
+  if (into.childElementCount > 70) return;
+  const m = h('i', { class: 'mote' });
+  const a = Math.random() * Math.PI * 2; const d = 6 + Math.random() * 16;
+  Object.assign(m.style, { left: `${x}px`, top: `${y}px`, animationDuration: `${900 + Math.random() * 900}ms` });
+  m.style.setProperty('--dx', `${Math.cos(a) * d}px`); m.style.setProperty('--dy', `${Math.sin(a) * d - 10 - Math.random() * 10}px`); m.style.setProperty('--s', String(.6 + Math.random() * .9));
+  into.append(m); setTimeout(() => m.remove(), 1900);
+}
+function glowWord(el, into = stardust) {
+  if (!el.dataset.split) { el.replaceChildren(...[...el.textContent].map((c) => h('span', { class: 'ch' }, c))); el.dataset.split = '1'; }
+  const letters = [...el.children]; const step = Math.max(28, Math.min(75, 320 / letters.length));
+  letters.forEach((c, i) => {
+    c.classList.remove('lit'); c.style.animationDelay = `${i * step}ms`; void c.offsetWidth; c.classList.add('lit');
+    if (stillMotion()) return;
+    setTimeout(() => {
+      const r = c.getBoundingClientRect(); if (!r.width) return;
+      for (let n = 0; n < 2; n++) mote(r.left + Math.random() * r.width, r.top + r.height * (.25 + Math.random() * .6), into);
+    }, i * step);
+  });
+}
+function unlight() { reader.lit?.classList.remove('now'); reader.lit = null; cancelAnimationFrame(reader.wordRaf); }
+// With the natural voice: each letter's start time from ElevenLabs (or, failing that, letters spread evenly over the
+// clip), checked against the audio as it plays.
+function followClip(k, starts) {
+  cancelAnimationFrame(reader.wordRaf);
+  const text = reader.items[k]?.text ?? '';
+  const step = () => {
+    if (reader.k !== k || reader.state === 'idle') return;
+    const t = audioEl.currentTime;
+    let at = 0;
+    if (starts?.length) { while (at + 1 < starts.length && starts[at + 1] <= t + .04) at++; }
+    else if (audioEl.duration) at = Math.floor((t / audioEl.duration) * text.length);
+    lightWord(k, at);
+    reader.wordRaf = requestAnimationFrame(step);
+  };
+  reader.wordRaf = requestAnimationFrame(step);
+}
+async function readStage() {
+  stopReading();
+  const panels = [...document.querySelectorAll('.stage .panel')];
+  if (!panels.length) return;
+  const items = panels.flatMap((p, n) => sentences(spokenText(p)).map((text) => ({ p: n, text })));
+  if (!items.length) return;
+  matchWords(items, panels);
+  const mid = innerHeight / 2;
+  const startPanel = Math.max(0, panels.findIndex((p) => { const r = p.getBoundingClientRect(); return r.top <= mid && r.bottom >= mid; }));
+  Object.assign(reader, { items, panels, k: Math.max(0, items.findIndex((x) => x.p >= startPanel)), state: 'playing', clips: new Map(), follow: true, reflecting: false, plan: await voicePlan() });
+  reading = reader; // the Listen button shows Stop while this runs
+  listenBtn.setAttribute('aria-pressed', 'true'); listenBtn.querySelector('span').textContent = 'Stop';
+  document.documentElement.classList.add('reading-aloud');
+  markPanel(); showKey(2600);
+  loop();
+}
+const clipFor = (k) => {
+  const t = reader.items[k]?.text;
+  if (!reader.clips.has(t)) reader.clips.set(t, fetchTimed(t, reader.plan.el).catch((e) => { reader.clips.delete(t); throw e; }));
+  return reader.clips.get(t);
+};
+// A passage worth resting after: two sentences or more, with more still to read (not the opening, a list of links,
+// the notes box or the way out).
+const NO_REST = new Set(['arrival', 'note', 'related', 'end']);
+const restAfter = (k) => {
+  const p = reader.items[k]?.p; const next = reader.items[k + 1];
+  return next && next.p !== p && !NO_REST.has(reader.panels[p]?.dataset.kind) && reader.items.filter((x) => x.p === p).length >= 2;
+};
+async function loop() {
+  const run = reader.run = { stop: false, wake: null };
+  let shownPanel = reader.panels.findIndex((pa) => { const r = pa.getBoundingClientRect(); return r.top < innerHeight * .6 && r.bottom > innerHeight * .2; });
+  while (reader.k < reader.items.length && !run.stop) {
+    const item = reader.items[reader.k];
+    markPanel();
+    if (item.p !== shownPanel) {
+      const r = reader.panels[item.p].getBoundingClientRect();
+      if (reader.follow && !item.words?.some((w) => w.el) && (r.top > innerHeight * .6 || r.bottom < innerHeight * .2)) { reader.panels[item.p].scrollIntoView({ behavior: 'smooth', block: 'start' }); await new Promise((x) => setTimeout(x, 700)); }
+      shownPanel = item.p;
+      if (run.stop) return;
+    }
+    if ('el' in reader.plan) {
+      try {
+        const { blob, starts } = await tryTwice(() => clipFor(reader.k));
+        if (reader.k + 1 < reader.items.length) clipFor(reader.k + 1).catch(() => {});
+        if (run.stop) return false;
+        followClip(reader.k, starts);
+        await playClip(URL.createObjectURL(blob), run);
+      } catch {
+        // Never another voice in its place: stop, say so, and let a tap try again.
+        notice(VOICE_DOWN); stopReading(); return false;
+      }
+    } else { const k = reader.k; await sayPhone(item.text, reader.plan.phone, run, (at) => lightWord(k, at)); }
+    if (run.stop || reader.state === 'paused') return;
+    const rest = restAfter(reader.k);
+    reader.k++;
+    if (rest) { reader.state = 'paused'; reader.reflecting = true; markPanel(); showKey(4500); return; }
+    if (reader.items[reader.k]?.p !== item.p) await new Promise((x) => setTimeout(x, 400));
+  }
+  if (reader.run === run && !run.stop) stopReading();
+}
+function haltRun() { if (reader.run) { reader.run.stop = true; reader.run.wake?.(); } speech?.cancel(); audioEl.pause(); }
+function togglePause() {
+  if (reader.state === 'playing') {
+    reader.state = 'paused';
+    if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltRun(); // the phone's voice restarts its sentence
+    markPanel(); showKey(3500);
+  } else if (reader.state === 'paused') {
+    const wasResting = reader.reflecting;
+    reader.state = 'playing'; reader.reflecting = false; reader.follow = true;
+    if (!wasResting && reader.run && !reader.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play();
+    else loop();
+    markPanel(); showKey(900);
+  }
+}
+function jump(k) {
+  if (reader.state === 'idle' || k < 0 || k >= reader.items.length) return;
+  haltRun(); reader.k = k; reader.reflecting = false;
+  reader.state = 'playing'; markPanel(); showKey(900);
+  loop();
+}
+function stopReading() {
+  if (reading !== reader) return;
+  haltRun(); reading = null; unlight();
+  reader.state = 'idle'; reader.reflecting = false; markPanel(); hideKey();
+  document.documentElement.classList.remove('reading-aloud');
+  listenBtn.setAttribute('aria-pressed', 'false'); listenBtn.querySelector('span').textContent = 'Listen';
+}
+// Keeping words: choose any words on an idea's page (press and hold, then drag the handles) and a "Keep" button shows
+// above the menu; kept words go to the Diary with the idea they came from.
+let keepBar = null; let keepTimer = 0;
+function keepableSelection() {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const text = sel.toString().replace(/\s+/g, ' ').trim();
+  const stage = document.querySelector('.stage');
+  const id = stage?.dataset.node;
+  if (!id || text.length < 2 || !stage.contains(sel.getRangeAt(0).commonAncestorContainer)) return null;
+  if (sel.anchorNode?.parentElement?.closest('input, textarea')) return null;
+  return { id, text: text.slice(0, 2000) };
+}
+function showKeepBar() {
+  const pick = keepableSelection();
+  if (!pick) { keepBar?.classList.remove('on'); return; }
+  if (!keepBar) {
+    keepBar = h('div', { class: 'keep-bar', role: 'toolbar', 'aria-label': 'Keep the chosen words' },
+      h('button', { type: 'button', class: 'chip', onpointerdown: (e) => e.preventDefault(), onclick: async () => {
+        const now = keepableSelection(); if (!now) return keepBar.classList.remove('on');
+        try {
+          await api('/api/highlight', { method: 'POST', body: { node_id: now.id, text: now.text } });
+          getSelection().removeAllRanges(); keepBar.classList.remove('on');
+          notice('Kept. You will find it in your Diary.');
+        } catch { notice('Could not keep that. Try again.'); }
+      } }, '✦ Keep these words'));
+    document.body.append(keepBar);
+  }
+  keepBar.classList.add('on');
+}
+document.addEventListener('selectionchange', () => { clearTimeout(keepTimer); keepTimer = setTimeout(showKeepBar, 250); });
+
+// A short message at the top of the screen that fades away.
+// ── Plans and the monthly allowance ──
+// Only conversations with Claude count toward a plan's allowance (Talk, Thoughts, problems worked through); the
+// stories, the map, voice and practice are always open. Shown as a share of the month, never as money.
+const renewsOn = (a) => new Date(`${a.renews}T12:00:00Z`).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+const allowanceText = (a) => `You have used this month's conversations on the ${a.name} plan. They renew on ${renewsOn(a)}, or a bigger plan opens them again now. The stories, the map and everything else still work.`;
+const plansLink = (label = 'See the plans') => h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPlans() }, label);
+const allowanceNote = (a) => h('p', { class: 'muted small allowance-note' }, `You have used about ${Math.round(a.share * 100)}% of this month's conversations on ${a.name}. `, plansLink());
+let toastedAllowance = 0;
+function allowanceToast(a) {
+  if (!a || Date.now() - toastedAllowance < 20000) return; toastedAllowance = Date.now();
+  const n = h('div', { class: 'toast allowance', role: 'status' }, allowanceText(a), ' ', plansLink());
+  document.body.append(n); setTimeout(() => n.remove(), 9000);
+}
+function showPlans() {
+  setNav('you');
+  return guarded(async () => {
+    const a = await api('/api/me/allowance');
+    pageBg = TAB_BG.you;
+    const pct = Math.min(100, Math.round(a.share * 100));
+    const where = a.mode === 'on'
+      ? h('div', { class: 'plan-now' }, h('p', {}, `${a.name}: ${pct}% of this month's conversations used. ${pct >= 100 ? 'They renew' : 'It renews'} on ${renewsOn(a)}.`),
+        h('div', { class: 'plan-bar', role: 'img', 'aria-label': `${pct}% used` }, h('span', { style: `width:${pct}%` })))
+      : h('p', {}, 'While Continuum is being tested, everything is open to you, with no allowance. Plans start after the trial.');
+    const card = (p) => {
+      const mine = p.id === a.plan;
+      const btn = mine ? h('p', { class: 'muted small' }, 'Your plan')
+        : h('button', { type: 'button', class: 'btn ghost', onclick: async (e) => {
+          const b = e.currentTarget; b.disabled = true;
+          try { await api('/api/plan/request', { method: 'POST', body: { plan: p.id } }); b.replaceWith(h('p', { class: 'muted small' }, `Asked for ${p.name}. You will hear back soon.`)); }
+          catch { b.disabled = false; notice('Could not send that. Try again.'); }
+        } }, `Ask for ${p.name}`);
+      return h('div', { class: `plan-card${mine ? ' mine' : ''}` }, h('h2', {}, p.name), h('p', {}, p.line), btn);
+    };
+    render(h('h1', {}, 'Your plan'), where,
+      h('p', { class: 'muted small' }, 'Only conversations with Claude count toward a plan: Talk, Thoughts on a passage, problems worked through. The stories, the map, the voice and the practices are always open, on every plan. Every plan gets the same answers, in full.'),
+      ...a.plans.map(card));
+  });
+}
+// ── Back ──
+// Every screen drawn goes on a stack, and into the phone's history, so the phone's back button (or the arrow on a
+// passage) returns to the screen before, exactly as it was (the same passage on the same painting), instead of closing
+// the app. Look and Contemplate close first. At the first screen, back says "Press back again to exit"; a second
+// press within a few seconds leaves. A screen is re-opened by calling its function again with the same arguments.
+const navKey = Math.random().toString(36).slice(2, 8); // entries from before a reload are not this stack's
+const navStack = []; let navAt = -1; let pendingNav = null; let restoreTo = null; let exitArmed = 0;
+const navId = (args) => { try { return JSON.stringify(args, (k, v) => (typeof v === 'function' ? undefined : v && typeof v === 'object' && k !== '' && 'id' in v ? `#${v.id}` : v)); } catch { return String(Math.random()); } };
+function navigable(name, fn, keep = (a) => a) {
+  return function navigated(...args) { if (restoreTo == null) pendingNav = { name, fn, args: keep(args), id: navId(keep(args)) }; return fn.apply(this, args); };
+}
+function noteScreen() {
+  if (restoreTo != null) { navAt = restoreTo; restoreTo = null; pendingNav = null; showBackArrow(); return; }
+  const e = pendingNav; pendingNav = null; if (!e) return;
+  const top = navStack[navAt];
+  if (top && top.name === e.name && top.id === e.id) { navStack[navAt] = e; return; } // the same screen again: no new step
+  navStack.length = navAt + 1; navStack.push(e); navAt = navStack.length - 1;
+  if (navAt === 0) {
+    // The first screen: a root entry to fall back to (the exit), and the screen itself above it.
+    history.replaceState({ nav: 0, k: navKey, root: true }, '');
+    history.pushState({ nav: 0, k: navKey }, '');
+  } else history.pushState({ nav: navAt, k: navKey }, '');
+  showBackArrow();
+}
+const backLayers = []; let skipPops = 0;
+// Look, Contemplate: open over the screen; back closes them first.
+function backCloses(close) { backLayers.push(close); history.pushState({ ...(history.state ?? {}), layer: backLayers.length }, ''); }
+function backDone(close) { const i = backLayers.indexOf(close); if (i < 0) return; backLayers.splice(i, 1); skipPops++; history.back(); }
+addEventListener('popstate', (ev) => {
+  if (skipPops) { skipPops--; return; }
+  if (backLayers.length) { backLayers.pop()(); return; }
+  const st = ev.state;
+  if (st?.k === navKey && st.root) {
+    // Back at the very first screen: once more leaves the app; otherwise it stays, ready for the next back.
+    exitArmed = Date.now(); notice('Press back again to exit.');
+    setTimeout(() => { if (Date.now() - exitArmed >= 2900 && history.state?.root) history.pushState({ nav: 0, k: navKey }, ''); }, 3000);
+    return;
+  }
+  const e = st?.k === navKey ? navStack[st.nav] : null;
+  if (!e) return; // an entry from before the app reloaded: stay where we are
+  if (st.nav === navAt) return;
+  stopTalkVoice?.();
+  restoreTo = st.nav; e.fn(...e.args);
+});
+// The arrow on a passage (and the screens that have one) shows only when there is somewhere to go back to.
+function showBackArrow() { document.querySelectorAll('.back-arrow').forEach((b) => { b.hidden = navAt <= 0; }); }
+const backArrow = () => h('button', { type: 'button', class: 'back-arrow', 'aria-label': 'Back', hidden: navAt <= 0, onclick: () => history.back() },
+  icon('<path d="M15 5l-7 7 7 7"/>'), h('span', {}, 'Back'));
+
+// ── Small outline icons ──
+function icon(paths) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'ico');
+  s.innerHTML = paths; // fixed drawings from this file, never user text
+  return s;
+}
+const ICONS = {
+  again: '<path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4v5h5"/><path d="M10.5 9.2l4.5 2.8-4.5 2.8z"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
+  share: '<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.3 10.8l7.4-4.1M8.3 13.2l7.4 4.1"/>',
+  save: '<path d="M6.5 3.5h11v17l-5.5-3.8-5.5 3.8z"/>',
+  up: '<path d="M7.5 11v9h-3v-9z"/><path d="M7.5 11l3.6-7.2a1.9 1.9 0 0 1 3.5 1.3L14 9.5h5a2 2 0 0 1 2 2.4l-1.3 6.5A2 2 0 0 1 17.7 20H7.5"/>',
+  down: '<g transform="rotate(180 12 12)"><path d="M7.5 11v9h-3v-9z"/><path d="M7.5 11l3.6-7.2a1.9 1.9 0 0 1 3.5 1.3L14 9.5h5a2 2 0 0 1 2 2.4l-1.3 6.5A2 2 0 0 1 17.7 20H7.5"/></g>',
+};
+// A passage (or a kept line) as text to copy or share: the words, then who wrote them, the work, and a link, so a saved
+// quote keeps its source.
+function quoteText({ title, text, thinker, year, citation, url, id }) {
+  const cite = (citation ?? '').replace(/\s*Summary, not (a )?quotation\.?$/, '').trim();
+  const link = url || (id ? `${location.origin}/?story=${encodeURIComponent(id)}` : location.origin);
+  return [title, '', text.trim(), '', `— ${[thinker, year != null ? (year < 0 ? `${-year} BCE` : year) : null].filter(Boolean).join(', ') || 'Continuum'}`, cite ? `Source: ${cite}` : '', link, '', 'From Continuum'].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim();
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {
+    const ta = h('textarea', { style: 'position:fixed;opacity:0' }); ta.value = text; document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch { /* none */ } ta.remove(); return ok;
+  }
+}
+// The row of icons under a passage or quote: each optional. Quiet until touched.
+function actionRow({ quote, onAgain = null, node = null, saved = false, vote = 0, onSaved = null }) {
+  const btn = (name, label, fn, pressed = null) => {
+    const b = h('button', { type: 'button', class: `act act-${name}`, 'aria-label': label, title: label }, icon(ICONS[name]));
+    if (pressed != null) b.setAttribute('aria-pressed', String(pressed));
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(b); }); return b;
+  };
+  const row = h('div', { class: 'acts', role: 'toolbar', 'aria-label': 'Passage actions' });
+  if (onAgain) row.append(btn('again', 'Play it again', () => onAgain()));
+  row.append(btn('copy', 'Copy, with its source', async () => notice(await copyText(quoteText(quote)) ? 'Copied, with its source.' : 'Could not copy on this phone.')));
+  row.append(btn('share', 'Share', async () => {
+    const text = quoteText(quote);
+    if (navigator.share) { try { await navigator.share({ title: quote.title, text }); return; } catch (e) { if (e?.name === 'AbortError') return; } }
+    notice(await copyText(text) ? 'Copied. Paste it wherever you want to share it.' : 'Could not share on this phone.');
+  }));
+  if (node) {
+    let on = Boolean(saved);
+    const sv = btn('save', on ? 'Saved' : 'Save', async (b) => {
+      on = !on; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Saved' : 'Save');
+      try { await api('/api/favorite', { method: 'POST', body: { node_id: node, on } }); if (on) notice('Saved. You will find it in You.'); onSaved?.(on); }
+      catch { on = !on; b.setAttribute('aria-pressed', String(on)); notice('Could not save that. Try again.'); }
+    }, on);
+    let v = vote; const ups = []; // the two thumbs, one choice (tap again to take it back)
+    const thumb = (dir) => btn(dir > 0 ? 'up' : 'down', dir > 0 ? 'This landed' : 'Not for me', async () => {
+      const was = v; v = v === dir ? 0 : dir; ups.forEach(([d, b]) => b.setAttribute('aria-pressed', String(v === d)));
+      try { await api('/api/vote', { method: 'POST', body: { node_id: node, vote: v } }); }
+      catch { v = was; ups.forEach(([d, b]) => b.setAttribute('aria-pressed', String(v === d))); }
+    }, vote === dir);
+    const tu = thumb(1); const td = thumb(-1); ups.push([1, tu], [-1, td]);
+    row.append(sv, tu, td);
+  }
+  return row;
+}
+function notice(text) {
+  const n = h('div', { class: 'toast', role: 'status' }, text);
+  document.body.append(n); setTimeout(() => n.remove(), 6000);
+}
+// Speaking instead of typing, for any text box. Two ways, chosen once:
+//  - When the server has an ElevenLabs key, the phone records (MediaRecorder) and ElevenLabs Scribe writes it down:
+//    far more exact, and the same on every phone. It records through pauses for thought until the user taps again,
+//    or until nothing has been heard for a while.
+//  - Otherwise the browser's own speech recognition, listening continuously (Android beeps each time it starts
+//    listening, so it is not restarted at every pause). Android Chrome repeats words in this mode (each result can
+//    carry everything heard so far); mergeHeard turns either style into one clean text.
+// Returns { button, start, stop, active } or null where the phone can do neither.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const ANDROID = /Android/i.test(navigator.userAgent);
+const canRecord = Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+let sttOn = null;
+// What happened, in the server window: each step of speaking in, so a glitch on a phone can be traced.
+const voiceLog = (event, detail = '') => { fetch('/api/voicelog', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ event, detail: String(detail).slice(0, 300) }) }).catch(() => {}); };
+// The way of speaking in can be chosen in the Voice sheet: auto (ElevenLabs when the server has it), or the phone's.
+const STT_KEY = 'continuum.speakin';
+const speakInWay = () => store.get(STT_KEY) ?? 'auto';
+// After the server failed to write one down, this phone uses its own voice typing for a while without asking again.
+const STT_DOWN_KEY = 'continuum.stt.down';
+const sttEnabled = async () => {
+  if (sttOn === null && Recognition && Date.now() - Number(store.get(STT_DOWN_KEY) ?? 0) < 6 * 3600_000) sttOn = false;
+  if (sttOn === null) sttOn = await api('/api/stt').then((r) => r.enabled).catch(() => null);
+  return Boolean(sttOn);
+};
+if (canRecord) sttEnabled();
+const canSpeakIn = () => Boolean(Recognition || (canRecord && sttOn !== false));
+function dictation(ta, { label = 'Speak', onStart = () => {}, onDone = () => {}, onBlocked = (m) => notice(m), quietMs = 30000 } = {}) {
+  if (!canSpeakIn()) return null;
+  const button = h('button', { type: 'button', class: 'btn ghost mic', 'aria-pressed': 'false' }, label);
+  let listening = false; let before = ''; let engine = null;
+  const show = (state) => {
+    button.setAttribute('aria-pressed', String(state === 'on'));
+    button.classList.toggle('on', state === 'on'); button.disabled = state === 'busy';
+    button.textContent = state === 'on' ? 'Listening… tap when done' : state === 'busy' ? 'Writing it down…' : label;
+  };
+  const put = (text) => { ta.value = `${before}${text}`.replace(/\s+/g, ' ').trimStart(); };
+  const done = (text) => { listening = false; show('off'); ta.dispatchEvent(new Event('input', { bubbles: true })); onDone((text ?? '').trim()); };
+  const blocked = () => { listening = false; show('off'); onBlocked('The microphone is blocked for this site. Allow it in Chrome (the icon left of the address), then try again.'); };
+
+  // ── Recording, written down by ElevenLabs ──
+  // ear: an AudioContext made at the tap itself (Android keeps one made later switched off), used only to stop by
+  // itself after a long silence. If it is not running, recording simply goes on until the user taps again.
+  function recorder(ear) {
+    let rec = null; let stream = null; let chunks = []; let timer = 0; let lastVoice = 0; let cancelled = false; let began = 0;
+    const release = () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ear?.close().catch(() => {}); stream = null; ear = null; };
+    return {
+      async start() {
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (e) { voiceLog('microphone refused', e?.name); release(); return blocked(); }
+        if (!listening) return release(); // stopped while asking for the microphone
+        const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? '';
+        try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch (e) { voiceLog('recorder failed', `${type} ${e?.name}`); release(); sttOn = false; listening = false; show('off'); return notice('Recording is not available on this phone; using its own voice typing instead. Tap Speak again.'); }
+        chunks = []; cancelled = false; lastVoice = Date.now(); began = Date.now();
+        rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        rec.onerror = (e) => voiceLog('recorder error', e?.error?.name ?? '');
+        rec.onstop = async () => {
+          const secs = (Date.now() - began) / 1000; const earState = ear?.state ?? 'none';
+          release();
+          if (cancelled) { voiceLog('cancelled', `${secs.toFixed(1)} s`); return; }
+          const blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/webm' });
+          voiceLog('recorded', `${secs.toFixed(1)} s, ${Math.round(blob.size / 1024)} KB, ${blob.type}, ear ${earState}`);
+          if (secs < .7 || blob.size < 1000) { notice('I did not catch anything. Tap Speak, talk, then tap again when you are done.'); return done(''); }
+          show('busy');
+          const wait = new AbortController(); const tooLong = setTimeout(() => wait.abort(), 60_000);
+          try {
+            const r = await fetch(`/api/stt?lang=${(navigator.language || 'en').slice(0, 2)}`, { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': blob.type.split(';')[0] || 'audio/webm' }, body: blob, signal: wait.signal });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw Object.assign(new Error(j.error || `http_${r.status}`), { status: r.status });
+            voiceLog('written down', `${(j.text ?? '').length} characters`); // a count only, never the words
+            if (!j.text) notice('Nothing was heard in that recording. Try again a little closer to the phone.');
+            put(j.text ?? ''); done(j.text ?? '');
+          } catch (e) {
+            const why = e.name === 'AbortError' ? 'timed out' : `${e.status ?? 'offline'} ${e.message}`;
+            voiceLog('not written down', why);
+            // The server cannot write it down (its key, or the service): the phone's own voice typing, from now on.
+            const serverSide = e.status >= 500 || e.status === 404;
+            if (serverSide) { sttOn = false; store.set(STT_DOWN_KEY, String(Date.now())); }
+            const fallback = serverSide && Recognition;
+            notice(fallback ? 'Sorry, that recording could not be written down. Switching to the phone\'s own voice typing: tap Speak and say it again.'
+              : e.name === 'AbortError' ? 'Writing that down took too long. Try a shorter piece, or type it.'
+                : !navigator.onLine ? 'You seem to be offline. Type it for now, or try again when you are connected.'
+                  : 'Sorry, that could not be written down. Try again, or type it.');
+            done('');
+          } finally { clearTimeout(tooLong); }
+        };
+        if (ear?.state === 'running') {
+          try {
+            const an = ear.createAnalyser(); an.fftSize = 1024; ear.createMediaStreamSource(stream).connect(an);
+            const buf = new Uint8Array(an.fftSize);
+            timer = setInterval(() => {
+              an.getByteTimeDomainData(buf);
+              let sum = 0; for (const v of buf) sum += (v - 128) ** 2;
+              if (Math.sqrt(sum / buf.length) > 4) lastVoice = Date.now();
+              if (Date.now() - lastVoice > quietMs && rec?.state === 'recording') rec.stop();
+            }, 200);
+          } catch { /* no ear: record until tapped */ }
+        }
+        rec.start(1000);
+      },
+      finish() { if (rec?.state === 'recording') rec.stop(); else { release(); done(''); } },
+      cancel() { cancelled = true; if (rec?.state === 'recording') rec.stop(); else release(); },
+    };
+  }
+
+  // ── The browser's own recognition ──
+  // Android Chrome, listening continuously, often hands back each phrase with everything before it repeated
+  // ("so", "so I think", "so I think it is"); other browsers hand back separate phrases. Either way, one clean text:
+  // a piece that starts with what is already there replaces it, one already contained is dropped, anything else is added.
+  function mergeHeard(pieces) {
+    const bare = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    let out = '';
+    for (const raw of pieces) {
+      const t = raw.replace(/\s+/g, ' ').trim(); if (!t) continue;
+      const o = bare(out), n = bare(t);
+      if (!o || n.startsWith(o)) out = t; else if (!o.includes(n)) out = `${out} ${t}`;
+    }
+    return out;
+  }
+  function recognizer() {
+    let rec = null; let heard = ''; let quiet = 0; let failed = null; let quickEnds = 0; let began = 0;
+    const hush = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (listening) { listening = false; rec?.stop(); } }, quietMs); };
+    function listen() {
+      const r = rec = new Recognition();
+      // Continuous everywhere. Android sounds a beep each time listening starts, so starting again after every pause meant
+      // a beep at every pause; now it starts again only when the phone itself ends a long session.
+      r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = true;
+      let session = '';
+      r.onresult = (e) => { session = mergeHeard([...e.results].map((x) => x[0]?.transcript ?? '')); hush(); put(`${heard} ${session}`); };
+      r.onerror = (e) => {
+        voiceLog('phone recognition error', e.error);
+        if (e.error === 'no-speech' || e.error === 'aborted') return; // a pause, or our own stop: carry on
+        failed = e.error; listening = false; // anything else: stop, and say so once
+      };
+      r.onend = () => {
+        heard = `${heard} ${session}`.replace(/\s+/g, ' ').trim(); rec = null;
+        // Phrase by phrase it starts again after each pause, but never in a tight loop: three quick empty ends stop it.
+        quickEnds = !session && Date.now() - began < 1500 ? quickEnds + 1 : 0;
+        if (quickEnds >= 3) { failed = failed ?? 'restart-loop'; listening = false; }
+        if (listening) { try { listen(); return; } catch (err) { failed = err?.name ?? 'restart'; listening = false; } }
+        if (failed) {
+          clearTimeout(quiet);
+          if (failed === 'not-allowed' || failed === 'service-not-allowed') { put(heard); blocked(); return; }
+          notice(failed === 'network' ? 'The phone\'s voice typing needs a connection, and it could not reach it. Try again, or type it.'
+            : failed === 'audio-capture' ? 'The microphone is busy or not working (another app may be using it). Try again, or type it.'
+              : failed === 'language-not-supported' ? 'The phone\'s voice typing does not support this language. Type it instead.'
+                : failed === 'restart-loop' ? 'I did not hear anything. Tap Speak and talk a little closer to the phone, or type it.'
+                : 'Voice typing stopped unexpectedly. Try again, or type it.');
+        }
+        clearTimeout(quiet); voiceLog('phone recognition done', `${heard.length} characters`); put(heard); done(heard);
+      };
+      began = Date.now(); r.start();
+    }
+    return {
+      start() {
+        heard = ''; failed = null; quickEnds = 0; hush();
+        try { listen(); } catch (err) { voiceLog('phone recognition failed to start', err?.name); listening = false; show('off'); notice('Voice typing could not start. Try again, or type it.'); }
+      },
+      finish() { listening = false; if (rec) rec.stop(); else { clearTimeout(quiet); done(heard); } },
+      cancel() { listening = false; clearTimeout(quiet); if (rec) { rec.onend = null; rec.abort(); rec = null; } },
+    };
+  }
+
+  async function start() {
+    if (listening) return;
+    onStart(); primeAudio();
+    listening = true; before = ta.value.trim() ? `${ta.value.trim()} ` : '';
+    show('on');
+    // Made right at the tap, before anything is awaited, so Android lets it run.
+    let ear = null;
+    try { ear = new (window.AudioContext || window.webkitAudioContext)(); ear.resume?.().catch(() => {}); } catch { ear = null; }
+    const useRecorder = canRecord && speakInWay() !== 'phone' && await sttEnabled();
+    voiceLog('start', useRecorder ? 'ElevenLabs recording' : Recognition ? 'phone recognition (continuous)' : 'none');
+    if (!useRecorder) ear?.close().catch(() => {});
+    engine = useRecorder ? recorder(ear) : Recognition ? recognizer() : null;
+    if (!engine) { listening = false; show('off'); return notice('Speaking is not available on this phone. Type instead.'); }
+    await engine.start();
+  }
+  const begin = () => start().catch((e) => {
+    voiceLog('speaking in failed', `${e?.name ?? ''} ${e?.message ?? ''}`);
+    listening = false; show('off'); notice('Voice typing ran into a problem. Try again, or type it.');
+  });
+  function stop() { const was = listening; listening = false; engine?.cancel(); if (was || button.classList.contains('on')) show('off'); }
+  button.addEventListener('click', () => { if (button.disabled) return; if (listening) { listening = false; engine?.finish(); return; } begin(); });
+  return { button, start: begin, stop, active: () => listening };
+}
+listenBtn.addEventListener('click', () => {
+  if (document.documentElement.classList.contains('staged')) return reading ? stopReading() : readStage();
+  readPage();
+});
+
+// Listen on any other screen (You, Campus, a list, a result): what is on it, read in order, top to bottom, each part
+// lit as it is read and followed down the page, with the same pause, skip and stop as everywhere else. Tap a lit part
+// to start from there. What is read: headings, paragraphs, list lines, quotes, your own entries and their titles and
+// dates; not buttons, links, boxes for writing, or anything hidden.
+const PAGE_PARTS = 'h1, h2, h3, h4, p, li, blockquote, dt, dd, figcaption, .t, .diary-date, .eyebrow.spoken';
+let pageVoiceCache = null;
+function pageVoice() {
+  const first = view.firstElementChild;
+  if (pageVoiceCache && pageVoiceCache.first === first && document.body.contains(pageVoiceCache.spans[0] ?? null)) return pageVoiceCache.voice;
+  const skip = 'a, input, textarea, select, [aria-hidden="true"], .toast, .talk-bar, .notice.testdate';
+  const parts = [...view.querySelectorAll(PAGE_PARTS)].filter((el) => !el.closest(skip) && el.getClientRects().length && !el.querySelector(PAGE_PARTS) && /[\p{L}\d]/u.test(el.textContent));
+  const spans = []; const spoken = [];
+  for (const el of parts) {
+    const said = sentences(el.textContent.replace(/\s*·\s*/g, ', ').replace(/\s+/g, ' ').trim());
+    if (!said.length) continue;
+    // The part lit as a whole while any of its sentences is read.
+    let mark = el.querySelector(':scope > .say.page');
+    if (!mark) { mark = h('span', { class: 'say page' }); mark.append(...el.childNodes); el.append(mark); }
+    const at = spoken.length;
+    mark.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, at); });
+    for (const t of said) { spans.push(mark); spoken.push(t); }
+  }
+  const voice = { spans, spoken, btn: listenBtn.querySelector('span'), clips: new Map() };
+  pageVoiceCache = { first, spans, voice }; registerSay(voice);
+  return voice;
+}
+
+// ── Listen from here ──
+// Tap any words on a screen (while nothing is being read) and a small "Listen from here" appears by the tap: it reads
+// from that part on, to the end. Each part that can be read is known with its reader and its place in it.
+const sayAt = new WeakMap(); // a part on the screen -> { voice, k }: its reader, and the first sentence it holds
+function registerSay(voice) { voice.spans.forEach((sp, k) => { if (!sayAt.has(sp) || sayAt.get(sp).voice !== voice) sayAt.set(sp, { voice, k }); }); }
+const hereChip = h('button', { type: 'button', class: 'listen-here', hidden: true }, '▶ Listen from here');
+document.body.append(hereChip);
+let hereHit = null; let hereTimer = 0;
+const hideHere = () => { hereChip.hidden = true; hereHit = null; clearTimeout(hereTimer); };
+hereChip.addEventListener('click', (e) => { e.stopPropagation(); const hit = hereHit; hideHere(); getSelection()?.removeAllRanges(); if (hit) playFrom(hit.voice, hit.k); });
+addEventListener('scroll', () => { if (!hereChip.hidden) hideHere(); }, { passive: true });
+document.addEventListener('click', (e) => {
+  if (e.target === hereChip) return;
+  hideHere();
+  if (!e.target.closest('#view') || e.target.closest('button, a, input, textarea, select, label, summary')) return;
+  if (getSelection()?.toString().trim()) return; // choosing words to keep, not asking to listen
+  // The tap that just stopped a reading: nothing more, but a second tap close behind it reads from that word.
+  if (Date.now() - justStopped < 300) { lastTap = { at: Date.now(), x: e.clientX, y: e.clientY }; return; }
+  const hit = hitFor(e.target); if (!hit) return;
+  // Two taps close together: read from the very word tapped.
+  const now = Date.now(); const again = lastTap && now - lastTap.at < 360 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 34;
+  lastTap = again ? null : { at: now, x: e.clientX, y: e.clientY };
+  clearTimeout(tapTimer);
+  if (again) { getSelection()?.removeAllRanges(); return readFromPoint(e.clientX, e.clientY, hit); }
+  if (talkPlayer.view === hit.voice && talkPlayer.state === 'playing') return; // while it reads, a tap on a part jumps there already
+  const x = e.clientX; const y = e.clientY < 140 ? e.clientY + 18 : e.clientY - 54;
+  tapTimer = setTimeout(() => offerHere(hit, x, y), 300);
+});
+let lastTap = null; let tapTimer = 0; let justStopped = 0;
+// The word under a point, as a letter of the sentence it is in, and read from there.
+function readFromPoint(x, y, hit) {
+  const voice = hit.voice;
+  const pos = document.caretRangeFromPoint?.(x, y) ?? (() => { const c = document.caretPositionFromPoint?.(x, y); if (!c) return null; const r = document.createRange(); r.setStart(c.offsetNode, c.offset); return r; })();
+  const node = pos?.startContainer; const el = node && (node.nodeType === 1 ? node : node.parentElement)?.closest('.say');
+  if (!el || !sayAt.has(el) || sayAt.get(el).voice !== voice) return playFrom(voice, hit.k);
+  // Where in the element's shown text the tap fell.
+  let off = 0; const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) { if (walk.currentNode === node) { off += pos.startOffset; break; } off += walk.currentNode.nodeValue.length; }
+  const text = el.textContent; while (off > 0 && /\S/.test(text[off - 1])) off--; // back to the start of the word
+  // Which of the element's sentences that is, and how far into it.
+  let k = sayAt.get(el).k;
+  while (k + 1 < voice.spans.length && voice.spans[k + 1] === el && sentenceSpan(voice, k + 1).base <= off) k++;
+  const { base, len } = sentenceSpan(voice, k);
+  const c = Math.max(0, Math.round((off - base) * (voice.spoken[k].length || 1) / (len || 1)));
+  hideHere();
+  playFrom(voice, k, 0, c);
+}
+// The readable part an element belongs to, with its reader: a passage's or card's sentence, or a part of the page.
+function hitFor(el) {
+  const root = document.documentElement; if (root.classList.contains('staged') || !root.classList.contains('can-speak')) return null;
+  let sp = el?.closest?.('.say'); let hit = sp && sayAt.get(sp);
+  if (!hit && root.classList.contains('page-listen')) {
+    const part = el?.closest?.(PAGE_PARTS);
+    if (part) { if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; pageVoice(); sp = part.querySelector(':scope > .say.page'); hit = sp && sayAt.get(sp); }
+  }
+  return hit ?? null;
+}
+function offerHere(hit, x, y, ms = 4500) {
+  hereHit = hit; hereChip.hidden = false;
+  const w = hereChip.offsetWidth || 170;
+  Object.assign(hereChip.style, { left: `${Math.max(10, Math.min(innerWidth - w - 10, x - w / 2))}px`, top: `${Math.max(60, Math.min(innerHeight - 70, y))}px` });
+  clearTimeout(hereTimer); hereTimer = setTimeout(hideHere, ms);
+}
+// Choosing words (press and hold, then drag) offers it too, from where the chosen words begin; on an idea's page,
+// choosing words offers to keep them instead (see Keeping words).
+let selTimer = 0;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(() => {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return;
+    const start = sel.getRangeAt(0).startContainer; const el = start.nodeType === 1 ? start : start.parentElement;
+    if (!el?.closest('#view') || el.closest('input, textarea')) return;
+    const hit = hitFor(el); if (!hit) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    offerHere(hit, r.left + Math.min(r.width, 200) / 2, r.bottom + 14, 8000); // below the words: the phone's own copy menu sits above them
+  }, 350);
+});
+hereChip.addEventListener('pointerdown', (e) => e.preventDefault()); // a tap on it keeps the chosen words chosen until it reads
+function readPage() {
+  if (talkPlayer.view !== pageVoiceCache?.voice) pageVoiceCache = null; // not reading this page now: take it as it is now
+  const v = pageVoice();
+  if (!v.spoken.length) return notice('There is nothing here to read aloud.');
+  // From the part in view, unless the top of the page is showing.
+  if (talkPlayer.view === v) return togglePlay(v);
+  const k = scrollY < 80 ? 0 : Math.max(0, v.spans.findIndex((sp) => sp.getBoundingClientRect().bottom > 90));
+  playFrom(v, k);
+}
+voiceBtn.addEventListener('click', () => chooseVoice());
+speech?.getVoices(); // starts loading the phone's voice list
+addEventListener('pagehide', () => { speech?.cancel(); audioEl.pause(); });
+
+// Speaking into the app: which way (ElevenLabs writes down a recording; or the phone's own voice typing), and a test
+// that shows what was heard, so a glitch can be seen and named.
+function speakInSection() {
+  const ta = h('textarea', { rows: '2', placeholder: 'Tap Test, say a sentence, then tap again.', 'aria-label': 'Microphone test' });
+  const out = h('p', { class: 'muted small', role: 'status' });
+  const dict = dictation(ta, { label: 'Test the microphone', onDone: (said) => { out.textContent = said ? `Heard ${said.split(/\s+/).length} words. If they are wrong or repeated, try the other way above.` : 'Nothing came through. Check the message at the top, and the server window.'; } });
+  const way = (k, label) => h('button', { type: 'button', class: `chip ${speakInWay() === k ? 'on' : ''}`, 'aria-pressed': String(speakInWay() === k), onclick: (e) => {
+    store.set(STT_KEY, k); if (k !== 'phone') { sttOn = null; store.del(STT_DOWN_KEY); } // choosing it asks the server afresh
+    e.currentTarget.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === e.currentTarget; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+  } }, label);
+  return h('div', {},
+    h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Speaking in'),
+    h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Speaking in' },
+      way('auto', sttOn === false ? 'ElevenLabs (off on the server)' : 'ElevenLabs: most exact'),
+      Recognition && way('phone', 'The phone\'s voice typing')),
+    ta, h('div', { class: 'row', style: 'justify-content:flex-start' }, dict?.button ?? h('span', { class: 'muted small' }, 'This phone cannot record.')), out);
+}
+async function chooseVoice() {
+  stopReading();
+  const sample = 'Some things are up to us, and some are not.';
+  const on = await ttsEnabled();
+  const el = on ? await api('/api/tts/voices').catch(() => null) : null;
+  const saved = store.get(VOICE_KEY) ?? '';
+  const current = saved.startsWith('el:') || saved.startsWith('phone:') ? saved : on ? '' : saved && `phone:${saved}`;
+  const all = speech?.getVoices() ?? [];
+  const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  const phoneVoices = [...all.filter((v) => v.lang.toLowerCase().startsWith(lang)), ...all.filter((v) => !v.lang.toLowerCase().startsWith(lang))];
+  let previewing = null;
+  const preview = async (key) => {
+    speech?.cancel(); audioEl.pause(); previewing?.wake?.();
+    const run = previewing = { wake: null };
+    if (key.startsWith('el:') || (!key && on)) {
+      try { await playClip(await fetchClip(sample, key.slice(3) || null), run); } catch (e) { notice(`That voice could not be played${e.why ? `: ${e.why}` : '. Check the ElevenLabs key or credits'}.`); }
+    } else if (speech) sayPhone(sample, all.find((v) => `phone:${v.name}` === key) ?? null, run);
+  };
+  const row = (label, note, key) => h('button', {
+    type: 'button', class: 'voice-row', role: 'menuitemradio', 'aria-checked': String(current === key), 'data-key': key,
+    onclick: (e) => {
+      if (key) store.set(VOICE_KEY, key); else store.del(VOICE_KEY);
+      sheet.querySelectorAll('.voice-row').forEach((r) => r.setAttribute('aria-checked', String(r === e.currentTarget)));
+      preview(key);
+    },
+  }, h('span', {}, label), h('small', {}, note));
+  const defaultName = el?.voices.find((v) => v.id === el.default)?.name;
+  const sheet = h('div', { class: 'voices-sheet', role: 'menu', 'aria-label': 'Reading voice' },
+    h('h2', {}, 'Reading voice'),
+    h('div', { class: 'eyebrow', style: 'margin-top:8px' }, 'Speed'),
+    h('div', { class: 'size-chips', role: 'group', 'aria-label': 'Reading speed' }, RATES.map(([label, v]) => h('button', {
+      type: 'button', class: `chip ${v === readRate() ? 'on' : ''}`, 'aria-pressed': String(v === readRate()),
+      onclick: (e) => {
+        store.set(RATE_KEY, String(v));
+        e.currentTarget.parentElement.querySelectorAll('.chip').forEach((c) => {
+          const on = c === e.currentTarget; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on));
+        });
+        preview(sheet.querySelector('.voice-row[aria-checked="true"]')?.dataset.key ?? '');
+      },
+    }, label))),
+    speakInSection(),
+    h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Voice'),
+    h('p', { class: 'muted small' }, 'Tap a voice to hear it.'),
+    row('Default', on ? `natural voice${defaultName ? ` · ${defaultName}` : ''}` : 'your phone\'s voice', ''),
+    on && !el && h('p', { class: 'notice' }, 'The natural voices could not be listed. The server window says why; the default natural voice may still work.'),
+    el && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Natural voices · ElevenLabs'),
+    el?.voices.map((v) => row(v.name, v.note, `el:${v.id}`)),
+    phoneVoices.length > 0 && h('div', { class: 'eyebrow', style: 'margin-top:16px' }, 'Phone voices'),
+    phoneVoices.map((v) => row(v.name, `${v.lang}${v.localService ? '' : ' · online'}`, `phone:${v.name}`)),
+    h('div', { class: 'row', style: 'margin-top:12px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Done')));
+  const box = h('div', { class: 'voices', onclick: (e) => { if (e.target === box) close(); } }, sheet);
+  const close = () => { speech?.cancel(); audioEl.pause(); previewing?.wake?.(); box.remove(); voiceBtn.focus(); };
+  document.body.append(box);
+  sheet.querySelector('.voice-row[aria-checked="true"]')?.focus();
+}
+ttsEnabled();
+
+// Look: step inside the background picture for a pause. Drag to wander, pinch or scroll to look closer, tap to
+// return. Left alone, the view drifts slowly across the picture, the way an eye rests on a painting.
+const lookBtn = document.getElementById('look');
+lookBtn.addEventListener('click', () => gaze(wallpaper.querySelector('img').getAttribute('src')));
+// opts (for Contemplate): extra (elements laid over the picture), hint (its own words), onTap (instead of returning),
+// onLeave (when it closes). Returns { leave }.
+function gaze(src, { extra = [], hint: hintText = 'Drag to look around · pinch to look closer · tap to return', onTap = null, onLeave = null } = {}) {
+  if (!src || document.querySelector('.gaze')) return null;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const img = h('img', { src, alt: '', draggable: 'false' });
+  const hint = h('div', { class: 'gaze-hint' }, h('span', {}, hintText));
+  const close = h('button', { type: 'button', class: 'gaze-close' }, 'Return');
+  // The painting stays alive here too: its moving parts (in the picture's own pixels, moving with it) and the
+  // visitors (placed for the picture as it covers the screen, carried to where it is now).
+  const live = h('div', { class: 'gaze-live', 'aria-hidden': 'true' });
+  const shadows = h('div', { class: 'gaze-world', 'aria-hidden': 'true' }); const lights = h('div', { class: 'gaze-world light', 'aria-hidden': 'true' });
+  const box = h('div', { class: 'gaze', role: 'dialog', 'aria-label': 'The picture, to look at' }, img, live, shadows, lights, ...extra, hint, close);
+  document.body.append(box);
+  document.documentElement.classList.add('gazing');
+  backCloses(leave); // the phone's back button returns from the picture
+  let base = 1, zoom = 1, x = 0, y = 0, raf = 0, lastTouch = performance.now(), vx = .18, vy = .09, done = false, x0 = 0, y0 = 0;
+  const fit = () => {
+    base = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight);
+    x0 = (innerWidth - img.naturalWidth * base) / 2; y0 = (innerHeight - img.naturalHeight * base) / 2; // where it lies as the wallpaper
+  };
+  const draw = () => {
+    const sc = base * zoom;
+    x = Math.min(0, Math.max(innerWidth - img.naturalWidth * sc, x));
+    y = Math.min(0, Math.max(innerHeight - img.naturalHeight * sc, y));
+    img.style.transform = live.style.transform = `translate(${x}px, ${y}px) scale(${sc})`;
+    shadows.style.transform = lights.style.transform = `translate(${x - x0 * zoom}px, ${y - y0 * zoom}px) scale(${zoom})`;
+  };
+  const zoomAt = (z, cx, cy) => {
+    const next = Math.min(3, Math.max(1, z));
+    x = cx - (cx - x) * (next / zoom); y = cy - (cy - y) * (next / zoom); zoom = next; draw();
+  };
+  const drift = () => {
+    if (performance.now() - lastTouch > 2500) {
+      const px = x, py = y; x += vx; y += vy; draw();
+      if (x === px) vx = -vx; if (y === py) vy = -vy; // reached an edge: turn back
+    }
+    raf = requestAnimationFrame(drift);
+  };
+  img.decode().catch(() => {}).then(() => {
+    fit(); const sc = base * zoom;
+    x = (innerWidth - img.naturalWidth * sc) / 2; y = (innerHeight - img.naturalHeight * sc) / 2; draw();
+    requestAnimationFrame(() => box.classList.add('in'));
+    if (!still) raf = requestAnimationFrame(drift);
+    Object.assign(live.style, { width: `${img.naturalWidth}px`, height: `${img.naturalHeight}px` });
+    liveIn(live, src, img.naturalWidth, img.naturalHeight, 1 / base); creaturesInto(shadows, lights);
+  });
+  setTimeout(() => hint.classList.add('gone'), 3500);
+
+  const pts = new Map();
+  let moved = 0, downAt = 0, pinch = null;
+  box.addEventListener('pointerdown', (e) => {
+    if (e.target === close) return;
+    box.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { moved = 0; downAt = performance.now(); }
+    box.classList.add('dragging'); lastTouch = performance.now();
+  });
+  box.addEventListener('pointermove', (e) => {
+    const prev = pts.get(e.pointerId); if (!prev) return;
+    const cur = { x: e.clientX, y: e.clientY };
+    if (pts.size === 1) { x += cur.x - prev.x; y += cur.y - prev.y; draw(); }
+    pts.set(e.pointerId, cur);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch) zoomAt(zoom * (d / pinch), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch = d;
+    }
+    moved += Math.hypot(cur.x - prev.x, cur.y - prev.y); lastTouch = performance.now();
+  });
+  const up = (e) => {
+    if (!pts.delete(e.pointerId)) return;
+    if (pts.size < 2) pinch = null;
+    if (!pts.size) {
+      box.classList.remove('dragging');
+      if (e.type === 'pointerup' && moved < 8 && performance.now() - downAt < 400) (onTap ?? leave)();
+    }
+  };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+  box.addEventListener('wheel', (e) => { e.preventDefault(); lastTouch = performance.now(); zoomAt(zoom * Math.exp(-e.deltaY / 400), e.clientX, e.clientY); }, { passive: false });
+  const onKey = (e) => { if (e.key === 'Escape') leave(); };
+  const onResize = () => { fit(); draw(); };
+  addEventListener('keydown', onKey); addEventListener('resize', onResize);
+  close.addEventListener('click', () => leave());
+  close.focus();
+  function leave() {
+    if (done) return; done = true;
+    cancelAnimationFrame(raf); removeEventListener('keydown', onKey); removeEventListener('resize', onResize);
+    box.classList.remove('in'); document.documentElement.classList.remove('gazing');
+    liveOut(); creaturesInto(null);
+    setTimeout(() => box.remove(), still ? 0 : 600);
+    lookBtn.focus(); backDone(leave); onLeave?.();
+  }
+  return { leave };
+}
+
+// ── Contemplate: the passage read slowly over the painting, one short line at a time, like lyrics ──
+// The picture fills the screen, alive and drifting as in Look. The narrator reads the idea's substance (the opening,
+// the plain words, the source, the reader's own answer), and the words appear a line at a time, fading in as they
+// are spoken and out as the next line comes, each word's letters glowing gold with stardust as it is said. A tap
+// pauses or goes on; Return ends it. Between passages, a longer silence to think.
+const LYRIC_SKIP = new Set(['note', 'related', 'end', 'question']);
+// A sentence as short lines: breaks after punctuation where possible, about six to ten words a line.
+function lyricLines(text) {
+  const words = [...text.matchAll(/\S+/g)].map((m) => ({ at: m.index, text: m[0] }));
+  const lines = []; let cur = [];
+  words.forEach((w, i) => {
+    cur.push(w);
+    const n = cur.length; const end = /[,;:.!?—)]$/.test(w.text); const left = words.length - i - 1;
+    if ((n >= 6 && end && left > 2) || n >= 10 && left > 2) { lines.push(cur); cur = []; }
+  });
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+// given (optional): { paras: [text, …], src, onLeave } for a passage that is not a stage, such as a trainer's story.
+async function contemplate(given = null) {
+  const panels = given ? [] : [...document.querySelectorAll('.stage .panel')].filter((p) => !LYRIC_SKIP.has(p.dataset.kind));
+  // The opening: only the idea's title and the thinker's name (not the cards for today beneath them).
+  const said = (p) => (p.dataset.kind === 'arrival'
+    ? [p.querySelector('h1')?.textContent, p.querySelector('.name-reveal')?.textContent.split('·')[0]].filter(Boolean).map((t) => t.trim().replace(/[^.!?]$/, '$&.')).join(' ')
+    : spokenText(p));
+  const items = given ? given.paras.flatMap((t, n) => sentences(t).map((text) => ({ p: n, text })))
+    : panels.flatMap((p, n) => sentences(said(p)).map((text) => ({ p: n, text })));
+  const src = given?.src ?? wallpaper.querySelector('img')?.getAttribute('src');
+  if (!items.length || !src) return;
+  stopReading();
+  const plan = await voicePlan();
+  const lyrics = h('div', { class: 'lyrics', 'aria-live': 'polite' });
+  const dust = h('div', { class: 'lyric-dust', 'aria-hidden': 'true' });
+  const cz = { k: 0, state: 'playing', run: null, line: null, lineIdx: -1, plan, ended: false };
+  const view = gaze(src, {
+    extra: [lyrics, dust], hint: 'Tap to pause · drag or pinch to look', onTap: () => toggle(),
+    onLeave: () => { cz.ended = true; haltCz(); given?.onLeave?.(); },
+  });
+  if (!view) return;
+  const haltCz = () => { if (cz.run) { cz.run.stop = true; cz.run.wake?.(); } speech?.cancel(); audioEl.pause(); cancelAnimationFrame(cz.raf); };
+  const showLine = (words) => {
+    const old = cz.line; if (old) { old.classList.remove('in'); old.classList.add('out'); setTimeout(() => old.remove(), 1100); }
+    const line = h('div', { class: 'lyric' }, ...words.flatMap((w, i) => [i ? ' ' : '', h('span', { class: 'w' }, w.text)]));
+    lyrics.append(line); requestAnimationFrame(() => requestAnimationFrame(() => line.classList.add('in')));
+    cz.line = line; return [...line.querySelectorAll('span.w')];
+  };
+  // Follow the voice: which line, which word, from the letter being spoken.
+  const follow = (item, lines, charAt) => {
+    let li = 0; for (let j = 0; j < lines.length && lines[j][0].at <= charAt; j++) li = j;
+    if (li !== cz.lineIdx) { cz.lineIdx = li; cz.spans = showLine(lines[li]); cz.litIdx = -1; }
+    let wi = -1; lines[li].forEach((w, j) => { if (w.at <= charAt) wi = j; });
+    if (wi >= 0 && wi !== cz.litIdx) { cz.litIdx = wi; glowWord(cz.spans[wi], dust); }
+  };
+  const fade = (ms) => new Promise((r) => { const t = setTimeout(r, ms); cz.run.wake = () => { clearTimeout(t); r(); }; });
+  async function play() {
+    const run = cz.run = { stop: false, wake: null };
+    while (cz.k < items.length && !run.stop) {
+      const item = items[cz.k]; const lines = lyricLines(item.text); cz.lineIdx = -1;
+      follow(item, lines, 0);
+      if ('el' in cz.plan) {
+        try {
+          const clip = await tryTwice(() => fetchTimed(item.text, cz.plan.el));
+          if (cz.k + 1 < items.length) fetchTimed(items[cz.k + 1].text, cz.plan.el).catch(() => {});
+          if (run.stop) return;
+          const step = () => {
+            const t = audioEl.currentTime; let at = 0;
+            if (clip.starts?.length) { while (at + 1 < clip.starts.length && clip.starts[at + 1] <= t + .04) at++; } else if (audioEl.duration) at = Math.floor((t / audioEl.duration) * item.text.length);
+            follow(item, lines, at); cz.raf = requestAnimationFrame(step);
+          };
+          cz.raf = requestAnimationFrame(step);
+          const how = await playClip(URL.createObjectURL(clip.blob), run);
+          cancelAnimationFrame(cz.raf);
+          // The phone wants a tap before it will play: wait for one (a tap on the picture plays).
+          if (how === 'blocked') { cz.state = 'paused'; lyrics.classList.add('paused'); showLine([{ at: 0, text: 'Tap to begin.' }]); cz.run = null; return; }
+        } catch {
+          cz.state = 'paused'; lyrics.classList.add('paused'); showLine([{ at: 0, text: VOICE_DOWN }]); cz.run = null; return;
+        }
+      } else await sayPhone(item.text, cz.plan.phone, run, (at) => follow(item, lines, at));
+      if (run.stop || cz.state === 'paused') return;
+      const next = items[cz.k + 1]; cz.k++;
+      await fade(next && next.p !== item.p ? 2600 : 700); // a longer silence between passages
+    }
+    if (!run.stop && !cz.ended) {
+      showLine([{ at: 0, text: 'Stay as long as you like.' }]);
+      setTimeout(() => cz.line?.classList.remove('in'), 4000);
+    }
+  }
+  function toggle() {
+    if (cz.ended) return;
+    if (cz.state === 'playing') {
+      cz.state = 'paused';
+      if (audioEl.src && !audioEl.paused) audioEl.pause(); else haltCz();
+      lyrics.classList.add('paused');
+    } else {
+      cz.state = 'playing'; lyrics.classList.remove('paused');
+      if (cz.run && !cz.run.stop && audioEl.src && audioEl.paused && !audioEl.ended && audioEl.currentTime > 0) audioEl.play().catch(() => {});
+      else play();
+    }
+  }
+  play();
+}
+document.getElementById('contemplate')?.addEventListener('click', () => contemplate());
+
+function renderStage(node, panels, { links = [], startAt = 0, onSource = null, background = null, backgroundMax = 1 } = {}) {
+  stopReading();
+  // Every page stands on a painting: an idea without its own (or its room's) takes the day's plate.
+  background ??= brightFor(`stage:${node.id}`) ?? dailyPlate();
+  const wrap = h('div', { class: `stage field-${node.field}`, 'data-node': node.id }, panels);
+  render(wrap);
+  document.documentElement.classList.add('staged'); wake();
+  setWallpaper(background, backgroundMax);
+  setMotif(motifFor(node), wrap);
+  motifLevel(1);
+  dockLinks.replaceChildren(...links.filter(Boolean));
+  rail.replaceChildren(...panels.map((p, i) => h('button', {
+    type: 'button', class: 'dot', 'aria-label': p.dataset.label, title: p.dataset.label,
+    onclick: () => p.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+  })));
+  rail.hidden = panels.length < 2;
+  stageObserver?.disconnect();
+  let sawSource = false;
+  // By day, the end of an idea ("Keep exploring") opens into a bright plate, like stepping out into daylight; scrolling
+  // back up returns to the idea's own picture. Never before writing (a closed card's picture stays a hint).
+  const daylight = backgroundMax >= 1 && brightFor(`end:${node.id}`);
+  let outside = false;
+  const step = (out) => {
+    if (!daylight || out === outside) return;
+    outside = out;
+    wallpaper.classList.remove('on');
+    setTimeout(() => { if (document.body.contains(wrap)) setWallpaper(out ? daylight : background, backgroundMax); }, 350);
+  };
+  stageObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const p = e.target; const i = panels.indexOf(p);
+      if (e.isIntersecting && e.intersectionRatio > .3) {
+        p.classList.add('in'); p.classList.remove('past');
+        const last = lastPlace(); if (last?.kind === 'idea' && last.id === node.id && i > 0) remember({ ...last, part: i, label: p.dataset.label });
+        rail.querySelectorAll('.dot').forEach((d, k) => d.classList.toggle('on', k === i));
+        motifLevel(LEVEL[p.dataset.kind] ?? .7);
+        if (p.dataset.kind === 'source' && !sawSource) { sawSource = true; onSource?.(); }
+        step(p.dataset.kind === 'end');
+      } else if (!e.isIntersecting && e.boundingClientRect.top < 0) p.classList.add('past');
+      else if (!e.isIntersecting) p.classList.remove('past');
+    }
+  }, { threshold: [0, .3, .6] });
+  panels.forEach((p) => stageObserver.observe(p));
+  if (startAt) requestAnimationFrame(() => panels[startAt]?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+// Everything that isn't a stage: no motif, no rail, no card links.
+function unstage() {
+  document.documentElement.classList.remove('staged');
+  stopReading();
+  stageObserver?.disconnect(); stageObserver = null;
+  setMotif(null); rail.replaceChildren(); rail.hidden = true; dockLinks.replaceChildren(); setWallpaper(null);
+}
+
+function cardLinks(node, trail) {
+  const back = trail.length ? trail[trail.length - 1] : null;
+  return [
+    h('button', { type: 'button', class: 'chip', onclick: () => (back ? walkTo(back.id, trail.slice(0, -1)) : showToday()) },
+      back ? `← ${back.thinker ?? back.title}` : '← Wander'),
+    node.year != null && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('timeline', { focus: node.id }) }, 'Timeline'),
+    node.room && h('button', { type: 'button', class: 'chip', onclick: () => showGallery('rooms', { focus: node.id }) }, 'Room'),
+    node.source_face && favoriteButton(node),
+    document.documentElement.classList.contains('can-speak') && h('button', { type: 'button', class: 'chip', onclick: () => contemplate() }, '☾ Contemplate'),
+  ];
+}
+
+function showConcept(node, trail, opts = {}) {
+  remember({ kind: 'idea', id: node.id, title: node.title, thinker: node.thinker ?? null, part: opts.startAt ?? 0 });
+  renderStage(node, conceptPanels(node, trail, opts), {
+    links: cardLinks(node, trail), startAt: opts.startAt ?? 0, background: node.background ?? null,
+    onSource: () => api('/api/event', { method: 'POST', body: { kind: 'flip', node_id: node.id, date: today() } }).catch(() => {}),
+  });
+}
+
+function writeView(data) {
+  const node = data.node;
+  const draftKey = `continuum.draft.${node.id}`;
+  const ta = h('textarea', { id: 'resp', placeholder: 'What do you think? There are no wrong answers.', maxlength: '5000' });
+  ta.value = store.get(draftKey) ?? '';
+  const submit = h('button', { type: 'submit', class: 'btn', disabled: !ta.value.trim() }, 'Done. Show me the rest');
+  const status = h('span', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { submit.disabled = !ta.value.trim(); store.set(draftKey, ta.value); });
+  const form = h('form', {
+    class: 'write',
+    onsubmit: async (e) => {
+      e.preventDefault();
+      submit.disabled = true;
+      status.textContent = 'Saving…';
+      try {
+        const { node: full } = await api('/api/respond', { method: 'POST', body: { node_id: node.id, body: ta.value, date: today() } });
+        store.del(draftKey);
+        doneView({ ...data, state: 'done_today', done: data.done + 1, node: full }, { reveal: true });
+      } catch (err) {
+        const stale = err.message === 'already_answered_today' || err.message === 'not_todays_node';
+        status.textContent = stale ? 'Today has changed. Reloading…' : 'Could not save. Your draft is kept; try again.';
+        submit.disabled = false;
+        if (stale) setTimeout(showToday, 1200);
+      }
+    },
+  },
+    h('label', { for: 'resp', class: 'prompt' }, node.prompt ?? 'What do you think?'),
+    ta,
+    h('div', { class: 'row' }, dictation(ta, { label: 'Say it instead' })?.button ?? status, submit),
+    canSpeakIn() && h('div', { class: 'row' }, status));
+  setNav('today');
+  renderStage(node, [
+    panel('arrival', 'Today\'s idea', [
+      h('div', { class: 'eyebrow' }, journeyLine(data.journey)),
+      h('div', { class: 'who' }, typeLine(node)),
+      h('h1', {}, node.title),
+      nameReveal(node),
+      node.why && h('p', { class: 'muted small why' }, node.why),
+      sourceFirst(node),
+      hint('Scroll to the question'),
+    ]),
+    panel('question', 'The question', [form, checkinCard(data), doors()]),
+  ], { background: node.backdrop ?? null, backgroundMax: .45 });
+}
+
+// What the question is about, before it is asked: the idea in plain words, and where to read it.
+function sourceFirst(node) {
+  if (!node.plain_face && !node.source_url) return null;
+  return h('div', { class: 'source-first' },
+    node.plain_face && h('p', { class: 'plain' }, node.plain_face.split('\n\n')[0]),
+    (node.source_citation || node.source_url) && h('p', { class: 'small source-line' },
+      node.source_citation && h('span', { class: 'muted' }, `Source: ${node.source_citation} `),
+      sourceLink(node.source_url, node.source_citation, 'Read it ↗', 'fulltext', node.id),
+      node.analysis_url && h('a', { href: node.analysis_url, target: '_blank', rel: 'noopener', class: 'fulltext' }, 'Deeper: Stanford Encyclopedia ↗')));
+}
+
+// The top of Today's card: the user's own walk, not a fixed count. "Day 6 of your walk · 23 ideas met · 3 days in a row"
+function journeyLine(j) {
+  if (!j) return 'Today';
+  return [`Day ${j.day} of your walk`, j.met && `${j.met} ${j.met === 1 ? 'idea' : 'ideas'} met`,
+    j.streak >= 2 && `${j.streak} days in a row`].filter(Boolean).join(' · ');
+}
+
+function doneView(data, { reveal = false } = {}) {
+  const msg = 'That\'s today\'s card. Walk as far as you like, or talk it over; tomorrow\'s idea is chosen from what you write and say.';
+  setNav('today');
+  const intro = h('div', {}, h('div', { class: 'eyebrow' }, journeyLine(data.journey)), h('p', { class: 'muted small' }, msg));
+  // After writing: today's small lessons. A problem to consider for today's idea, a review of an earlier one, and
+  // (about once a week) a debate to check your bearings.
+  problemCard(intro, data.node);
+  recallCard(intro);
+  bearings(intro);
+  const k = checkinCard(data); if (k) intro.append(k);
+  intro.append(doors());
+  showConcept(data.node, [], {
+    intro,
+    startAt: reveal ? 1 : 0,
+  });
+}
+
+function completeView(data) {
+  render(
+    h('div', { class: 'eyebrow' }, journeyLine(data.journey)),
+    h('h1', {}, 'You have written on every idea on the map.'),
+    h('p', {}, 'Everything you wrote is in your diary. New ideas are added as the map grows; until then, walk it from any entry.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn', onclick: () => showReview(0) }, 'See where it led'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: showJournal }, 'Open your diary')));
+}
+
+// The review: what you wrote, where you walked, what it landed on. days = 7 for the week, 0 for everything.
+function showReview(days = 7) {
+  setNav('review');
+  return guarded(async () => {
+    const r = await api(`/api/review?days=${days}&date=${today()}`);
+    const span = days ? `Last ${days} days` : 'The whole walk';
+    const toggle = h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: `btn ${days === 7 ? '' : 'ghost'}`, onclick: () => showReview(7) }, 'This week'),
+      h('button', { type: 'button', class: `btn ${days === 0 ? '' : 'ghost'}`, onclick: () => showReview(0) }, 'Everything'));
+    const changed = r.reactions.changed + r.reactions.somewhat;
+    const answered = changed + r.reactions.unchanged;
+    pageBg = changed ? moodPlate('change') : null; // a mind changed this week: the river finding new channels
+    const practices = r.practices.length
+      ? h('div', {}, h('h2', {}, 'Where it kept landing'),
+          h('p', { class: 'muted small' }, 'The practices your walks arrived at, most often first.'),
+          h('div', { class: 'bubbles' }, r.practices.map((p) => h('button', { type: 'button', class: 'bubble field-practice', onclick: () => walkTo(p.id, []) },
+            h('span', { class: 'b-title' }, p.title), h('span', { class: 'b-note' }, `${p.count} ${p.count === 1 ? 'walk' : 'walks'} ended here`)))))
+      : null;
+    const walked = r.walked.length
+      ? h('div', {}, h('h2', {}, 'Who you kept returning to'),
+          h('div', { class: 'bubbles' }, r.walked.slice(0, 5).map((n) => h('button', { type: 'button', class: `bubble field-${n.field}`, onclick: () => walkTo(n.id, []) },
+            n.thinker && h('span', { class: 'b-who' }, n.thinker), h('span', { class: 'b-title' }, n.title), h('span', { class: 'b-note' }, `${n.count} ${n.count === 1 ? 'visit' : 'visits'}`)))))
+      : null;
+    const minds = answered
+      ? h('p', {}, `You answered "did it change your mind?" ${answered} ${answered === 1 ? 'time' : 'times'}: yes ${r.reactions.changed}, a little ${r.reactions.somewhat}, no ${r.reactions.unchanged}.`)
+      : null;
+    const entries = r.entries.length
+      ? h('div', {}, h('h2', {}, days ? 'What you wrote this week' : 'Everything you wrote'),
+          h('ul', { class: 'path' }, r.entries.map((e) => h('li', {},
+            h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => walkTo(e.id, []) }, h('span', { class: 't' }, e.title)),
+            h('div', { class: 'muted small' }, [e.thinker, e.local_date, e.reaction && REACTION_LABEL[e.reaction]].filter(Boolean).join(' · ')),
+            h('p', {}, e.body)))))
+      : h('p', { class: 'muted' }, days ? 'Nothing written in the last week yet.' : 'Nothing written yet.');
+    const bookends = !days && r.bookends && r.bookends.first.id !== r.bookends.last.id
+      ? h('div', { class: 'notice' },
+          h('div', { class: 'eyebrow' }, 'First and last'),
+          h('p', { class: 'small muted' }, `Day 1 asked: ${r.bookends.first.prompt}`), h('div', { class: 'yours' }, r.bookends.first.body),
+          h('p', { class: 'small muted', style: 'margin-top:12px' }, `Last asked: ${r.bookends.last.prompt}`), h('div', { class: 'yours' }, r.bookends.last.body),
+          h('p', { class: 'prompt' }, 'What did you believe on day 1 that you do not now?'))
+      : null;
+    render(
+      h('h1', {}, 'Review'),
+      toggle,
+      h('p', { class: 'muted small' }, `${span}: active on ${r.days_active} ${r.days_active === 1 ? 'day' : 'days'}, ${r.entries.length} ${r.entries.length === 1 ? 'entry' : 'entries'}.`),
+      days ? h('p', { class: 'prompt' }, 'What did you believe on Monday that you do not on Sunday?') : null,
+      bookends, practices, walked, minds, entries);
+  });
+}
+
+// The gallery of thought: every idea on the map, open to wander at any time, in two arrangements.
+// 'rooms' = wings by region, tradition or theme; 'timeline' = date order. Daily cards the user has not reached yet
+// show thinker and year only ("Coming up") so the daily practice still starts with writing.
+const ERAS = [
+  [-Infinity, -500, 'Before 500 BCE'], [-500, 500, '500 BCE to 500 CE'], [500, 1450, '500 to 1450'],
+  [1450, 1800, '1450 to 1800'], [1800, 1900, '1800 to 1900'], [1900, Infinity, '1900 to now'],
+];
+const TL_STATE = { written: 'You wrote on this', visited: 'Visited', today: "Today's card", upcoming: 'Coming up' };
+const openEntry = (n) => (n.state === 'today' ? showToday() : walkTo(n.id, []));
+
+function showGallery(arrangement = 'rooms', { focus = null, featuredOnly = false, theme = null, kind = 'all', search = false } = {}) {
+  setNav('gallery');
+  return guarded(async () => {
+    const [{ nodes, rooms }, index] = await Promise.all([
+      api(`/api/timeline?date=${today()}`),
+      arrangement === 'themes' ? api(`/api/themes?date=${today()}`) : null,
+    ]);
+    const met = nodes.filter((n) => n.state === 'written' || n.state === 'visited').length;
+    const wander = () => {
+      const open = nodes.filter((n) => n.state !== 'upcoming' && n.state !== 'today');
+      const fresh = open.filter((n) => n.state === 'unseen');
+      const pool = fresh.length ? fresh : open;
+      openEntry(pool[Math.floor(Math.random() * pool.length)]);
+    };
+    const switcher = h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: `btn ${arrangement === 'rooms' ? '' : 'ghost'}`, onclick: () => showGallery('rooms') }, 'Rooms'),
+      h('button', { type: 'button', class: `btn ${arrangement === 'timeline' ? '' : 'ghost'}`, onclick: () => showGallery('timeline') }, 'Timeline'),
+      h('button', { type: 'button', class: `btn ${arrangement === 'themes' ? '' : 'ghost'}`, onclick: () => showGallery('themes') }, 'Themes'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showMap() }, 'Map'),
+    );
+    const intro = h('p', { class: 'muted small' },
+      `${nodes.length} ideas in ${new Set(nodes.map((n) => n.room)).size} rooms. Open any of them, any time. You have met ${met}. `
+      + 'Today\'s card opens once you have written on it.');
+    const body = arrangement === 'rooms' ? galleryRooms(nodes, rooms, focus)
+      : arrangement === 'themes' ? galleryThemes(index.themes, theme, kind)
+        : galleryTimeline(nodes, focus, featuredOnly);
+    // Search sits above every arrangement. Results replace the arrangement while there is a query, without
+    // re-rendering the page, so typing keeps focus.
+    const browse = h('div', {}, switcher, intro, ...body);
+    const results = h('div', { class: 'search-results', hidden: true, 'aria-live': 'polite' });
+    const box = h('input', {
+      type: 'search', class: 'search', placeholder: 'Search themes, questions, thinkers, cases…', 'aria-label': 'Search the gallery',
+      autocomplete: 'off', enterkeyhint: 'search',
+    });
+    let timer = 0; let seq = 0;
+    box.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const qv = box.value.trim(); const mine = ++seq;
+        if (qv.length < 2) { results.hidden = true; browse.hidden = false; return; }
+        const r = await api(`/api/search?q=${encodeURIComponent(qv)}&date=${today()}`).catch(() => null);
+        if (!r || mine !== seq) return;
+        results.replaceChildren(...searchResults(r));
+        results.hidden = false; browse.hidden = true;
+      }, 220);
+    });
+    const wanderBtn = h('button', { type: 'button', class: 'btn ghost wander', onclick: wander, title: 'Open a thinker you have not met yet' }, 'Explore ↝');
+    render(h('h1', {}, 'Explore'), h('div', { class: 'search-row' }, box, wanderBtn), results, browse);
+    setMotif('sky'); motifLevel(.9); setSkyFocus(1); // a quiet night sky over the Gallery, where constellations drift by
+    if (search) box.focus();
+    const el = (focus?.startsWith('room-') && document.getElementById(focus)) || (focus && view.querySelector(`[data-id="${CSS.escape(focus)}"]`)) || (theme && document.getElementById(`theme-${theme}`));
+    if (el) el.scrollIntoView({ block: theme && !focus ? 'start' : 'center' });
+  });
+}
+
+// The Map of ideas, over the observatory plate (see mapview.js).
+function showMap() {
+  remember({ kind: 'map', title: 'The Map' });
+  setNav('gallery');
+  return guarded(async () => {
+    const data = await api(`/api/map?date=${today()}`);
+    pageBg = PAGE_BG.map;
+    const mount = h('div', { class: 'map bare' });
+    render(h('h1', {}, 'Map of ideas'),
+      h('p', {}, 'Every idea in the gallery as a point of light. The ones you have met shine; the faint ones are still to explore.'),
+      mount,
+      h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showGallery('rooms') }, '← Gallery')));
+    mountMap(mount, data, {
+      h, onOpen: openEntry,
+      onTrail: async (from, ids) => {
+        try { await api('/api/trail', { method: 'POST', body: { from_id: from.id, ids, date: today() } }); notice(`Journey started from "${from.title}". Your next daily ideas follow it, one stop a day.`); return true; }
+        catch { notice('Could not start the journey. Try again.'); return false; }
+      },
+    });
+  });
+}
+
+function galleryRooms(nodes, rooms, focus) {
+  const byRoom = new Map(rooms.map((r) => [r.id, []]));
+  for (const n of nodes) byRoom.get(n.room)?.push(n);
+  const index = h('nav', { class: 'room-index', 'aria-label': 'Rooms' }, rooms.map((r) => h('button', {
+    type: 'button', class: 'chip',
+    onclick: () => document.getElementById(`room-${r.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+  }, r.name)));
+  const tile = (n) => {
+    const cls = `tile field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.backdrop ? ' has-backdrop' : ''}${n.id === focus ? ' focus' : ''}`;
+    const inner = [
+      n.backdrop && h('span', { class: 'tile-bg', 'aria-hidden': 'true' }, h('img', { src: n.backdrop, alt: '', loading: 'lazy', decoding: 'async' })),
+      n.title ? h('span', { class: 'tile-title' }, n.title) : h('span', { class: 'tile-title muted' }, 'Coming up'),
+      h('span', { class: 'tile-meta' }, [TYPE_LABEL[n.type], year(n.year), n.state !== 'upcoming' && TL_STATE[n.state], n.daily && n.state !== 'upcoming' && 'Daily line'].filter(Boolean).join(' · ')),
+    ];
+    return n.state === 'upcoming'
+      ? h('div', { class: cls, 'data-id': n.id }, inner)
+      : h('button', { type: 'button', class: cls, 'data-id': n.id, onclick: () => openEntry(n) }, inner);
+  };
+  return [index, ...rooms.filter((r) => byRoom.get(r.id).length).map((r) => h('section', { class: 'room', id: `room-${r.id}` },
+    h('h2', {}, r.name),
+    h('p', { class: 'muted small room-blurb' }, r.blurb),
+    r.id === 'mind' && h('button', { type: 'button', class: 'btn ghost', style: 'margin:4px 0 12px', onclick: () => showMind() }, 'Open the psychology room: surveys, schools, methods →'),
+    h('div', { class: 'tiles' }, byRoom.get(r.id).map(tile))))];
+}
+
+// A catalogue row for one idea: used in themes and search results. Upcoming daily ideas stay closed.
+function ideaRow(n, extra) {
+  const inner = [
+    h('span', { class: 'b-who' }, [TYPE_LABEL[n.type], year(n.year)].filter(Boolean).join(' · ')),
+    h('span', { class: 'b-title' }, n.title ?? 'Coming up'),
+    (TL_STATE[n.state] || extra) && h('span', { class: 'b-note' }, [TL_STATE[n.state], extra].filter(Boolean).join(' · ')),
+  ];
+  return n.state === 'upcoming'
+    ? h('div', { class: `bubble field-${n.field} closed` }, inner)
+    : h('button', { type: 'button', class: `bubble field-${n.field}`, onclick: () => openEntry(n) }, inner);
+}
+
+const KIND_LABEL = { theme: 'Theme', conflict: 'Conflict', dilemma: 'Dilemma' };
+
+function galleryThemes(themes, focusTheme, kind) {
+  const shown = kind === 'all' ? themes : themes.filter((t) => t.kind === kind);
+  const filter = h('div', { class: 'row', style: 'justify-content:flex-start;margin-top:-4px' },
+    [['all', 'Everything'], ['theme', 'Themes'], ['conflict', 'Conflicts'], ['dilemma', 'Dilemmas']].map(([k, label]) =>
+      h('button', { type: 'button', class: `chip ${kind === k ? 'on' : ''}`, onclick: () => showGallery('themes', { kind: k }) }, label)));
+  const contents = h('nav', { class: 'room-index', 'aria-label': 'Index' }, shown.map((t) => h('button', {
+    type: 'button', class: 'chip', onclick: () => document.getElementById(`theme-${t.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+  }, t.name)));
+  return [filter, contents, ...shown.map((t) => h('section', { class: `theme${t.id === focusTheme ? ' focus' : ''}`, id: `theme-${t.id}` },
+    h('div', { class: 'eyebrow' }, `${KIND_LABEL[t.kind]} · ${t.nodes.length} ideas`),
+    h('h2', {}, t.name),
+    h('p', { class: 'prompt' }, t.question),
+    h('div', { class: 'bubbles' }, t.nodes.map((n) => ideaRow(n)))))];
+}
+
+function searchResults(r) {
+  const out = [];
+  if (r.themes.length) out.push(h('h2', {}, 'In the index'), h('div', { class: 'bubbles' }, r.themes.map((t) => h('button', {
+    type: 'button', class: 'bubble field-law', onclick: () => showGallery('themes', { theme: t.id }),
+  }, h('span', { class: 'b-who' }, `${KIND_LABEL[t.kind]} · ${t.count} ideas`), h('span', { class: 'b-title' }, t.name), h('span', { class: 'b-note' }, t.question)))));
+  if (r.ideas.length) out.push(h('h2', {}, 'Ideas'), h('div', { class: 'bubbles' }, r.ideas.map((n) => ideaRow(n, n.matched !== 'title' ? `found in ${n.matched}` : ''))));
+  if (!out.length) out.push(h('p', { class: 'muted' }, `Nothing on the map matches "${r.q}" yet.`));
+  return out;
+}
+
+function galleryTimeline(nodes, focus, featuredOnly) {
+  const shown = featuredOnly ? nodes.filter((n) => n.daily) : nodes;
+  const filter = h('div', { class: 'row', style: 'justify-content:flex-start;margin-top:-4px' },
+    h('button', { type: 'button', class: `chip ${featuredOnly ? '' : 'on'}`, onclick: () => showGallery('timeline') }, 'Everyone'),
+    h('button', { type: 'button', class: `chip ${featuredOnly ? 'on' : ''}`, onclick: () => showGallery('timeline', { featuredOnly: true }) }, 'Only the illustrated ideas'));
+  const row = (n) => {
+    const inner = [
+      h('span', { class: 'tl-year' }, year(n.year)),
+      h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
+      h('span', { class: 'tl-text' },
+        h('span', { class: 'b-who' }, n.thinker),
+        n.title && h('span', { class: 'b-title' }, n.title),
+        TL_STATE[n.state] && h('span', { class: 'tl-state' }, TL_STATE[n.state])),
+    ];
+    const cls = `tl-row field-${n.field} state-${n.state}${n.daily ? ' featured' : ''}${n.id === focus ? ' focus' : ''}`;
+    if (n.state === 'upcoming') return h('li', { class: cls, 'data-id': n.id }, h('div', { class: 'tl-item' }, inner));
+    return h('li', { class: cls, 'data-id': n.id }, h('button', { type: 'button', class: 'tl-item', onclick: () => openEntry(n) }, inner));
+  };
+  const eras = ERAS.map(([from, to, label]) => [label, shown.filter((n) => n.year >= from && n.year < to)])
+    .filter(([, rows]) => rows.length)
+    .map(([label, rows]) => h('section', { class: 'tl-era' }, h('h2', {}, label), h('ol', { class: 'timeline' }, rows.map(row))));
+  return [filter, h('p', { class: 'muted small' }, 'Daily thinkers have a ring.'), ...eras];
+}
+
+function inviteView() {
+  render(
+    h('h1', {}, 'Continuum'),
+    h('p', {}, 'One small idea a day. You see what it is and where to read it, say what you think, then follow where it came from and where it went.'),
+    h('p', { class: 'muted' }, 'This is a small private test. Open the personal link you were sent to begin.'),
+    h('p', { class: 'muted small' }, 'Been here before? Your browser forgot you (DuckDuckGo does this when it clears its data). Open your personal link again; nothing you wrote is lost. To stop it happening: in DuckDuckGo, open the menu and choose "Fireproof this site", or add Continuum to your home screen from the browser menu.'));
+}
+
+function errorView() {
+  render(h('p', { class: 'muted center' }, 'Something went wrong loading Continuum. Check your connection and reload.'));
+}
+
+async function guarded(fn) {
+  try { await fn(); } catch (err) { if (err.status === 401) inviteView(); else { console.error(err); reportError(err?.message ?? err, err?.stack?.split('\n')[1]?.trim() ?? ''); errorView(); } }
+}
+
+function showToday() {
+  setNav('today');
+  return guarded(async () => {
+    const data = await api(`/api/today?date=${today()}`);
+    if (data.state === 'write') writeView(data);
+    else if (data.state === 'done_today') doneView(data);
+    else completeView(data);
+  });
+}
+
+// The diary of discovery: new roads chosen from the user's own writing, the threads they have found between ideas they
+// met, and everything they wrote or kept, newest first.
+// What they have read, newest first (title, when, a few lines), each opening the exact passage again (on the same
+// painting); a search box finds one by any word in it, loosely ("courage" finds "courageous").
+const whenRead = (date) => {
+  const d = Math.round((Date.parse(`${today()}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86400000);
+  return d <= 0 ? 'Today' : d === 1 ? 'Yesterday' : d < 7 ? new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'long' }) : new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+function recentlyRead(first) {
+  if (!first?.items?.length) return null;
+  const list = h('ul', { class: 'path recent-list' }); let shown = 8; let items = first.items;
+  const more = h('button', { type: 'button', class: 'link small', style: 'padding:0' }, 'Show more');
+  const draw = () => {
+    list.replaceChildren(...items.slice(0, shown).map((it) => h('li', {}, h('button', { type: 'button', class: 'recent-item', onclick: () => (it.kind === 'story' ? trainerNext({ id: it.id }, { img: it.img }) : walkTo(it.id, [])) },
+      h('span', { class: 't' }, it.title), h('span', { class: 'muted small recent-meta' }, [it.thinker, whenRead(it.date)].filter(Boolean).join(' · ')),
+      h('span', { class: 'muted small recent-snippet' }, it.snippet)))));
+    if (!items.length) list.replaceChildren(h('li', { class: 'muted small' }, 'Nothing you have read matches that.'));
+    more.hidden = items.length <= shown;
+  };
+  more.addEventListener('click', () => { shown += 12; draw(); });
+  const find = h('input', { type: 'search', class: 'recent-search', id: 'recent-search', placeholder: 'Find something you read…', 'aria-label': 'Search what you have read', enterkeyhint: 'search' });
+  let t = 0; let asked = 0;
+  find.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const mine = ++asked; const r = await api(`/api/recent?q=${encodeURIComponent(find.value.trim())}`).catch(() => null);
+      if (mine !== asked || !r) return; items = r.items; shown = 8; draw();
+    }, 250);
+  });
+  draw();
+  return h('section', { class: 'diary-block recent' }, h('h2', {}, 'Recently read'), find, list, more);
+}
+const ENTRY_LABEL = { answer: 'Your answer', note: 'Your note', kept: 'A line you kept', highlight: 'Words you kept' };
+function showJournal() {
+  setNav('journal');
+  return guarded(async () => {
+    const d = await api(`/api/diary?date=${today()}`);
+    const open = (id) => () => walkTo(id, []);
+    const c = d.counts;
+    const summary = c.met
+      ? `${c.met} ${c.met === 1 ? 'idea' : 'ideas'} met · ${c.answers} ${c.answers === 1 ? 'answer' : 'answers'} · ${c.notes} ${c.notes === 1 ? 'note' : 'notes'} · ${c.kept} kept`
+      : 'Your discoveries gather here: each day\'s answer, the notes you leave on any idea, the lines you keep.';
+    const roads = d.roads.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'Roads to explore'),
+      h('p', { class: 'muted small' }, 'Chosen from what you wrote and the ideas you have met.'),
+      d.roads.map((r) => h('div', { class: 'compass-item' }, h('p', { class: 'muted small' }, r.why), bubble(r, open(r.id), null))));
+    const link = (side) => h('a', { href: '#', class: 'thread-link', onclick: (e) => { e.preventDefault(); open(side.id)(); } }, side.title);
+    const threads = d.threads.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'Threads you have found'),
+      h('ul', { class: 'path' }, d.threads.map((t) => h('li', {},
+        h('p', { class: 'thread' }, link(t.first), ` ${t.verb} `, link(t.second), t.after ? ` ${t.after}` : '', '.'),
+        t.note && h('p', { class: 'muted small' }, t.note)))));
+    let lastDate = null;
+    const entries = d.entries.length
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Entries'), h('ul', { class: 'path' }, d.entries.map((e) => {
+        const day = e.date !== lastDate && h('div', { class: 'eyebrow diary-date' }, e.date); lastDate = e.date;
+        return h('li', {}, day,
+          h('div', { class: 'muted small' }, ENTRY_LABEL[e.kind]),
+          h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: open(e.id) }, h('span', { class: 't' }, e.title)),
+          e.prompt && h('p', { class: 'muted small' }, e.prompt),
+          e.kind === 'kept' || e.kind === 'highlight' ? h('blockquote', { class: 'kept' }, e.body) : h('p', {}, e.body),
+          (e.kind === 'kept' || e.kind === 'highlight') && actionRow({ quote: { title: e.title, text: e.body, thinker: e.thinker ?? null, id: e.id } }),
+          e.kind === 'highlight' && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: async (ev) => {
+            const li = ev.currentTarget.closest('li');
+            await api(`/api/highlight/${e.hid}`, { method: 'DELETE' }).then(() => li.remove()).catch(() => notice('Could not remove it. Try again.'));
+          } }, 'Remove'));
+      })))
+      : h('p', { class: 'muted' }, 'Nothing yet. Write today\'s answer, or leave a note on any idea you walk to: "Your notes" is near the end of every idea.');
+    const unsent = unfinished();
+    const unfinishedBlock = unsent.length && h('section', { class: 'diary-block unfinished' }, h('h2', {}, 'Unfinished'),
+      h('p', { class: 'muted small' }, 'Started and not sent yet, kept on this phone.'),
+      h('ul', { class: 'path' }, unsent.map((u) => {
+        const li = h('li', {},
+          h('div', { class: 'eyebrow diary-date' }, new Date(u.at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })),
+          u.where && h('p', { class: 'unfinished-where' }, u.where),
+          u.asked && h('p', { class: 'muted small' }, u.asked),
+          h('blockquote', { class: 'kept' }, u.text),
+          h('div', { class: 'row', style: 'gap:18px;justify-content:flex-start' },
+            u.place && h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => pickUp(u) }, 'Pick it up →'),
+            h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => { saveUnfinished(unfinished().filter((x) => x.id !== u.id)); li.remove(); } }, 'Discard')));
+        return li;
+      })));
+    const al = await api('/api/me/allowance').catch(() => null);
+    const recentBlock = recentlyRead(await api('/api/recent').catch(() => null));
+    const learnedLine = h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showLearned() }, 'What Continuum has learned about you →'));
+    const planLine = al?.mode === 'on' && h('p', { class: 'muted small plan-line' }, `Your plan: ${al.name} · ${Math.min(100, Math.round(al.share * 100))}% of this month used · `, plansLink('Plans'));
+    const st = await api('/api/stance').catch(() => null);
+    const journey = st && (st.journey.answered
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'), journeyView(st.journey),
+          h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showStance() }, 'Revisit the debates'))
+      : h('section', { class: 'diary-block' }, h('h2', {}, 'Your journey'),
+          h('p', { class: 'muted small' }, 'Seven great debates, each answered by two camps. Your choices help Continuum plan a journey that suits you.'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showStance() }, 'Open the debates')));
+    // Your views over time, by topic: what you said you think, want or wonder, as Talk noted it. Talk will bring
+    // these back to compare; a topic with more than one entry can be talked over directly.
+    const byTopic = new Map();
+    for (const v of d.views ?? []) byTopic.set(v.topic, [...(byTopic.get(v.topic) ?? []), v]);
+    const KIND = { view: 'A view', goal: 'A goal', question: 'A question' };
+    const views = byTopic.size
+      ? h('section', { class: 'diary-block' }, h('h2', {}, 'Your views over time'),
+        h('p', { class: 'muted small' }, 'Noted from what you said in Talk and wrote in your answers. Talk brings them back, to see what has changed and whether the reasons hold. Remove any that are wrong.'),
+        [...byTopic].map(([topic, vs]) => h('div', { class: 'view-topic' },
+          h('h3', {}, topic),
+          vs.map((v) => {
+            const row = h('div', { class: 'view-row' },
+              h('div', { class: 'eyebrow' }, `${v.date} · ${KIND[v.kind] ?? v.kind}`),
+              h('p', {}, v.body),
+              h('button', { type: 'button', class: 'link view-drop', 'aria-label': 'Remove this view', onclick: async () => { await api(`/api/views/${v.id}`, { method: 'DELETE' }).catch(() => {}); row.remove(); } }, 'Remove'));
+            return row;
+          }),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `My diary has my views on "${topic}" over time:\n${vs.slice().reverse().map((v) => `${v.date}: ${v.body}`).join('\n')}\nHave I changed my mind, and do my reasons hold up?`, draft: true }) },
+            vs.length > 1 ? 'Talk over how this has changed' : 'Test this view'))))
+      : h('section', { class: 'diary-block' }, h('h2', {}, 'Your views over time'),
+        h('p', { class: 'muted small' }, 'When you say what you think in Talk, or in your answers, Continuum notes your views and goals here, with the date. Later it brings them back to compare, and to choose ideas for you.'),
+        doors());
+    const again = h('p', { class: 'muted small', style: 'margin-top:28px' },
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => tour() }, 'Take the spoken tour again'));
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const working = cs?.cases.some((c) => c.status === 'open') && h('section', { class: 'diary-block' },
+      h('h2', {}, 'What you are working through'),
+      h('ul', { class: 'path' }, cs.cases.filter((c) => c.status === 'open').map((c) => h('li', {},
+        h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)),
+        h('div', { class: 'muted small' }, `Since ${c.date} · ${c.checkins.length} ${c.checkins.length === 1 ? 'check-in' : 'check-ins'}${c.started ? ' · your course' : ''}`)))));
+    const youChips = h('div', { class: 'size-chips' },
+      h('button', { type: 'button', class: 'chip on', 'aria-pressed': 'true' }, 'Diary'),
+      h('button', { type: 'button', class: 'chip', onclick: () => showReview(7) }, 'Your week'),
+      h('button', { type: 'button', class: 'chip', onclick: () => showPractice() }, 'Practice'));
+    const road = await roadSection();
+    const pathNow = await api(`/api/paths?date=${today()}`).catch(() => null);
+    const pathBlock = pathNow && (pathNow.current || pathNow.past.length) && h('section', { class: 'diary-block' }, h('h2', {}, 'Your path'),
+      pathNow.current && h('p', {}, `${pathNow.current.name}: day ${pathNow.current.day} of ${pathNow.current.days}.`),
+      pathNow.past.slice(0, 3).map((r) => h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPathOutcome(r.run) }, `${r.name}`), ` · ${r.started} · ${r.practised} days${r.status === 'done' ? ', finished' : ''}`)),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showPaths() }, pathNow.current ? 'Today on your path' : 'Choose a path'));
+    const yourData = h('section', { class: 'diary-block' }, h('h2', {}, 'Your words, your data'),
+      h('p', { class: 'muted small' }, 'What Continuum keeps, where, and who can see it; download everything or delete everything.'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showPrivacy() }, 'Where your words go'));
+    render(youChips, h('h1', {}, 'Diary of discovery'), h('p', { class: 'muted' }, summary), planLine, learnedLine, unfinishedBlock, recentBlock, road, pathBlock, working, views, journey, roads, threads, entries, again, keepOnPhone(), replySetting(), nudgeSetting(), yourDetails(), yourData);
+  });
+}
+
+// Talk: a conversation with the map's collective wisdom. Type or speak; replies stream in, with the ideas they name as
+// links, and are read aloud in the reading voice. The conversation is kept, so it can be picked up later.
+const TALK_KEY = 'continuum.talk';
+const SPEAK_KEY = 'continuum.talk.speak';
+// How Talk replies: 'aloud' (read out loud, always), 'text' (text only, even when you speak), 'match' (spoken in,
+// spoken back; typed in, text). The default is to match.
+const REPLY_KEY = 'continuum.talk.reply';
+const REPLY_MODES = [['match', 'Match me', 'Spoken in, spoken back; typed in, text.'], ['aloud', 'Reply out loud', 'Every reply is read aloud, with the words on screen.'], ['text', 'Text only', 'Replies are never read aloud, even when you speak.']];
+const replyMode = () => { const m = store.get(REPLY_KEY); if (REPLY_MODES.some(([k]) => k === m)) return m; return store.get(SPEAK_KEY) === 'on' ? 'aloud' : 'match'; };
+// The default, in You.
+function replySetting() {
+  const box = h('section', { class: 'diary-block' });
+  const draw = () => box.replaceChildren(h('h2', {}, 'How Talk replies'),
+    h('p', { class: 'muted small' }, REPLY_MODES.find(([k]) => k === replyMode())[2]),
+    h('div', { class: 'theme-chips' }, ...REPLY_MODES.map(([k, name]) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(replyMode() === k), onclick: () => { store.set(REPLY_KEY, k); draw(); } }, name))));
+  draw(); return box;
+}
+// Reply text with [[id]] markers: the words, and each named idea as a link (a placeholder while it streams).
+function replyNodes(text, refs, done) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)) {
+    out.push(text.slice(last, m.index)); last = m.index + m[0].length;
+    const r = refs[m[1]];
+    if (r) out.push(h('a', { href: '#', class: `talk-ref field-${r.field}`, onclick: (e) => { e.preventDefault(); stopTalkVoice(); (r.type === 'practice' ? showPractice({ practice: m[1] }) : walkTo(m[1], [])); } }, r.title));
+    else if (!done) out.push('…');
+  }
+  out.push(done ? text.slice(last) : text.slice(last).replace(/\[\[[a-z0-9_]*\]?$/, ''));
+  return out;
+}
+const spokenReply = (text, refs) => text.replace(/\[\[([a-z0-9_]+)\]\]/g, (_, id) => refs[id]?.title ?? '').replace(/\s+/g, ' ').trim();
+
+// Reading a reply aloud, one sentence at a time, so it can be paused, repeated, or started from any sentence (tap it).
+// One reply plays at a time; the sentence being read is highlighted. view = { spans, spoken, btn, clips }.
+const talkPlayer = { view: null, i: 0, state: 'idle', run: null, follow: true, part: 0 };
+// While a reply is read aloud: a bar at the top to stop it (or pause), and the page follows the sentence being read
+// (highlighted) until the user scrolls it themselves; then "Follow along" brings it back.
+const talkBar = h('div', { class: 'talk-bar', hidden: true, role: 'region', 'aria-label': 'Reading aloud' });
+const talkBarPause = h('button', { type: 'button', class: 'tb-btn tb-main', 'aria-label': 'Pause' }, '❚❚');
+const talkBarFollow = h('button', { type: 'button', class: 'chip tb-follow', hidden: true }, 'Follow along');
+talkBar.append(talkBarFollow, h('div', { class: 'tb-row' },
+  h('button', { type: 'button', class: 'tb-btn', 'aria-label': 'Back 15 seconds', onclick: () => skipTalk(-15) }, h('span', { class: 'tb-skip' }, '↺'), h('small', {}, '15')),
+  talkBarPause,
+  h('button', { type: 'button', class: 'tb-btn', 'aria-label': 'Forward 15 seconds', onclick: () => skipTalk(15) }, h('span', { class: 'tb-skip' }, '↻'), h('small', {}, '15')),
+  h('button', { type: 'button', class: 'tb-btn tb-stop', 'aria-label': 'Stop', onclick: () => stopTalkVoice() }, '■')));
+talkBarPause.addEventListener('click', () => talkPlayer.view && togglePlay(talkPlayer.view));
+// Skipping 15 seconds either way. Each sentence is its own clip, so a skip within the clip just moves in it; one that
+// runs past either end walks over whole sentences (their lengths known once played, else estimated from their words)
+// and lands part-way into the right one.
+const secsOf = (view, k) => view.durs?.[k] ?? Math.max(1, view.spoken[k].length / (14.5 * readRate()));
+function skipTalk(delta) {
+  const p = talkPlayer; const view = p.view; if (!view) return;
+  const inClip = !audioEl.paused || (p.state === 'paused' && audioEl.src && !audioEl.ended && audioEl.duration);
+  const here = inClip && audioEl.duration ? audioEl.currentTime : secsOf(view, p.i) * (p.part || 0);
+  let t = here + delta; let i = p.i;
+  if (inClip && audioEl.duration && t >= 0 && t < audioEl.duration - .2) { audioEl.currentTime = t; return; }
+  while (t < 0 && i > 0) { i -= 1; t += secsOf(view, i); }
+  while (t >= secsOf(view, i) && i < view.spoken.length - 1) { t -= secsOf(view, i); i += 1; }
+  if (t >= secsOf(view, i)) return stopTalkVoice(); // past the end
+  playFrom(view, i, Math.max(0, t));
+}
+talkBarFollow.addEventListener('click', () => { talkPlayer.follow = true; talkBarFollow.hidden = true; followTalk(true); });
+document.body.append(talkBar);
+// A calm Talk screen: only the two voices. The menus, the header, the playback controls (and, while a reply is read,
+// the box for writing) fade away; a tap anywhere brings them back for a few seconds.
+let peekTimer = 0;
+function peek(ms = 3500) {
+  const root = document.documentElement; if (!root.classList.contains('talk-calm')) return;
+  root.classList.add('peek'); clearTimeout(peekTimer); peekTimer = setTimeout(() => root.classList.remove('peek'), ms);
+}
+// The playback controls float up for a few seconds when reading starts or the screen is touched, then fade away.
+let barTimer = 0;
+function wakeBar(ms = 3500) {
+  if (talkBar.hidden) return;
+  talkBar.classList.add('awake'); clearTimeout(barTimer); barTimer = setTimeout(() => talkBar.classList.remove('awake'), ms);
+}
+addEventListener('pointerdown', () => wakeBar(), { passive: true });
+let tapStart = null;
+addEventListener('pointerdown', (e) => { tapStart = { x: e.clientX, y: e.clientY, at: Date.now() }; }, { passive: true });
+addEventListener('pointerup', (e) => {
+  const quick = tapStart && Date.now() - tapStart.at < 400 && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 12;
+  if (quick && talkPlayer.state === 'playing' && e.target.closest?.('.talk-log') && !e.target.closest('a, button, textarea, input, .talk-bar, .talk-compose')) {
+    // One tap on the conversation stops the reading; a second tap close behind it (a double tap) reads from that word.
+    stopTalkVoice(); justStopped = Date.now(); return;
+  }
+}, { passive: true });
+addEventListener('pointerup', (e) => {
+  if (!document.documentElement.classList.contains('talk-calm')) return;
+  if (e.target.closest('textarea, input, select, .talk-head')) return;
+  peek(); // a tap on the controls themselves keeps them up a little longer
+});
+const userScrolled = () => { if (talkPlayer.state === 'playing' && talkPlayer.follow) { talkPlayer.follow = false; talkBarFollow.hidden = false; peek(); wakeBar(); } };
+for (const ev of ['touchmove', 'wheel']) addEventListener(ev, userScrolled, { passive: true });
+addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key) && e.target === document.body) userScrolled(); });
+// The word being said is traced in gold, letter by letter, with stardust (as in Contemplate), and no box around the
+// sentence. The sentence's words are wrapped once, each with where it starts in the sentence as shown; a letter of the
+// spoken text maps to the same share of the shown one (they differ only by small marks such as a link's title).
+const wordsIn = new WeakMap(); // a sentence's element -> [{ el, start, end }] (offsets in its shown text)
+function wordsOf(el) {
+  if (wordsIn.has(el)) return wordsIn.get(el);
+  const out = []; let pos = 0; const texts = [];
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) texts.push(walk.currentNode);
+  for (const t of texts) {
+    const parts = t.nodeValue.split(/(\s+)/); const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) frag.append(part);
+      else { const w = h('span', { class: 'w' }, part); out.push({ el: w, start: pos, end: pos + part.length }); frag.append(w); }
+      pos += part.length;
+    }
+    t.replaceWith(frag);
+  }
+  wordsIn.set(el, out);
+  return out;
+}
+// Where sentence k begins within its element's shown text (an element can hold several sentences: a paragraph read
+// as a page part), and how long it is there.
+function sentenceSpan(view, k) {
+  const el = view.spans[k]; const text = el.textContent;
+  let first = k; while (first > 0 && view.spans[first - 1] === el) first--;
+  if (first === k) return { el, base: 0, len: text.trim().length || 1 };
+  let from = 0;
+  for (let j = first; j <= k; j++) {
+    const probe = view.spoken[j].slice(0, 14); const at = text.indexOf(probe, from);
+    if (at < 0) return { el, base: Math.round(text.length * (k - first) / (k - first + 1)), len: view.spoken[k].length };
+    if (j === k) return { el, base: at, len: view.spoken[k].length };
+    from = at + Math.max(1, view.spoken[j].length - 2);
+  }
+  return { el, base: 0, len: text.length };
+}
+function traceAt(view, k, c) {
+  const p = talkPlayer; if (p.view !== view || p.i !== k || !view.spans[k]?.isConnected) return;
+  const { el, base, len } = sentenceSpan(view, k);
+  const shown = base + Math.round(c * len / (view.spoken[k].length || 1));
+  const word = wordsOf(el).find((w) => shown < w.end && w.end > base) ?? null;
+  if (!word || word.el === p.word) return;
+  p.word = word.el; glowWord(word.el); followTalk();
+}
+// With the natural voice: each letter's start time from the clip (or, without them, letters spread over its length).
+function traceClip(view, k, starts) {
+  cancelAnimationFrame(talkPlayer.traceRaf);
+  const step = () => {
+    const p = talkPlayer; if (p.view !== view || p.i !== k || p.state === 'idle') return;
+    const t = audioEl.currentTime; let c = 0;
+    if (starts?.length) { while (c + 1 < starts.length && starts[c + 1] <= t + .04) c++; }
+    else if (audioEl.duration) c = Math.floor((t / audioEl.duration) * view.spoken[k].length);
+    if (t > 0) traceAt(view, k, c);
+    p.traceRaf = requestAnimationFrame(step);
+  };
+  talkPlayer.traceRaf = requestAnimationFrame(step);
+}
+// Keep the word being said near the middle of the screen (above the controls), moving only when it drifts out of a
+// comfortable band; before the first word, the sentence's start.
+function followTalk(jump = false) {
+  const p = talkPlayer; const sp = p.view?.spans[p.i];
+  if (!sp || !p.follow || !document.body.contains(sp)) return;
+  const vh = innerHeight;
+  const room = (talkBar.hidden ? document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? vh : talkBar.getBoundingClientRect().top) - 16;
+  const target = p.word && sp.contains(p.word) ? p.word : sp;
+  const r = target.getBoundingClientRect();
+  const at = target === sp && r.height > vh * .3 ? r.top + r.height * Math.min(1, p.part) : r.top;
+  const want = Math.min(vh * .42, room - 90);
+  if (jump || at < Math.max(70, vh * .22) || at > Math.min(room - 40, vh * .62)) window.scrollBy({ top: at - want, behavior: 'smooth' });
+}
+audioEl.addEventListener('timeupdate', () => {
+  if (talkPlayer.state !== 'playing' || !audioEl.duration) return;
+  talkPlayer.part = audioEl.currentTime / audioEl.duration; followTalk();
+});
+// The controls sit just above the box for writing, where a thumb reaches them.
+function placeTalkBar() {
+  if (talkBar.hidden) return;
+  const top = document.querySelector('.talk-compose')?.getBoundingClientRect().top ?? innerHeight - 90;
+  talkBar.style.bottom = `${Math.max(12, innerHeight - Math.min(top, innerHeight - 70) + 10)}px`;
+}
+addEventListener('resize', placeTalkBar); addEventListener('scroll', placeTalkBar, { passive: true });
+function setPlayState(view, state) {
+  if (!view) return;
+  view.btn.textContent = state === 'playing' ? 'Pause' : state === 'paused' ? 'Resume' : 'Listen';
+  view.btn.setAttribute('aria-pressed', String(state === 'playing'));
+  view.btn.classList.remove('wants-tap');
+  const lit = state !== 'idle' ? view.spans[talkPlayer.i] : null; view.spans.forEach((sp) => sp.classList.toggle('now', sp === lit));
+  if (state === 'idle') { cancelAnimationFrame(talkPlayer.traceRaf); talkPlayer.word = null; }
+  const was = document.documentElement.classList.contains('speaking');
+  talkBar.hidden = state === 'idle' || !document.body.contains(view.btn);
+  document.documentElement.classList.toggle('speaking', state === 'playing');
+  if (state === 'playing' && !was) { peek(2500); wakeBar(2500); } // show the controls as reading starts, then let them go
+  talkBarPause.textContent = state === 'paused' ? '▶' : '❚❚'; talkBarPause.setAttribute('aria-label', state === 'paused' ? 'Play' : 'Pause');
+  if (state === 'idle') { talkBarFollow.hidden = true; }
+  placeTalkBar();
+}
+function stopTalkVoice() {
+  const p = talkPlayer;
+  if (p.run) { p.run.stop = true; p.run.wake?.(); }
+  speech?.cancel(); audioEl.pause();
+  const v = p.view; p.view = null; p.run = null; p.state = 'idle'; setPlayState(v, 'idle');
+}
+// fromChar: start the first sentence at this letter of it (a double-tapped word), not at its beginning.
+async function playFrom(view, i, offset = 0, fromChar = null) {
+  stopTalkVoice();
+  const p = talkPlayer; const run = { stop: false, wake: null };
+  Object.assign(p, { view, i, state: 'playing', run, follow: true, part: 0, word: null });
+  setPlayState(view, 'playing'); followTalk(true);
+  const plan = await voicePlan();
+  // Each sentence's clip comes with every letter's start time, so the word being said can be traced.
+  const clip = (k) => {
+    if (!view.clips.has(k)) view.clips.set(k, fetchTimed(view.spoken[k], plan.el).catch((e) => { view.clips.delete(k); throw e; }));
+    return view.clips.get(k);
+  };
+  let useEl = 'el' in plan;
+  while (p.i < view.spoken.length && !run.stop) {
+    p.part = 0; setPlayState(view, 'playing'); followTalk();
+    if (useEl) {
+      try {
+        const { blob, starts } = await tryTwice(() => clip(p.i));
+        if (p.i + 1 < view.spoken.length) clip(p.i + 1).catch(() => {});
+        if (run.stop) return false;
+        // A double-tapped word: its letter's start time in this clip (or, without timings, the same share of it).
+        let at = offset; offset = 0;
+        if (fromChar != null) { const c = Math.min(fromChar, view.spoken[p.i].length - 1); at = starts?.length ? starts[Math.min(c, starts.length - 1)] ?? 0 : -(c / (view.spoken[p.i].length || 1)); fromChar = null; }
+        traceClip(view, p.i, starts);
+        if (await playClip(URL.createObjectURL(blob), run, at, (d) => { (view.durs ??= {})[p.i] = d; }) === 'blocked') {
+          // The browser wants a tap first: ask for one, on the reply itself.
+          stopTalkVoice(); view.btn.textContent = '▶ Tap to hear it'; view.btn.classList.add('wants-tap');
+          return false;
+        }
+      } catch {
+        stopTalkVoice(); notice(VOICE_DOWN); view.btn.textContent = '▶ Try again'; view.btn.classList.add('wants-tap');
+        return false;
+      }
+    } else {
+      // The phone's voice cannot start part-way into a sentence: a skip into one starts it from its beginning.
+      offset = 0; fromChar = null; const len = view.spoken[p.i].length || 1; const k = p.i;
+      await sayPhone(view.spoken[p.i], plan.phone ?? null, run, (c) => { p.part = c / len; traceAt(view, k, c); followTalk(); });
+    }
+    if (run.stop || p.state === 'paused') return false; // paused: stay on this sentence
+    p.i++;
+  }
+  const finished = !run.stop && p.i >= view.spoken.length;
+  if (p.run === run) stopTalkVoice();
+  return finished;
+}
+function togglePlay(view) {
+  const p = talkPlayer;
+  if (p.view !== view || p.state === 'idle') return playFrom(view, 0);
+  if (p.state === 'playing') {
+    p.state = 'paused';
+    // The natural voice pauses mid-sentence; the phone's voice stops and resumes from the start of the sentence.
+    if (!audioEl.paused) audioEl.pause(); else { p.run.stop = true; speech?.cancel(); }
+    return setPlayState(view, 'paused');
+  }
+  if (p.state === 'paused') {
+    if (!p.run.stop && audioEl.src && audioEl.paused && !audioEl.ended) { p.state = 'playing'; setPlayState(view, 'playing'); audioEl.play(); }
+    else playFrom(view, p.i);
+  }
+}
+
+const TALK_MODES = {
+  talk: { label: 'Talk', placeholder: 'Say what you think…' },
+  weigh: { label: 'Weigh an opinion', placeholder: 'State an opinion you hold, or paste one from the news or a court…' },
+  teach: { label: 'Teach it back', placeholder: 'Explain an idea in your own words, as if to a friend…' },
+  settle: { label: 'A debate with a friend', placeholder: 'What did you disagree about? Say what you think, and what they think…' },
+  news: { label: 'In the news', placeholder: 'A headline or a story you want to make sense of…' },
+  goal: { label: 'A goal', placeholder: 'Something you want to do, change or become…' },
+  workout: { label: 'Work it out', placeholder: 'What is on your mind? A habit, a feeling, a decision, something stuck…' },
+};
+function showTalk({ about = null, mode = 'talk', seed = null, practice = null, draft = false, voice = false } = {}) {
+  if (mode !== 'act') remember({ kind: 'talk', title: 'Your conversation in Talk' });
+  setNav('talk');
+  stopTalkVoice();
+  return guarded(async () => {
+    const saved = Number(store.get(TALK_KEY)) || '';
+    const state = await api(`/api/talk?date=${today()}${saved ? `&id=${saved}` : ''}`);
+    if (!state.enabled) {
+      return render(h('h1', {}, 'Talk'), h('p', {}, 'Talk is a conversation with the ideas on the map: argue a point, test a belief, ask for a practice or a reading path.'),
+        h('p', { class: 'muted' }, 'It is not switched on yet. To turn it on, add ANTHROPIC_API_KEY to the .env file next to the server and restart it.'));
+    }
+    let convoId = state.id;
+    let current = mode;
+    let depth = state.depth ?? 1; let role = state.role ?? null;
+    const settings = async (body) => {
+      const r = await api('/api/talk/settings', { method: 'POST', body: { id: convoId, ...body } });
+      if (r.id && r.id !== convoId) { convoId = r.id; store.set(TALK_KEY, String(r.id)); }
+      depth = r.depth; role = r.role; drawDepth(); drawRole();
+      return r;
+    };
+    const refs = { ...state.refs };
+    const log = h('div', { class: 'talk-log', 'aria-live': 'polite' });
+    const bubble = (who, text, done = true, via = null) => {
+      const b = h('div', { class: `talk-turn ${who === 'you' ? 'from-you' : 'from-map'}` });
+      if (who === 'you') { b.textContent = text; if (via === 'voice') b.prepend(h('span', { class: 'said-aloud', title: 'Spoken', 'aria-label': 'Spoken' }, '🎙 ')); }
+      else if (done) finishReply(b, text); else b.replaceChildren(...replyNodes(text, refs, false));
+      log.append(b); return b;
+    };
+    // A finished reply: each sentence a tap target (listen from here), and Listen/Pause/Resume and Repeat below.
+    function finishReply(b, text, web = []) {
+      const parts = sentences(text); const src = sourceList(text, web);
+      if (!parts.length) { b.replaceChildren(...[src, ...replyNodes(text, refs, true)].filter(Boolean)); return null; }
+      const btn = h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false' }, 'Listen');
+      const again = h('button', { type: 'button', class: 'chip' }, 'Repeat');
+      const view = { spans: [], spoken: parts.map((t) => spokenReply(t, refs)), btn, clips: new Map() };
+      view.spans = parts.map((t, k) => {
+        // While a reply is read, one tap stops it and a double tap on a word reads from there; when it is quiet, a tap
+        // offers "Listen from here" (as everywhere).
+        return h('span', { class: 'say' }, ...replyNodes(t, refs, true), ' ');
+      });
+      registerSay(view);
+      btn.addEventListener('click', () => togglePlay(view));
+      again.addEventListener('click', () => playFrom(view, 0));
+      // Copy: the reply as plain text (ideas by their titles), then the ideas it drew on and the pages it found.
+      const copy = h('button', { type: 'button', class: 'act act-copy', 'aria-label': 'Copy, with its sources', title: 'Copy, with its sources' }, icon(ICONS.copy));
+      copy.addEventListener('click', async () => {
+        const body = text.split(/\n{2,}/).map((para) => spokenReply(para, refs)).filter(Boolean).join('\n\n');
+        const ideas = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((m) => m[1]))].map((id) => refs[id]).filter(Boolean)
+          .map((r) => `${r.title}${r.thinker ? ` (${r.thinker})` : ''}`);
+        const pages = (web ?? []).map((w) => `${w.title && w.title !== w.url ? `${w.title}: ` : ''}${w.url}`);
+        const out = [body, ideas.length ? `Ideas drawn on:\n${ideas.map((x) => `- ${x}`).join('\n')}` : '', pages.length ? `Sources:\n${pages.map((x) => `- ${x}`).join('\n')}` : '', 'From Continuum'].filter(Boolean).join('\n\n');
+        notice(await copyText(out) ? 'Copied, with its sources.' : 'Could not copy on this phone.');
+      });
+      b.replaceChildren(...[src, h('div', {}, view.spans), h('div', { class: 'talk-controls chrome' }, btn, again, h('span', { class: 'acts' }, copy))].filter(Boolean));
+      return view;
+    }
+    // A reply that lays out a path (several ideas named in order) can be walked as a journey: it leads the next days.
+    function journeyOffer(text, how) {
+      const ids = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((x) => x[1]))].filter((id) => refs[id] && !id.startsWith('practice_'));
+      if (ids.length < (['workout', 'goal'].includes(how) ? 2 : 3)) return null;
+      const go = h('button', { type: 'button', class: 'chip' }, 'Walk these as a journey →');
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        try {
+          await api('/api/trail', { method: 'POST', body: { from_id: ids[0], ids: ids.slice(1), date: today() } });
+          notice(`A journey of ${ids.length} ideas. It starts now, and leads your next days.`);
+          walkTo(ids[0], []);
+        } catch { go.disabled = false; notice('Could not start that journey. Try again.'); }
+      });
+      return h('div', { class: 'talk-controls' }, go);
+    }
+    // At the top of every reply: the sources it draws on. The ideas it names from the map (open it here, or read the
+    // original) and the pages a web search found.
+    const sourceList = (text, web = []) => {
+      const ids = [...new Set([...text.matchAll(/\[\[([a-z0-9_]+)\]\]/g)].map((x) => x[1]))].filter((id) => refs[id]);
+      const items = [
+        ...ids.map((id) => { const r = refs[id]; return h('li', {},
+          h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title),
+          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`),
+          ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out', id)); }),
+        ...(web ?? []).map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))),
+      ];
+      return items.length > 0 && h('details', { class: 'talk-sources' }, h('summary', { class: 'eyebrow' }, `Sources · ${items.length}`), h('ul', {}, items));
+    };
+    state.turns.forEach((x) => bubble(x.who, x.text, true, x.via));
+    if (!state.turns.length) {
+      log.append(h('div', { class: 'talk-turn from-map' }, 'What is on your mind? Argue a point, test something you believe, or ask for a practice or a reading path. I will answer from the ideas on the map, and from your diary.'));
+    }
+    // Spoken in, spoken back: a message said aloud is always answered aloud. A typed one is answered in text only,
+    // unless replies are set to be read aloud always. (The old on/off switch: "on" is always; "off" becomes the default.)
+    // A quick toggle here (the default is in You): Match me → Reply out loud → Text only.
+    const ICON = { match: '🎙', aloud: '🔊', text: '💬' };
+    const speakToggle = h('button', { type: 'button', class: 'chip reply-toggle' });
+    const label = () => { const m = replyMode(); speakToggle.textContent = `${ICON[m]} ${REPLY_MODES.find(([k]) => k === m)[1]}`; speakToggle.setAttribute('aria-label', `Replies: ${REPLY_MODES.find(([k]) => k === m)[1]}. Tap to change.`); };
+    label();
+    speakToggle.addEventListener('click', () => {
+      const order = REPLY_MODES.map(([k]) => k); const next = order[(order.indexOf(replyMode()) + 1) % order.length];
+      store.set(REPLY_KEY, next); if (next === 'text') stopTalkVoice(); label(); notice(REPLY_MODES.find(([k]) => k === next)[2]);
+    });
+    const summary = summaryPanel(() => convoId);
+    const pastBtn = h('button', { type: 'button', class: 'chip', onclick: () => { stopTalkVoice(); showTalkHistory(); } }, 'Past conversations');
+    const fresh = h('button', { type: 'button', class: 'chip' }, 'New conversation');
+    fresh.addEventListener('click', async () => { stopTalkVoice(); const r = await api('/api/talk/new', { method: 'POST', body: {} }); store.set(TALK_KEY, String(r.id)); showTalk(); });
+
+    const ta = h('textarea', { id: 'talk-input', rows: '2', maxlength: '4000', placeholder: 'Say what you think…', enterkeyhint: 'send' });
+    // How deep, the user's to choose (and raise for one conversation when Continuum offers); and a voice to speak in.
+    const depthBox = h('div', { class: 'depth-dial' });
+    function drawDepth() {
+      const pick = (k) => h('button', { type: 'button', class: `chip ${depth === k ? 'on' : ''}`, 'aria-pressed': String(depth === k), onclick: () => settings({ depth: k, scope: 'default' }).catch(() => notice('Could not change that. Try again.')) }, DEPTH_LABEL[k]);
+      depthBox.replaceChildren(h('div', { class: 'eyebrow' }, 'How deep Continuum goes'),
+        h('div', { class: 'size-chips', role: 'group', 'aria-label': 'How deep' }, [1, 2, 3].map(pick)),
+        h('p', { class: 'muted small' }, DEPTH_NOTE[depth], ' ', depth === 3 && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go')));
+    }
+    const roleTag = h('div', { class: 'role-tag', hidden: true });
+    const roleInput = h('input', { type: 'text', class: 'search', maxlength: '80', placeholder: 'Speak as… (a shaman, a Stoic teacher, a grandmother)', 'aria-label': 'Speak as' });
+    function drawRole() {
+      roleTag.hidden = !role;
+      roleTag.replaceChildren(`Speaking as ${role ?? ''}`, ' · ', h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => settings({ role: null }) }, 'drop it'));
+      roleInput.value = role ?? '';
+    }
+    drawDepth(); drawRole();
+    const roleRow = h('div', { class: 'row', style: 'gap:8px' }, roleInput,
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => settings({ role: roleInput.value }).catch(() => notice('Could not set that. Try again.')) }, 'Set'));
+    // Continuum offered to go further: a yes raises the level for this conversation only.
+    function offerDeeper(level) {
+      const b = h('button', { type: 'button', class: 'chip offer-deeper' }, `Yes, go further (level ${level})`);
+      const box = h('div', { class: 'talk-controls' }, b);
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await settings({ depth: level, scope: 'talk' });
+          box.replaceChildren(h('p', { class: 'muted small' }, `Level ${level} for this conversation. Say more whenever you are ready.`, ' ', level === 3 && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go')));
+        } catch { b.disabled = false; notice('Could not change that. Try again.'); }
+      });
+      return box;
+    }
+    // Talk, or one of the modes (weigh, teach, settle, news, goal, work it out): what the next message asks for. Act (from a practice) is its own page.
+    const modeChips = current !== 'act' && h('div', { class: 'size-chips talk-modes', role: 'group', 'aria-label': 'Mode' },
+      Object.entries(TALK_MODES).map(([k, m]) => {
+        const b = h('button', { type: 'button', class: `chip ${k === current ? 'on' : ''}`, 'aria-pressed': String(k === current) }, m.label);
+        b.addEventListener('click', () => {
+          current = k; ta.placeholder = m.placeholder;
+          const title = document.querySelector('.talk-head-title'); if (title) title.textContent = m.label;
+          setWallpaper(talkPlate(k), .35, { plain: true });
+          b.parentElement.querySelectorAll('.chip').forEach((c) => { const on = c === b; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+          ta.focus();
+        });
+        return b;
+      }));
+    ta.placeholder = current === 'act' ? 'Your town, or zip code' : TALK_MODES[current].placeholder;
+    pageBg = talkPlate(current);
+    if (about) ta.value = current === 'teach' ? `Let me explain "${about.title}" in my own words: ` : `I have just been reading "${about.title}". `;
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    const status = h('div', { class: 'muted small', role: 'status' });
+    const compose = h('div', { class: 'talk-compose' }, ta);
+    // Keep the newest words just above the composer (which sits over the bottom of the page).
+    const keepInView = (el) => {
+      const gap = el.getBoundingClientRect().bottom - (compose.getBoundingClientRect().top - 12);
+      if (gap > 0) window.scrollBy(0, gap);
+    };
+    async function submit() {
+      const typed = ta.value.trim();
+      if (!typed || send.disabled) return;
+      const sendAs = current !== 'talk' ? current : null; // every mode but plain Talk asks for its own kind of reply
+      const text = sendAs === 'act' ? `Practice: "${practice.title}". Near: ${typed}` : typed;
+      const spoken = byVoice; byVoice = false; // how this message was given: spoken in, spoken back
+      document.querySelector('.talk-head')?.removeAttribute('open');
+      stopTalkVoice(); stopMic();
+      send.disabled = true; ta.value = ''; status.textContent = '';
+      bubble('you', sendAs === 'act' ? text.replace(/^Practice: "[^"]*"\. Near: /, 'Near: ') : text, true, spoken ? 'voice' : 'typed');
+      const out = bubble('map', '', false); out.classList.add('thinking'); out.textContent = 'Thinking…';
+      keepInView(out);
+      let reply = ''; let view = null; let safety = null;
+      try {
+        const res = await fetch('/api/talk', { method: 'POST', headers: { 'x-continuum-token': token(), 'content-type': 'application/json' }, body: JSON.stringify({ id: convoId, text, date: today(), via: spoken ? 'voice' : 'typed', ...(sendAs ? { mode: sendAs } : {}) }) });
+        if (res.ok) markSent({ text });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          if (e.error === 'allowance') throw Object.assign(new Error(allowanceText(e.allowance)), { allowance: e.allowance });
+          throw new Error(e.error === 'daily_limit' ? 'That is enough talk for today. The map will be here tomorrow.' : 'Could not reach the conversation. Try again.');
+        }
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+            if (!line) continue;
+            const m = JSON.parse(line);
+            if (m.t === 'start') { if (m.id) { convoId = m.id; store.set(TALK_KEY, String(m.id)); } }
+            else if (m.t === 'text') {
+              reply += m.d; out.classList.remove('thinking'); out.replaceChildren(...replyNodes(reply.trimStart(), refs, false));
+              keepInView(out);
+            }
+            else if (m.t === 'safety') safety = m;
+            else if (m.t === 'done') {
+              Object.assign(refs, m.refs); view = finishReply(out, reply.trim(), m.sources);
+              if (safety) out.prepend(helpCard(safety));
+              if (m.offer) out.append(offerDeeper(m.offer));
+              const walk = journeyOffer(reply, sendAs ?? current); if (walk) out.append(walk);
+              if (m.allowance) out.append(allowanceNote(m.allowance));
+              keepInView(out);
+            }
+            else if (m.t === 'error') throw Object.assign(new Error(m.error), { allowance: m.allowance });
+          }
+        }
+        summary.stale();
+        if (view && (replyMode() === 'aloud' || (replyMode() === 'match' && spoken))) {
+          const finished = await playFrom(view, 0);
+          // Your turn: after a spoken exchange, listen again (it stops by itself if nothing is said).
+          if (spoken && finished && dict && document.body.contains(ta)) { status.textContent = 'Your turn. Speak, or tap to stop.'; dict.start(); }
+        }
+      } catch (e) {
+        out.classList.remove('thinking');
+        if (!reply) out.remove();
+        status.textContent = e.message;
+        if (e.allowance) status.append(' ', plansLink());
+        if (!reply && !ta.value.trim()) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); } // not sent: the words go back in the box
+      } finally { send.disabled = false; }
+    }
+    send.addEventListener('click', submit);
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); submit(); } });
+
+    // Speaking: tap to talk, tap when done (pauses for thought are fine); what was said is sent. A message spoken
+    // aloud is answered aloud, and then the microphone opens again for the reply: a conversation, until you stop.
+    let byVoice = false;
+    const dict = dictation(ta, {
+      onStart: () => stopTalkVoice(),
+      onDone: (said) => { if (said) { byVoice = true; submit(); } },
+      onBlocked: (m) => { status.textContent = m; },
+    });
+    const mic = dict?.button;
+    const stopMic = () => dict?.stop();
+    compose.append(h('div', { class: 'row' }, mic || h('span'), speakToggle, send)); // the reply setting at hand, beside Speak and Send
+    if (current === 'act') {
+      log.replaceChildren(h('div', { class: 'talk-turn from-map' },
+        `Where do you live? Name a town or a zip code, and I will look for current ways to act on "${practice.title}" near you: volunteering, drives, and civic roles like working the polls. The place is used only for this search and not kept.`));
+    }
+    // Above the conversation: the title, the modes and the settings, folded into one small line once a conversation
+    // is under way, so the screen belongs to the two voices.
+    const headBody = h('div', { class: 'talk-head-body' },
+      current !== 'act' && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showParthenon() }, 'The Parthenon: talk with your group →')),
+      h('p', { class: 'muted small' }, current === 'act'
+        ? 'Found with a web search, so check each one before you go.'
+        : 'A conversation with the ideas on the map. Weigh an opinion to hear its strongest form, what it gets right, and where it is weaker. Tap any sentence of a reply to hear it from there.'),
+      modeChips,
+      h('div', { class: 'theme-chips' }, current !== 'act' && fresh, current !== 'act' && pastBtn,
+        h('button', { type: 'button', class: 'chip', onclick: () => chooseVoice() }, 'Microphone and voice')),
+      current !== 'act' && depthBox,
+      current !== 'act' && h('div', {}, h('div', { class: 'eyebrow' }, 'A voice for this conversation'), roleRow),
+      h('p', { class: 'small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go'), ' · ',
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy('help') }, 'Need help now?')));
+    const folded = state.turns.length > 0 && current !== 'act';
+    const head = h('details', { class: 'talk-head', ...(folded ? {} : { open: '' }) },
+      h('summary', {}, h('span', { class: 'talk-head-title' }, current === 'act' ? 'Act on it near you' : TALK_MODES[current]?.label ?? 'Talk'), h('span', { class: 'muted small' }, ' · options')),
+      headBody);
+    render(
+      head,
+      current !== 'act' && h('div', { class: 'talk-tools chrome' }, summary.button),
+      roleTag,
+      summary.box,
+      log,
+      compose,
+      status);
+    document.documentElement.classList.add('talk-calm');
+    if (about) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    if (seed && draft && voice && dict) { ta.value = seed; dict.start(); } // answer aloud: the microphone is already listening
+    else if (seed && draft) { ta.value = seed; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    else if (seed) { ta.value = seed; submit(); }
+    if (log.lastElementChild) keepInView(log.lastElementChild);
+  });
+}
+
+const DEPTH_LABEL = { 1: '1 · Ideas', 2: '2 · Your life', 3: '3 · All the way' };
+const DEPTH_NOTE = {
+  1: 'Ideas, thinkers and your views on them. It will not ask about your private life, though it may offer to go further.',
+  2: 'It asks about your own experience, and stays with what you bring before widening out.',
+  3: 'Feelings, history, relationships, dreams: it names patterns it notices across your conversations and asks the harder question. It is still not a therapist.',
+};
+// Help on screen when a message shows signs of danger: numbers to call, tappable, and what Continuum cannot do.
+function helpCard({ risk, imminent }) {
+  const call = (n, label) => h('a', { class: 'help-call', href: `tel:${n}` }, label);
+  const others = risk === 'others' || risk === 'both'; const self = risk === 'self' || risk === 'both';
+  return h('div', { class: 'help-card', role: 'alert' },
+    h('p', {}, h('strong', {}, imminent ? 'If anyone is in danger right now, call 911.' : 'This sounds serious, and you do not have to carry it alone.')),
+    self && h('p', {}, 'If you are thinking about ending your life or hurting yourself: call or text 988, the Suicide & Crisis Lifeline, any time.'),
+    others && h('p', {}, 'If you are afraid of what you might do to someone: step away from them now. 988 is there for that too: call or text, any time.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, call('911', 'Call 911'), call('988', 'Call 988'), h('a', { class: 'help-call', href: 'sms:988' }, 'Text 988')),
+    h('p', { class: 'muted small' }, 'Outside the US, call your local emergency number. Continuum is not a therapist and cannot contact anyone for you.'));
+}
+
+// Where your words go: what is kept, where, who sees it, what is sent elsewhere to make the app work, and the buttons to
+// take it all or erase it. Also: what Continuum is not.
+// ── What Continuum has learned about you ──
+// The private picture Talk and the trainer use to choose examples and challenges: each item with where it came from,
+// to reword or remove; notes of their own to add; and a way to have it all forgotten.
+const LEARNED_GROUPS = [['theme', 'What your answers keep coming back to'], ['lands', 'What lands with you'], ['flat', 'What tends to fall flat'],
+  ['people', 'People in your life you have mentioned'], ['practice', 'Practices you are drawn to'], ['stance', 'Where you stand in the great debates'], ['depth', 'How deep to go'], ['note', 'What you have told Continuum']];
+function showLearned() {
+  setNav('');
+  return guarded(async () => {
+    pageBg = TAB_BG.you;
+    const body = h('div', {});
+    const draw = (items) => {
+      const groups = LEARNED_GROUPS.map(([kind, title]) => {
+        const mine = items.filter((i) => i.kind === kind); if (!mine.length) return null;
+        return h('section', { class: 'diary-block learned' }, h('h2', {}, title), h('ul', { class: 'path' }, mine.map((it) => {
+          const li = h('li', {});
+          const show = () => li.replaceChildren(h('p', { class: 'learned-text' }, it.text), h('p', { class: 'muted small' }, it.edited ? `${it.from} · reworded by you` : it.from),
+            !it.fixed && h('div', { class: 'row', style: 'gap:18px;justify-content:flex-start' },
+              it.kind !== 'note' && h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: edit }, 'Reword'),
+              h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: remove }, 'Remove')));
+          async function remove() {
+            const r = it.kind === 'note' ? await api(`/api/me/profile/note/${it.note}`, { method: 'DELETE' }) : await api('/api/me/profile/item', { method: 'POST', body: { key: it.key, text: null } });
+            draw(r.items); notice('Removed. Continuum will not use it.');
+          }
+          function edit() {
+            const ta = h('textarea', { rows: '2', maxlength: '300', 'aria-label': 'Reword it' }); ta.value = it.text;
+            li.replaceChildren(ta, h('div', { class: 'row', style: 'gap:12px;justify-content:flex-start' },
+              h('button', { type: 'button', class: 'btn', onclick: async () => { const r = await api('/api/me/profile/item', { method: 'POST', body: { key: it.key, text: ta.value } }); draw(r.items); } }, 'Save'),
+              h('button', { type: 'button', class: 'link small', onclick: show }, 'Cancel')));
+            ta.focus();
+          }
+          show(); return li;
+        })));
+      }).filter(Boolean);
+      const add = h('textarea', { rows: '2', maxlength: '300', placeholder: 'Something Continuum should know about you (for example: "I teach high school", "go easy on religion", "I like hard questions").', 'aria-label': 'Something to know about you' });
+      const addBtn = h('button', { type: 'button', class: 'btn ghost', onclick: async () => { if (!add.value.trim()) return; const r = await api('/api/me/profile/note', { method: 'POST', body: { text: add.value } }); draw(r.items); } }, 'Add it');
+      const forget = h('button', { type: 'button', class: 'link small danger', style: 'padding:0' }, 'Forget everything learned');
+      forget.addEventListener('click', () => {
+        forget.replaceWith(h('div', { class: 'learned-forget' }, h('p', { class: 'small' }, 'Forget everything Continuum has learned about you? It starts again from now. What you wrote, kept and said stays yours.'),
+          h('div', { class: 'row', style: 'gap:12px;justify-content:flex-start' },
+            h('button', { type: 'button', class: 'btn danger', onclick: async () => { const r = await api('/api/me/profile/forget', { method: 'POST', body: {} }); draw(r.items); notice('Forgotten. It starts again from now.'); } }, 'Forget it all'),
+            h('button', { type: 'button', class: 'link small', onclick: () => draw(items) }, 'Keep it'))));
+      });
+      body.replaceChildren(...(groups.length ? groups : [h('p', { class: 'muted' }, 'Nothing yet. As you answer passages, talk and give a thumbs up or down, Continuum starts to see what lands with you.')]),
+        h('section', { class: 'diary-block learned' }, h('h2', {}, 'Tell it something'), add, h('div', { class: 'row', style: 'justify-content:flex-start' }, addBtn)),
+        h('p', {}, forget));
+    };
+    draw((await api('/api/me/profile')).items);
+    render(h('h1', {}, 'What Continuum has learned'),
+      h('p', { class: 'muted' }, 'A private picture, built from what you do here, so conversations and passages fit you: the examples, the angles, the challenges. It is held loosely; tell Talk when it gets you wrong, or change it here. It stays with your account. It is never sold or shared, and it is not written into the server\'s logs.'),
+      body, h('p', { class: 'muted small' }, h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy() }, 'Where your words go →')));
+  });
+}
+function showPrivacy(focus = null) {
+  setNav('');
+  const sec = (title, ...body) => h('section', { class: 'diary-block privacy' }, h('h2', {}, title), ...body);
+  const p = (...t) => h('p', {}, ...t);
+  const del = h('button', { type: 'button', class: 'btn ghost danger' }, 'Delete everything');
+  del.addEventListener('click', () => {
+    const typed = h('input', { type: 'text', class: 'search', placeholder: 'Type DELETE', 'aria-label': 'Type DELETE to confirm' });
+    const go = h('button', { type: 'button', class: 'btn danger' }, 'Delete for good');
+    const st = h('p', { class: 'muted small', role: 'status' });
+    go.addEventListener('click', async () => {
+      if (typed.value.trim().toLowerCase() !== 'delete') { st.textContent = 'Type DELETE to confirm.'; return; }
+      go.disabled = true;
+      try {
+        await api('/api/me/delete', { method: 'POST', body: { confirm: 'delete' } });
+        try { localStorage.clear(); } catch { /* nothing kept */ }
+        render(h('h1', {}, 'Deleted'), h('p', {}, 'Everything you kept in Continuum has been erased, and your link no longer works. Thank you for the conversations.'));
+      } catch { go.disabled = false; st.textContent = 'Could not delete. Try again.'; }
+    });
+    del.replaceWith(h('div', {}, h('p', {}, 'This erases your answers, notes, conversations, summaries and everything else, and your personal link stops working. It cannot be undone.'),
+      h('div', { class: 'row', style: 'gap:8px' }, typed, go), st));
+  });
+  const download = h('a', { class: 'btn ghost', href: '#', onclick: async (e) => {
+    e.preventDefault();
+    const r = await fetch('/api/me/export', { headers: { 'x-continuum-token': token() } }).catch(() => null);
+    if (!r?.ok) return notice('Could not download. Try again.');
+    const url = URL.createObjectURL(await r.blob());
+    const a = h('a', { href: url, download: `continuum-${today()}.json` }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } }, 'Download everything');
+  const help = sec('Need help now?',
+    p('Continuum is not a therapist or a crisis service. It does not watch your conversations, and it cannot contact anyone for you: not a therapist, not emergency services, not the police. When something you say suggests you or someone else may be in danger, it shows these numbers on screen. That is all it does.'),
+    p(h('strong', {}, 'If anyone is in danger right now: call 911.'), ' If you are struggling, thinking of hurting yourself, or afraid of what you might do to someone: call or text 988, any time (US). Elsewhere: your local emergency number.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, h('a', { class: 'help-call', href: 'tel:911' }, 'Call 911'), h('a', { class: 'help-call', href: 'tel:988' }, 'Call 988'), h('a', { class: 'help-call', href: 'sms:988' }, 'Text 988')));
+  render(
+    h('h1', {}, 'Where your words go'),
+    h('p', { class: 'muted' }, 'In plain words: what Continuum keeps, where, who can see it, and how to take it or erase it.'),
+    focus === 'help' && help,
+    sec('What is kept',
+      p('Your name; what you write and say here (daily answers, notes, conversations and their summaries, problems you work through, survey answers); and what you do (which ideas you open, the days you visit), so Continuum can choose what comes next and pick up where you left off.')),
+    sec('What Continuum learns about you',
+      p('From what you do here (the themes in your answers, what lands and what falls flat, the practices you are drawn to, where you stand in the great debates, how deep you like to go) Continuum keeps a private picture of you, so Talk and the trainer can choose examples and challenges that fit. It is held loosely: tell it when it gets you wrong. It stays with your account, is never sold or shared, and is not written into the server\'s logs. You can see it, reword or remove any part, add to it, or have it all forgotten.'),
+      p(h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showLearned() }, 'What Continuum has learned about you →'))),
+    sec('Where, and who can see it',
+      p('In one database on Continuum\'s own server, run by Render in Oregon, USA, with a nightly copy kept for fourteen days in case something breaks. You reach it through your personal link, which works like a password: keep it private. The people who run Continuum can reach the server to keep it working; they do not read what people write.')),
+    sec('What is sent elsewhere, to make it work',
+      p(h('strong', {}, 'Anthropic (Claude)'), ' writes Continuum\'s replies, questions and summaries, so what you write in Talk and in "Work through a problem" is sent to it. Anthropic does not use it to train its models.'),
+      p(h('strong', {}, 'ElevenLabs'), ' makes the reading voice, and writes down what you say when you speak instead of type (only while the microphone is on).'),
+      p(h('strong', {}, 'Web searches'), ' run through Claude when you ask about the news, a law, or help near you; the search itself is all that goes out.'),
+      p(h('strong', {}, 'Your phone\'s notification service'), ' carries the short notes Continuum sends, if you said yes to them.'),
+      p('Nothing is sold. There are no ads, and no tracking or analytics code in the app.')),
+    sec('Your choices',
+      p('How deep Continuum goes is yours to set in Talk (level 1, ideas; 2, your life; 3, all the way), and it never goes deeper without asking. You can take everything, or erase everything, at any time.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, download, del)),
+    focus !== 'help' && help);
+}
+
+// ── Paths: a practice to commit to ──
+// Three sizes, from "What It All Sums To": a light two weeks, a month of the morning and evening practice, and the long
+// course. Choosing shows what each can look like (examples, not promises) and the ideas on the map that show why. Under
+// way: today's questions, morning and evening, each with the line from the tradition that found it, and the idea of
+// the day from the people behind the practice in focus.
+function showPaths({ choose = false } = {}) {
+  setNav('think');
+  return guarded(async () => {
+    const d = await api(`/api/paths?date=${today()}`);
+    pageBg = PAGE_BG.problem ?? pageBg;
+    if (d.current && !choose) return pathDayView(d.current);
+    const whyChips = h('div', { class: 'theme-chips' }, d.why.map((w) => h('button', { type: 'button', class: 'chip', onclick: () => walkTo(w.id, []) }, w.title)));
+    render(
+      d.current && h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showPaths() }, `← ${d.current.name}`)),
+      h('h1', {}, 'A path to practice'),
+      h('blockquote', { class: 'thesis' }, h('p', {}, d.thesis.text), h('cite', {}, d.thesis.source)),
+      h('p', {}, 'For 2,500 years, people who never met kept arriving at the same seven habits for living well. Science has since caught up with them. They were never a secret: living them every day is the hard part. Choose how far to go.'),
+      h('p', { class: 'muted small' }, 'Tend the body · examine yourself daily · control your response · invest in a few close people · work at something that outlasts you · hold beliefs loosely · keep death in view.'),
+      h('div', { class: 'path-cards' }, d.paths.map((p) => h('section', { class: 'path-card' },
+        h('div', { class: 'eyebrow' }, `${p.days} days · ${p.effort}`),
+        h('h2', {}, p.name),
+        h('p', {}, p.promise),
+        h('div', { class: 'eyebrow' }, 'What this can look like'),
+        h('ul', { class: 'path-examples' }, p.examples.map((x) => h('li', {}, x))),
+        h('button', { type: 'button', class: 'btn', onclick: async (e) => {
+          if (d.current && !confirm(`Leave ${d.current.name} (day ${d.current.day}) and start ${p.name}?`)) return;
+          e.currentTarget.disabled = true;
+          try { const r = await api('/api/paths/start', { method: 'POST', body: { path: p.id, date: today() } }); pathDayView(r.current); } catch { notice('Could not start it. Try again.'); e.currentTarget.disabled = false; }
+        } }, d.current?.id === p.id ? 'Start it again' : `Start ${p.name.toLowerCase()}`)))),
+      h('p', { class: 'muted small' }, 'Examples, not promises: what it can look like when it takes. Missing a day never breaks a path; it waits for you.'),
+      h('div', { class: 'eyebrow' }, 'Why it works: open any of these'),
+      whyChips,
+      d.past.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'Paths so far'),
+        d.past.map((r) => h('p', {}, h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPathOutcome(r.run) }, r.name), h('span', { class: 'muted small' }, ` · ${r.started} · ${r.practised} days${r.status === 'done' ? ', finished' : ''}`)))));
+  });
+}
+function pathDayView(c) {
+  const anchorCard = (a) => {
+    const ta = h('textarea', { rows: '2', maxlength: '4000', placeholder: 'A line or two.', 'aria-label': a.label });
+    const save = h('button', { type: 'button', class: 'btn ghost' }, 'Keep');
+    const box = h('div', { class: `anchor ${a.answer ? 'done' : ''}` });
+    const shown = () => box.replaceChildren(head(), h('p', { class: 'anchor-answer' }, a.answer), h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => edit() }, 'Change'));
+    const head = () => h('div', {}, h('div', { class: 'anchor-label' }, a.label), h('p', { class: 'anchor-prompt' }, a.prompt),
+      a.id === 'body_pm' && c.named && h('p', { class: 'muted small' }, `This morning you named: ${c.named}`),
+      a.id === 'monthly' && c.views?.length > 0 && h('details', { class: 'small' }, h('summary', {}, 'What you said this month'), h('ul', {}, c.views.map((v) => h('li', {}, `${v.date} · ${v.topic}: ${v.body}`)))),
+      h('p', { class: 'anchor-line' }, h('em', {}, a.line), ` ${a.source}`));
+    const edit = () => {
+      ta.value = a.answer ?? '';
+      box.replaceChildren(head(), ta, h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' }, dictation(ta, { label: 'Speak' })?.button ?? h('span'), save));
+    };
+    save.addEventListener('click', async () => {
+      if (!ta.value.trim()) return;
+      save.disabled = true;
+      try {
+        const r = await api('/api/paths/entry', { method: 'POST', body: { anchor: a.id, body: ta.value, date: today() } });
+        if (r.finished) return pathFinished(r.finished);
+        // Redraw the day (the evening may echo what the morning named), where the reader was.
+        const y = scrollY; pathDayView(r.current); scrollTo(0, y);
+        if (r.current?.done.all) notice('Done for today.');
+      } catch { notice('Could not keep that. Try again.'); } finally { save.disabled = false; }
+    });
+    if (a.answer) shown(); else edit();
+    return box;
+  };
+  const progress = h('div', { class: 'path-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(c.days), 'aria-valuenow': String(c.day) },
+    h('span', { style: `width:${Math.round((100 * (c.day - (c.done.all ? 0 : 1))) / c.days)}%` }));
+  render(
+    h('div', { class: 'eyebrow' }, `${c.name} · day ${c.day} of ${c.days}`),
+    progress,
+    h('h1', {}, c.done.all ? 'Done for today' : 'Today on your path'),
+    c.focus && h('p', {}, 'In focus: ', h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => showPractice({ practice: c.focus.id, size: c.focus.full ? 'full' : null }) }, c.focus.title),
+      c.focus.full ? ' (today at full size)' : ''),
+    c.idea && h('p', { class: 'muted small' }, 'Today\'s idea comes from the people behind it: ', h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showToday() }, `"${c.idea.title}"${c.idea.thinker ? `, ${c.idea.thinker}` : ''}`)),
+    c.morning.length > 0 && h('section', { class: 'path-part' }, h('h2', {}, 'Morning: set the day'), c.morning.map(anchorCard)),
+    c.evening.length > 0 && h('section', { class: 'path-part' }, h('h2', {}, 'Evening: review the day'), c.evening.map(anchorCard)),
+    h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;margin-top:18px' },
+      h('button', { type: 'button', class: 'chip', onclick: () => showPaths({ choose: true }) }, 'The paths'),
+      h('button', { type: 'button', class: 'chip', onclick: async () => { if (!confirm(`Stop ${c.name}? What you wrote stays in your diary.`)) return; await api('/api/paths/stop', { method: 'POST', body: { date: today() } }).catch(() => {}); showPaths(); } }, 'Stop this path')));
+}
+function pathFinished(o) {
+  notice(`${o.name}: finished.`);
+  showPathOutcome(null, o);
+}
+// What a path came to, in the user's own words: every answer, by anchor.
+function showPathOutcome(run, data = null) {
+  setNav('think');
+  return guarded(async () => {
+    const o = data ?? await api(`/api/paths/${run}`);
+    render(
+      h('div', { class: 'eyebrow' }, `${o.started}${o.ended ? ` to ${o.ended}` : ''}`),
+      h('h1', {}, o.status === 'done' ? `${o.name}: done` : o.name),
+      h('p', {}, `${o.practised} ${o.practised === 1 ? 'day' : 'days'} practiced, ${o.answers} ${o.answers === 1 ? 'answer' : 'answers'}. This is what you wrote, gathered by question: read it the way you would someone else's diary, and look for what repeats.`),
+      o.anchors.map((a) => h('details', { class: 'path-answers' }, h('summary', {}, `${a.label}${a.when ? ` · ${a.when}` : ''} · ${a.list.length}`),
+        h('ul', {}, a.list.map((x) => h('li', {}, h('span', { class: 'muted small' }, `Day ${x.day} · `), x.body))))),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;margin-top:16px' },
+        h('button', { type: 'button', class: 'btn', onclick: () => showPaths({ choose: true }) }, 'Choose a path'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `I just finished ${o.name}. Here is what I noticed: `, draft: true }) }, 'Talk it over')));
+  });
+}
+
+// The summary of a conversation: what it is about, the key points, the perspectives offered, and the sources. Kept up
+// to date by the server after each exchange; here it opens and closes, and refreshes when a new reply has come in.
+const PERSP_LABEL = { philosophy: 'Philosophy', psychology: 'Psychology', tradition: 'Tradition', science: 'Science', law: 'Law', other: 'Other' };
+// The names of the thinkers, traditions and episodes the conversation reached for, set in italics wherever they come up,
+// so they stand out as things to come back to.
+function marked(text, names) {
+  const list = [...new Set(names.filter((n) => n && n.length > 2))].sort((a, b) => b.length - a.length);
+  if (!list.length) return [text];
+  const re = new RegExp(`(${list.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+  return text.split(re).map((part, k) => (k % 2 ? h('em', { class: 'sum-mention' }, part) : part));
+}
+function summaryView(s) {
+  const ideas = s.sources?.ideas ?? []; const pages = s.sources?.pages ?? []; const threads = s.connections ?? [];
+  const names = [...threads.flatMap((c) => [c.name, c.name.split(/ on | and |: /)[0]]), ...s.perspectives.map((p) => p.name.replace(/\s*\(.*\)$/, '')), ...ideas.map((r) => r.thinker)];
+  const pickUp = (c) => () => { stopTalkVoice(); if (s.id) store.set(TALK_KEY, String(s.id)); showTalk({ seed: `Let's go back to ${c.name}. ${c.ask}`, draft: true }); };
+  return [
+    h('h3', { class: 'sum-title' }, s.title || 'This conversation'),
+    s.points.length ? h('ul', { class: 'sum-points' }, s.points.map((p) => h('li', {}, ...marked(p, names)))) : h('p', { class: 'muted small' }, 'Nothing to sum up yet.'),
+    threads.length > 0 && h('div', {}, h('div', { class: 'eyebrow' }, 'Threads to pick up'),
+      h('ul', { class: 'sum-threads' }, threads.map((c) => h('li', {},
+        h('div', { class: 'sum-thread-name' }, h('em', {}, c.name), c.when && h('span', { class: 'sum-when' }, c.when)),
+        h('p', { class: 'sum-link' }, c.link),
+        h('button', { type: 'button', class: 'link sum-ask', onclick: pickUp(c) }, `${c.ask} →`))))),
+    s.perspectives.length > 0 && h('div', {}, h('div', { class: 'eyebrow' }, 'Perspectives'),
+      h('ul', { class: 'sum-persp' }, s.perspectives.map((p) => h('li', {}, h('span', { class: 'sum-kind' }, PERSP_LABEL[p.kind] ?? p.kind), ' ', h('em', { class: 'sum-mention' }, p.name), `: ${p.gist}`)))),
+    (ideas.length > 0 || pages.length > 0) && h('div', {}, h('div', { class: 'eyebrow' }, 'Sources'),
+      h('ul', { class: 'sum-src' },
+        ideas.map((r) => h('li', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); stopTalkVoice(); walkTo(r.id, []); } }, r.title),
+          r.citation && h('span', { class: 'muted' }, ` · ${r.citation.replace(/\s*Summary, not a quotation\.?$/, '')}`), ' ', sourceLink(r.url, r.citation, 'Read it ↗', 'src-out', r.id))),
+        pages.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener' }, `${x.title} ↗`))))),
+    s.pending && h('p', { class: 'muted small' }, 'Updating with the latest exchange…'),
+  ];
+}
+async function loadSummary(id, box, { tries = 12 } = {}) {
+  let s = null;
+  for (let k = 0; k < tries; k++) {
+    s = await api(`/api/talk/${id}/summary?date=${today()}`).catch(() => null);
+    if (!document.body.contains(box)) return;
+    if (!s) { box.replaceChildren(h('p', { class: 'muted small' }, 'Could not load the summary. Try again.')); return; }
+    box.replaceChildren(...summaryView(s).filter(Boolean));
+    if (!s.pending) return;
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+}
+function summaryPanel(idOf) {
+  const box = h('div', { class: 'talk-summary', hidden: true, 'aria-live': 'polite' });
+  const button = h('button', { type: 'button', class: 'chip', 'aria-expanded': 'false' }, 'Summary');
+  const open = () => { const id = idOf(); if (!id) { box.replaceChildren(h('p', { class: 'muted small' }, 'The summary starts with your first message.')); return; } box.replaceChildren(h('p', { class: 'muted small' }, 'Loading…')); loadSummary(id, box); };
+  button.addEventListener('click', () => {
+    box.hidden = !box.hidden; button.setAttribute('aria-expanded', String(!box.hidden)); button.classList.toggle('on', !box.hidden);
+    if (!box.hidden) open();
+  });
+  return { box, button, stale: () => { if (!box.hidden) open(); } };
+}
+// Past conversations: each with its summary's title and first points; open it to carry on, or read its summary here.
+function showTalkHistory() {
+  setNav('talk');
+  return guarded(async () => {
+    const { talks } = await api('/api/talks');
+    pageBg = talkPlate('talk');
+    render(
+      h('p', { class: 'bare' }, h('button', { type: 'button', class: 'chip', onclick: () => showTalk() }, '← Talk')),
+      h('h1', {}, 'Past conversations'),
+      talks.length ? h('ul', { class: 'path talk-history' }, talks.map((t) => {
+        const box = h('div', { class: 'talk-summary', hidden: true });
+        const sum = h('button', { type: 'button', class: 'chip' }, 'Summary');
+        sum.addEventListener('click', () => { box.hidden = !box.hidden; sum.classList.toggle('on', !box.hidden); if (!box.hidden) { box.replaceChildren(h('p', { class: 'muted small' }, 'Loading…')); loadSummary(t.id, box); } });
+        return h('li', {},
+          h('div', { class: 'eyebrow' }, `${t.updated.slice(0, 10)} · ${t.turns} ${t.turns === 1 ? 'message' : 'messages'}`),
+          h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => { store.set(TALK_KEY, String(t.id)); showTalk(); } }, h('span', { class: 't' }, t.title || 'A conversation')),
+          t.points.length > 0 && h('p', { class: 'muted small' }, t.points.join(' ')),
+          h('div', { class: 'row', style: 'justify-content:flex-start' }, sum,
+            h('button', { type: 'button', class: 'chip', onclick: () => { store.set(TALK_KEY, String(t.id)); showTalk(); } }, 'Carry on')),
+          box);
+      })) : h('p', { class: 'muted' }, 'No conversations yet. Say what is on your mind in Talk.'));
+  });
+}
+
+// A problem to consider: one concrete situation that puts the idea to the test, and a question. Think it through in
+// Talk, or just carry it through the day.
+// ── Homework: a sheet for one idea, in the shapes a college course uses. Each part asks you to write first; the model
+// answer opens only after you have. Answers are kept as you type. ──
+function showHomework(node) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.homework;
+    render(h('h1', {}, 'Homework'), h('p', {}, node.title),
+      h('p', { class: 'muted' }, 'Opening the sheet… The first time an idea is asked for, Claude writes it, which takes about half a minute.'));
+    const hw = await api(`/api/homework/${encodeURIComponent(node.id)}?date=${today()}`);
+    pageBg = PAGE_BG.homework;
+    const answers = hw.answers ?? {};
+    const sheet = hw.sheet;
+    const save = (part, body) => api(`/api/homework/${encodeURIComponent(node.id)}`, { method: 'POST', body: { part, body, date: today() } }).catch(() => {});
+    const timers = {};
+    // One written part: your answer, then (once you have written) the model answer.
+    const writePart = (part, { rows = 4, placeholder = 'Your answer…', model = null, min = 20 } = {}) => {
+      const ta = h('textarea', { rows: String(rows), maxlength: '6000', placeholder, 'aria-label': placeholder });
+      ta.value = answers[part] ?? '';
+      const reveal = model && h('button', { type: 'button', class: 'btn ghost hw-reveal' }, 'Compare with a model answer');
+      const shown = model && h('div', { class: 'hw-model', hidden: true }, h('div', { class: 'eyebrow' }, 'A model answer (one good answer, not the only one)'), model);
+      const ready = () => { if (reveal) reveal.disabled = ta.value.trim().length < min; };
+      ta.addEventListener('input', () => { ready(); clearTimeout(timers[part]); timers[part] = setTimeout(() => save(part, ta.value), 700); });
+      ta.addEventListener('blur', () => { clearTimeout(timers[part]); save(part, ta.value); });
+      reveal?.addEventListener('click', () => { shown.hidden = false; reveal.hidden = true; });
+      ready();
+      const mic = dictation(ta)?.button;
+      return [ta, (reveal || mic) && h('div', { class: 'row', style: 'justify-content:flex-start' }, mic, reveal), shown];
+    };
+    const section = (title, ...kids) => h('section', { class: 'hw-part' }, h('h2', {}, title), ...kids);
+    const parts = [];
+    if (!sheet) {
+      parts.push(section('Not ready yet', h('p', {}, hw.talk === false
+        ? 'Homework sheets are written by Claude, which is not switched on. Add ANTHROPIC_API_KEY to the .env file and restart the server.'
+        : 'The sheet could not be written just now. Try again in a moment.')));
+    } else {
+      parts.push(section('Key terms', h('p', { class: 'muted small' }, 'Say what each word means before you tap it.'),
+        h('div', { class: 'hw-terms' }, sheet.key_terms.map((t) => {
+          const b = h('button', { type: 'button', class: 'hw-term', 'aria-expanded': 'false' }, h('span', { class: 'hw-term-word' }, t.term), h('span', { class: 'hw-term-meaning', hidden: true }, t.meaning));
+          b.addEventListener('click', () => { const m = b.querySelector('.hw-term-meaning'); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); });
+          return b;
+        }))));
+      parts.push(section('Close reading', h('p', { class: 'muted small' }, 'Read the source again (it is on the idea\'s page), then answer.'),
+        ...sheet.close_reading.flatMap((r, i) => [h('p', { class: 'hw-q' }, r.question), ...writePart(`reading_${i}`, { model: h('p', {}, r.model_answer) })])));
+      parts.push(section('Lay out the argument', h('p', { class: 'hw-q' }, 'Write the reasoning as steps, one per line, ending with the conclusion. Which step would you question?'),
+        ...writePart('argument', { rows: 6, placeholder: '1. …\n2. …\nSo, …', model: h('ol', { class: 'hw-steps' }, ...sheet.argument.premises.map((p) => h('li', {}, p)), h('li', { class: 'hw-conclusion' }, `So: ${sheet.argument.conclusion}`)) })));
+      parts.push(section('Objection and reply', h('div', { class: 'eyebrow' }, sheet.objection.from), h('p', { class: 'hw-q' }, sheet.objection.objection),
+        h('p', { class: 'muted small' }, 'How would the thinker answer? Write their best reply.'),
+        ...writePart('objection', { model: h('p', {}, sheet.objection.model_reply) })));
+      parts.push(section('Apply it', h('p', { class: 'hw-q' }, sheet.apply.situation), h('p', { class: 'hw-q' }, sheet.apply.question),
+        ...writePart('apply', { model: h('p', {}, sheet.apply.model_answer) })));
+      const essay = writePart('essay', { rows: 10, placeholder: 'About 300 words: take a position and defend it.', min: 9999 });
+      parts.push(section('Essay', h('p', { class: 'hw-q' }, sheet.essay), ...essay,
+        h('div', { class: 'row', style: 'justify-content:flex-start' },
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ seed: `Here is my short essay for the question "${sheet.essay}"\n\n${essay[0].value.trim()}\n\nWhat is strongest in it, and where is it weakest?`, draft: true }) }, 'Ask Talk for feedback'))));
+    }
+    parts.push(section('Teach it back', h('p', {}, 'Explain the idea in your own words, as you would to a friend. Talk tells you what you have right and what is blurred.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start' },
+        h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ about: node, mode: 'teach' }) }, 'Teach it back'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+          const r = await api('/api/recall', { method: 'POST', body: { node_id: node.id, result: 'fuzzy', date: today() } }).catch(() => null);
+          notice(r ? 'It will come back in tomorrow\'s review.' : 'Write today\'s answer for this idea first, then it can join your reviews.');
+        } }, 'Still fuzzy: review it tomorrow'))));
+    if (hw.courses?.length) {
+      parts.push(section('Go further: free college courses', h('p', { class: 'muted small' }, 'Chapters and lectures from free university courses that take this idea further.'),
+        h('ul', { class: 'hw-courses' }, hw.courses.map((c) => h('li', {},
+          h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.title), h('span', { class: 'muted small' }, ` · ${c.source}, ${c.course}`))))));
+    }
+    render(h('h1', {}, 'Homework'), h('p', {}, `${node.title}${hw.thinker ? ` · ${hw.thinker}` : ''}`), ...parts,
+      h('div', { class: 'row bare', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => walkTo(node.id, []) }, '← Back to the idea')));
+  });
+}
+
+// The review climbs as an idea comes back: first, what do you remember; then, use it; then, test it.
+const recallQuestion = (d) => (d.step <= 1 ? `What do you remember of "${d.title}"?`
+  : d.step === 2 ? `Where could "${d.title}" help you this week? Think of one real moment.`
+    : `Who would disagree with "${d.title}", and what would you say back?`);
+// A strip of the lesson's own plate above it: the fox at the crossroads, the hare on the fog path.
+const lessonPlate = (src) => h('div', { class: 'lesson-plate', 'aria-hidden': 'true' }, h('img', { src, alt: '', loading: 'lazy', decoding: 'async' }));
+async function problemCard(host, node) {
+  const r = await api(`/api/problem/${encodeURIComponent(node.id)}?date=${today()}`).catch(() => null);
+  if (!r?.problem) return;
+  host.append(h('div', { class: 'lesson' },
+    lessonPlate(PAGE_BG.problem),
+    h('div', { class: 'eyebrow' }, 'A problem to consider'),
+    h('p', { class: 'lesson-text' }, r.problem),
+    h('p', { class: 'muted small' }, 'Think it through with Talk: say what you would do, and why. It will push back, or show you who agrees.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      canSpeakIn() && h('button', { type: 'button', class: 'btn', onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true, voice: true }) }, 'Answer aloud'),
+      h('button', { type: 'button', class: `btn ${canSpeakIn() ? 'ghost' : ''}`, onclick: () => showTalk({ seed: problemSeed(node, r.problem), draft: true }) }, 'Write an answer'))));
+}
+const problemSeed = (node, problem) => `A problem to consider, from "${node.title}": ${problem} Here is what I think: `;
+// The daily review: an earlier idea, on a spaced schedule. First, what do you remember? Then its plain words and what
+// you wrote, and "Got it" (it comes back later) or "Fuzzy" (it comes back tomorrow).
+async function recallCard(host) {
+  const r = await api(`/api/recall?date=${today()}`).catch(() => null);
+  const d = r?.due;
+  if (!d) return;
+  const box = h('div', { class: 'lesson' },
+    lessonPlate(PAGE_BG.recall),
+    h('div', { class: 'eyebrow' }, "Today's review"),
+    h('p', { class: 'lesson-text' }, recallQuestion(d)),
+    h('p', { class: 'muted small' }, 'Say it to yourself in a sentence, then look.'));
+  const reveal = h('button', { type: 'button', class: 'btn ghost' }, 'Remind me');
+  reveal.addEventListener('click', () => {
+    const mark = (result) => async () => {
+      const p = await api('/api/recall', { method: 'POST', body: { node_id: d.id, result, date: today() } }).catch(() => null);
+      rate.replaceWith(h('p', { class: 'muted small' }, result === 'got'
+        ? (p?.next ? `Good. It will come back on ${p.next}.` : 'Good. That one is yours now.')
+        : 'It will come back tomorrow. Fuzzy is how remembering starts.'));
+    };
+    const rate = h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' },
+      h('button', { type: 'button', class: 'btn', onclick: mark('got') }, 'Got it'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: mark('fuzzy') }, 'Fuzzy'));
+    reveal.replaceWith(
+      h('p', { class: 'plain' }, d.line),
+      h('p', { class: 'muted small' }, `On ${d.wrote_on} it asked: ${d.prompt}`),
+      h('div', { class: 'yours' }, d.yours),
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => walkTo(d.id, []) }, `Open "${d.title}" again`),
+      rate);
+  });
+  box.append(reveal);
+  host.append(box);
+}
+
+// Bearings: once a week or more has passed on the calendar, after writing, one of the great debates comes back. The
+// earlier choice is shown; a new one is welcomed whether it moved or held. It sits quietly on Today's card.
+async function bearings(host) {
+  const b = await api(`/api/bearings?date=${today()}`).catch(() => null);
+  if (!b?.due) return;
+  const q = b.debate;
+  const label = Object.fromEntries(caseChoices(q));
+  const box = h('div', { class: 'bearings' },
+    h('div', { class: 'eyebrow' }, 'Check your bearings'),
+    h('p', { class: 'stop-view' }, q.question),
+    b.before && h('p', { class: 'muted small' }, `On ${b.before.date} you chose: ${label[b.before.agree]}. With the ideas you have met since, where are you now?`),
+    !b.before && h('p', { class: 'muted small' }, `${q.a.who}: ${q.a.claim} ${q.b.who}: ${q.b.claim}`));
+  const choices = h('div', { class: 'choices compact' }, caseChoices(q).map(([v, l]) => h('button', {
+    type: 'button', class: 'choice', onclick: async () => {
+      await api('/api/stance', { method: 'POST', body: { answers: [{ id: q.id, agree: v }], date: today() } }).catch(() => null);
+      const moved = b.before && b.before.agree !== v;
+      choices.replaceWith(h('p', { class: 'plain' }, !b.before ? 'Noted. It joins your journey.'
+        : moved ? `Your bearings moved: from "${label[b.before.agree]}" to "${l}". That is what the walk is for.`
+        : 'Steady: the same as before. Holding a view after meeting more of the debate means something too.'));
+    },
+  }, l)));
+  box.append(choices);
+  host.append(box);
+}
+
+// The interview: seven views people hold, one at a time, asked gently. Where do you stand, and how did you come to it?
+// It is not a test: it only shapes the journey. Answers can be changed any time; skipping is fine.
+// Which case speaks to you more: 2 = the first camp, clearly ... -2 = the second camp, clearly.
+const caseChoices = (q) => [[2, `${q.a.who}'s case, clearly`], [1, `Leaning to ${q.a.who}`], [0, 'Both have a point'], [-1, `Leaning to ${q.b.who}`], [-2, `${q.b.who}'s case, clearly`]];
+function showStance() {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.debates;
+    const data = await api('/api/stance');
+    const answers = { ...data.saved };
+    let i = -1;
+    const step = () => {
+      if (i < 0) {
+        return render(h('div', { class: 'interview' },
+          h('div', { class: 'eyebrow' }, 'Seven great debates'),
+          h('h1', {}, 'Where does the argument stand?'),
+          h('p', { class: 'plain' }, 'Seven questions people have argued over for thousands of years. Two camps answer each one. Read both cases, and say which speaks to you more.'),
+          h('p', { class: 'muted' }, 'The debates are still open, and nothing here is graded. Continuum uses your choices only to plan a journey: each camp at its best, and practices to try. You can change a choice later, or skip a debate.'),
+          h('div', { class: 'row', style: 'margin-top:20px' },
+            h('button', { type: 'button', class: 'link', onclick: () => showToday() }, 'Maybe later'),
+            h('button', { type: 'button', class: 'btn', onclick: () => { i = 0; step(); } }, 'Begin'))));
+      }
+      if (i >= data.questions.length) return finish();
+      const q = data.questions[i]; const a = answers[q.id] ?? {};
+      const choice = (value, label) => h('button', {
+        type: 'button', class: `choice ${a.agree === value ? 'on' : ''}`, 'aria-pressed': String(a.agree === value),
+        onclick: () => { answers[q.id] = { ...a, agree: value }; if (value === 0) { answers[q.id].basis = null; i++; } step(); },
+      }, label);
+      const camp = (c, k) => h('div', { class: `camp camp-${k}` }, h('div', { class: 'eyebrow' }, `${c.who}'s camp`), h('p', {}, c.claim));
+      const basis = a.agree != null && a.agree !== 0 && h('div', { class: 'basis' },
+        h('p', { class: 'prompt' }, 'How well do you know this debate?'),
+        Object.entries(data.basis).map(([k, label]) => h('button', {
+          type: 'button', class: `choice ${a.basis === k ? 'on' : ''}`, onclick: () => { answers[q.id] = { ...a, basis: k }; i++; step(); },
+        }, label)));
+      render(h('div', { class: 'interview' },
+        h('div', { class: 'eyebrow' }, `Debate ${i + 1} of ${data.questions.length}`),
+        h('h1', { class: 'view' }, q.question),
+        h('div', { class: 'camps' }, camp(q.a, 'a'), camp(q.b, 'b')),
+        h('p', { class: 'prompt' }, 'Which case speaks to you more?'),
+        h('div', { class: 'choices' }, caseChoices(q).map(([v, l]) => choice(v, l))),
+        basis,
+        h('div', { class: 'row', style: 'margin-top:18px' },
+          h('button', { type: 'button', class: 'link', onclick: () => { i = Math.max(-1, i - 1); step(); } }, 'Back'),
+          h('button', { type: 'button', class: 'link', onclick: () => { delete answers[q.id]; i++; step(); } }, 'Skip this debate'))));
+      document.querySelector('.interview .choice.on, .interview .choice')?.focus({ preventScroll: true });
+    };
+    async function finish() {
+      const body = { date: today(), answers: data.questions.map((q) => (answers[q.id] ? { id: q.id, agree: answers[q.id].agree, basis: answers[q.id].basis ?? null } : { id: q.id, agree: null })) };
+      const r = await api('/api/stance', { method: 'POST', body });
+      render(h('div', { class: 'interview' },
+        h('div', { class: 'eyebrow' }, 'Your journey'),
+        h('h1', {}, r.journey.stops.length ? 'Places worth a visit' : 'Thank you'),
+        r.journey.stops.length
+          ? h('p', { class: 'muted' }, 'Drawn from the debates. For each, hear the camp that spoke to you at its best, then the other camp at its best. The journey also shapes your daily cards, and it lives in your Diary.')
+          : h('p', { class: 'muted' }, 'Your daily cards will follow your own curiosity. You can take the interview again from your Diary.'),
+        journeyView(r.journey),
+        h('div', { class: 'row', style: 'margin-top:20px' }, h('span'), h('button', { type: 'button', class: 'btn', onclick: () => showToday() }, 'On to today'))));
+    }
+    step();
+  });
+}
+// The journey as a list of stops: for each view, the voice who shares it, the one who sees it another way, a practice.
+function journeyView(j) {
+  const link = (c, label) => c && h('div', { class: 'stop-line' }, h('span', { class: 'muted small' }, label),
+    bubble(c, () => (c.type === 'practice' ? showPractice({ practice: c.id }) : walkTo(c.id, [])), null));
+  return h('div', { class: 'journey' },
+    j.stops.map((st, k) => h('section', { class: 'stop' },
+      h('div', { class: 'eyebrow' }, `Stop ${k + 1}`),
+      h('p', { class: 'stop-view' }, st.lead),
+      link(st.shares, 'The case that spoke to you, at its best'),
+      link(st.differs, 'The other camp, at its best'),
+      link(st.practice, 'A practice to try'))),
+    j.open.length > 0 && h('section', { class: 'stop' },
+      h('div', { class: 'eyebrow' }, 'Debates you are still weighing'),
+      j.open.map((o) => h('div', {}, h('p', { class: 'stop-view' }, o.question), o.ideas.map((c) => link(c, ''))))));
+}
+
+// One step of the walk. `trail` is the path taken to get here, shown as breadcrumbs.
+function walkTo(id, trail, opts = {}) {
+  return guarded(async () => {
+    const res = await api(`/api/node/${encodeURIComponent(id)}?date=${today()}`);
+    if (res.today) return showToday(); // today's card: write first
+    setNav('');
+    showConcept(res.node, trail, opts);
+  });
+}
+// Where the reader was, kept on the phone, so opening the app can offer to pick up there: an idea (and the part of
+// it they had reached), a conversation, a problem being worked through, the Map, the day's practice.
+const LAST_KEY = 'continuum.last';
+function remember(place) {
+  store.set(LAST_KEY, JSON.stringify({ ...place, at: Date.now() }));
+  // The same screen, further on (the part of an idea reached): the pin follows. Otherwise it is for the screen about to be drawn.
+  if (pinPlace && pinPlace.kind === place.kind && pinPlace.id === place.id) pinPlace = { ...pinPlace, ...place }; else pinNext = place;
+}
+
+// ── Keeping your place ──
+// A phone may close the app while you are in another one, and opening it again would start over and lose anything
+// typed and not yet sent. So on leaving, the screen you were on (and what you were in the middle of there: your
+// thoughts on a passage, an answer) and whatever is typed in its boxes are pinned. Back within two hours, you return
+// to that screen with your words where you left them.
+const PIN_KEY = 'continuum.pin'; const PIN_MS = 2 * 3600_000;
+let pinPlace = null; let pinNext = null;
+const pinTask = (task) => { if (pinPlace) pinPlace = { ...pinPlace, task }; };
+const boxKey = (el, i) => el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || `box${i}`;
+function savePin() {
+  if (!pinPlace) { store.del(PIN_KEY); return; }
+  const drafts = [...view.querySelectorAll('textarea, input[type=text]')].map((el, i) => ({ k: boxKey(el, i), v: el.value })).filter((d) => d.v.trim());
+  store.set(PIN_KEY, JSON.stringify({ place: pinPlace, drafts, y: Math.round(scrollY), at: Date.now() }));
+}
+let pinTimer = 0;
+
+// ── Unfinished ──
+// Anything typed in a box and not sent is kept on this phone, with where it was written (so it can be picked up
+// there), and listed under You › Unfinished until it is sent or discarded. Sending it (whatever screen it is sent
+// from) clears it. Kept for thirty days.
+const UNFINISHED_KEY = 'continuum.unfinished'; const UNFINISHED_MS = 30 * 86400_000;
+function unfinished() {
+  let list = []; try { list = JSON.parse(store.get(UNFINISHED_KEY) ?? '[]'); } catch { /* none */ }
+  return list.filter((u) => u && u.text && Date.now() - u.at < UNFINISHED_MS);
+}
+const saveUnfinished = (list) => store.set(UNFINISHED_KEY, JSON.stringify(list.slice(0, 40)));
+const placeKey = (pl) => (pl ? `${pl.kind}:${pl.id ?? ''}` : 'here');
+function keepUnfinished(el) {
+  const boxes = [...view.querySelectorAll('textarea, input[type=text]')]; const k = boxKey(el, boxes.indexOf(el));
+  const id = `${placeKey(pinPlace)}|${k}`; const text = el.value.trim();
+  const list = unfinished().filter((u) => u.id !== id);
+  if (text.length >= 3) {
+    const where = pinPlace?.title ?? document.querySelector('#view h1')?.textContent ?? '';
+    const asked = el.getAttribute('aria-label') && el.getAttribute('aria-label') !== el.getAttribute('placeholder') ? el.getAttribute('aria-label') : '';
+    list.unshift({ id, place: pinPlace, k, where, asked, text: el.value, at: Date.now() });
+  }
+  saveUnfinished(list);
+}
+// A send carrying the words (anywhere in what was sent) clears them.
+function markSent(body) {
+  const said = []; const walk = (v) => { if (typeof v === 'string') said.push(v.trim()); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(body); if (!said.length) return;
+  const list = unfinished(); const left = list.filter((u) => { const t = u.text.trim().slice(0, 60); return !said.some((x) => x.includes(t) || (x.length >= 3 && t.startsWith(x))); });
+  if (left.length !== list.length) saveUnfinished(left);
+}
+let unfinishedTimer = 0;
+document.addEventListener('input', (e) => {
+  const el = e.target; if (!el.closest?.('#view') || !el.matches('textarea, input[type=text]') || el.type === 'search') return;
+  clearTimeout(unfinishedTimer); unfinishedTimer = setTimeout(() => keepUnfinished(el), 600);
+});
+function pickUp(u) { if (u.place) { resume(u.place); refill({ drafts: [{ k: u.k, v: u.text }] }); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePin(); });
+addEventListener('pagehide', savePin);
+document.addEventListener('input', (e) => { if (e.target.closest?.('#view')) { clearTimeout(pinTimer); pinTimer = setTimeout(savePin, 700); } });
+function takePin() {
+  let p = null; try { p = JSON.parse(store.get(PIN_KEY) ?? 'null'); } catch { /* none */ }
+  store.del(PIN_KEY);
+  return p?.place && Date.now() - (p.at ?? 0) < PIN_MS ? p : null;
+}
+// Puts the words back in their boxes as the screen fills in (some boxes come a moment later, after a fetch).
+function refill(pin) {
+  const left = [...(pin.drafts ?? [])]; if (!left.length && !pin.y) return;
+  let tries = 0;
+  const go = () => {
+    const boxes = [...view.querySelectorAll('textarea, input[type=text]')];
+    for (let j = left.length - 1; j >= 0; j--) {
+      const el = boxes.find((b, i) => boxKey(b, i) === left[j].k && !b.value.trim());
+      if (el) { el.value = left[j].v; el.dispatchEvent(new Event('input', { bubbles: true })); left.splice(j, 1); }
+    }
+    if (tries === 2 && pin.y) scrollTo(0, pin.y);
+    if (left.length && ++tries < 30) setTimeout(go, 300);
+  };
+  setTimeout(go, 150);
+}
+function lastPlace() { try { return JSON.parse(store.get(LAST_KEY) ?? 'null'); } catch { return null; } }
+function resume(p) {
+  if (p.kind === 'story') { setNav('trainer'); return trainerNext({ id: p.id }, { img: p.img, task: p.task ?? null }); }
+  if (p.kind === 'idea') return walkTo(p.id, [], { startAt: p.part ?? 0 });
+  if (p.kind === 'talk') return showTalk();
+  if (p.kind === 'problem') return showWorkThrough(p.id ?? null);
+  if (p.kind === 'map') return showMap();
+  if (p.kind === 'practice') return showPractice();
+  return showToday();
+}
+
+document.addEventListener('click', (e) => {
+  const nav = e.target.closest('[data-nav]');
+  if (!nav) return;
+  e.preventDefault();
+  if (!tourState) document.querySelectorAll('.tour').forEach((x) => x.remove()); // a welcome card left behind
+  const to = nav.dataset.nav;
+  if (to === 'trainer') showTrainer();
+  else if (to === 'campus') showCampus();
+  else if (to === 'you' || to === 'journal') showJournal();
+  else if (to === 'think') showThink();
+  else if (to === 'talk') showTalk();
+  else if (to === 'practice') showPractice();
+  else if (to === 'review') showReview(7);
+  else if (to === 'explore' || to === 'gallery') showGallery('rooms');
+  else showToday();
+});
+
+// Pinching: two fingers on the page scale the text (0.85x to 1.8x), which rewraps to fit the screen, and at the same
+// time lean into the picture behind it (1x to 3x, toward the point between the fingers; dragging the two fingers
+// moves across the picture). The paragraph under the fingers stays put. The text size is remembered on this device;
+// the picture's zoom lasts until the picture changes. (Look mode has its own pinch, for the picture alone.)
+const SCALE_KEY = 'continuum.textScale';
+const clampScale = (v) => Math.min(1.8, Math.max(.85, v));
+let textScale = clampScale(Number(store.get(SCALE_KEY)) || 1);
+document.documentElement.style.setProperty('--text-scale', String(textScale));
+let pinch = null;
+const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 2 || document.querySelector('.gaze, .intro') || e.target.closest?.('.map-canvas')) return;
+  const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  const anchor = document.elementFromPoint(innerWidth / 2, cy);
+  const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+  pinch = { d0: spread(e.touches), s0: textScale, anchor, top: anchor?.getBoundingClientRect().top ?? 0, z0: wallZoom.z, x0: cx, y0: cy, o0: { ...wallZoom } };
+  if (wallZoom.z <= 1.001) { wallZoom.ox = cx / innerWidth * 100; wallZoom.oy = cy / innerHeight * 100; pinch.o0 = { ...wallZoom }; }
+  wallpaper.classList.add('pinching');
+}, { passive: true });
+addEventListener('touchmove', (e) => {
+  if (!pinch || e.touches.length !== 2) return;
+  const ratio = spread(e.touches) / pinch.d0;
+  const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  wallZoom.z = Math.min(3, Math.max(1, pinch.z0 * ratio));
+  // Moving the fingers together slides the zoom's centre the other way, so the picture follows the hand.
+  wallZoom.ox = Math.min(100, Math.max(0, pinch.o0.ox - (cx - pinch.x0) / innerWidth * 100 / wallZoom.z));
+  wallZoom.oy = Math.min(100, Math.max(0, pinch.o0.oy - (cy - pinch.y0) / innerHeight * 100 / wallZoom.z));
+  applyWallZoom();
+  const next = clampScale(pinch.s0 * ratio ** 0.6); // gentler than the fingers' spread
+  if (Math.abs(next - textScale) < .01) return;
+  textScale = next;
+  document.documentElement.style.setProperty('--text-scale', next.toFixed(3));
+  if (pinch.anchor?.isConnected) window.scrollBy(0, pinch.anchor.getBoundingClientRect().top - pinch.top);
+}, { passive: true });
+addEventListener('touchend', (e) => {
+  if (!pinch || e.touches.length) return;
+  pinch = null; store.set(SCALE_KEY, textScale.toFixed(3)); wallpaper.classList.remove('pinching'); queueWall();
+}, { passive: true });
+
+// The opening, once per visit: an empty hallway comes into focus, then the cat walks in as the name sharpens. A tap
+// skips it. Skipped when testing with ?day=, and shown as a still for reduced-motion settings.
+function intro(then = () => {}) {
+  try { if (sessionStorage.getItem('continuum.intro')) return then(); sessionStorage.setItem('continuum.intro', '1'); } catch { /* private mode */ }
+  if (params.get('day') || params.get('visit') || params.get('story')) return then(); // a test date, or a link to see a visitor: straight in
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hall = h('img', { class: 'hall', src: '/img/tabs/gallery_empty.webp', alt: '' });
+  const cat = h('img', { class: 'cat', src: '/img/tabs/gallery.webp', alt: '' });
+  const box = h('div', { class: 'intro', role: 'img', 'aria-label': 'Continuum' }, hall, cat,
+    h('div', { class: 'title' }, h('h1', {}, 'Continuum'), h('p', {}, 'A daily walk through human wisdom')));
+  document.body.append(box);
+  const timers = [];
+  let ended = false;
+  const done = () => { if (ended) return; ended = true; timers.forEach(clearTimeout); box.classList.add('out'); setTimeout(() => { box.remove(); then(); }, 950); };
+  box.addEventListener('click', done);
+  Promise.all([hall, cat].map((im) => im.decode().catch(() => {}))).then(() => {
+    if (still) { box.classList.add('on', 'walk'); timers.push(setTimeout(done, 1600)); return; }
+    requestAnimationFrame(() => box.classList.add('on'));
+    timers.push(setTimeout(() => box.classList.add('walk'), 1400), setTimeout(done, 5600));
+  });
+  timers.push(setTimeout(done, 9000)); // never stuck on a slow connection
+}
+// The tour: a narrated walk round the app, like Landsmith's tutorials. Each step is spoken (in the reading voice) and
+// spotlights what it describes; it moves on by itself when the narration ends, or with Next. Offered once, after the
+// opening; again any time from the Diary. Ends by offering the seven questions.
+const TOUR_KEY = 'continuum.tour';
+const TOUR = [
+  { text: 'Welcome: a journey of discovery: the ideas that shaped how we think, what we value and how we live, from philosophers, prophets, scientists, artists and judges. Not just to learn what they thought, but to discover what you think.' },
+  { text: 'Most of what we believe, we picked up without choosing it. Continuum helps you test those beliefs, borrow the best ideas people have had, and use them on real life: a decision, a disagreement, a hard week.' },
+  { target: '.tabs [data-nav=trainer]', text: 'The Trainer: one true story at a time from the world of thought, over a painting. After each, choose: another, say what you think, or go deeper. Every choice shapes what comes next, and now and then it will push you a little.' },
+  { target: '.tabs [data-nav=campus]', text: 'The Campus: every room is open. The galleries, the map, Talk, working through a problem, the psychology room, the debates, the Parthenon, the paths to practice. Wander in anywhere.' },
+  { target: '.tabs [data-nav=you]', text: 'You: your diary, everything you write, and your views over time. When your thinking shifts, it notices and asks what changed. Review shows your week.' },
+  { target: '#listen', text: 'Two small touches: tap Listen to hear any idea read aloud. And pinch the screen to make the words bigger, and to look closer at the picture.' },
+  { text: 'The debates: an invitation, not a test. Nothing is graded.' },
+];
+let tourState = null;
+function tour({ fromStart = true } = {}) {
+  endTour();
+  const box = h('div', { class: 'tour', role: 'dialog', 'aria-label': 'Tour of Continuum' });
+  const spot = h('div', { class: 'tour-spot', 'aria-hidden': 'true' });
+  const count = h('span', { class: 'tour-count' });
+  const text = h('p', { class: 'tour-text' });
+  const bar = h('div', { class: 'tour-bar' }, h('span'));
+  const back = h('button', { type: 'button', class: 'chip' }, 'Back');
+  const play = h('button', { type: 'button', class: 'chip' }, 'Pause');
+  const next = h('button', { type: 'button', class: 'btn' }, 'Next');
+  const skip = h('button', { type: 'button', class: 'link' }, 'Skip the tour');
+  box.append(spot, h('div', { class: 'tour-card' }, h('div', { class: 'row' }, count, skip), bar, text, h('div', { class: 'row tour-buttons' }, h('div', {}, back, play), next)));
+  document.body.append(box);
+  const st = tourState = { i: fromStart ? 0 : 0, run: null, paused: false, box };
+  const say = async (line) => {
+    const run = st.run = { stop: false, wake: null };
+    const plan = await voicePlan();
+    if (run.stop) return;
+    if ('el' in plan) { try { await playClip(await fetchClip(line, plan.el), run); return; } catch { /* fall back */ } }
+    for (const part of sentences(line)) { if (run.stop) return; await sayPhone(part, plan.phone ?? null, run); }
+  };
+  const silence = () => { if (st.run) { st.run.stop = true; st.run.wake?.(); } speech?.cancel(); audioEl.pause(); };
+  async function show(i) {
+    silence();
+    if (i >= TOUR.length) return finish();
+    st.i = i; const step = TOUR[i];
+    count.textContent = `${i + 1} of ${TOUR.length}`;
+    bar.firstChild.style.width = `${((i + 1) / TOUR.length) * 100}%`;
+    text.textContent = step.text;
+    back.disabled = i === 0;
+    next.textContent = i === TOUR.length - 1 ? 'Open the debates' : 'Next';
+    const el = step.target && document.querySelector(step.target);
+    const r = el && el.getBoundingClientRect();
+    if (r && r.width) {
+      const pad = 6;
+      Object.assign(spot.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+      spot.classList.add('on'); box.classList.toggle('card-top', r.top > innerHeight / 2);
+    } else { spot.classList.remove('on'); box.classList.remove('card-top'); }
+    if (st.paused) return;
+    await say(step.text);
+    if (tourState === st && st.i === i && !st.paused && !st.run?.stop) setTimeout(() => { if (tourState === st && st.i === i && !st.paused) show(i + 1); }, 900);
+  }
+  function finish() { endTour(); store.set(TOUR_KEY, 'done'); showStance(); }
+  back.addEventListener('click', () => show(Math.max(0, st.i - 1)));
+  next.addEventListener('click', () => { st.paused = false; play.textContent = 'Pause'; show(st.i + 1); });
+  play.addEventListener('click', () => {
+    st.paused = !st.paused; play.textContent = st.paused ? 'Play' : 'Pause';
+    if (st.paused) silence(); else show(st.i);
+  });
+  skip.addEventListener('click', () => { endTour(); store.set(TOUR_KEY, 'done'); });
+  st.silence = silence;
+  show(0);
+}
+function endTour() {
+  if (tourState) { tourState.silence?.(); tourState.box.remove(); tourState = null; }
+  document.querySelectorAll('.tour').forEach((x) => x.remove()); // never leave a tour layer over the page
+}
+// ── The Parthenon: small invite-only groups that talk over one question at a time, live. Everyone's posts arrive as
+// they are written; anyone can ask the moderator (Claude) to say where the group stands and what no one has said. ──
+const seeTo = (el) => el?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+const joinUrl = (code) => `${location.origin}/?join=${code}`;
+async function shareInvite(g) {
+  const url = joinUrl(g.invite_code);
+  const text = `Join "${g.name}" in the Parthenon, on Continuum: ${url}`;
+  try { if (navigator.share) { await navigator.share({ title: g.name, text, url }); return; } } catch { return; }
+  try { await navigator.clipboard.writeText(url); notice('Invite link copied. Send it to someone you would like to talk with.'); }
+  catch { notice(url); }
+}
+// ── Your details: the only personal detail Continuum keeps is your name; correct it here. ──
+function yourDetails() {
+  const input = h('input', { type: 'text', class: 'search', maxlength: '40', autocomplete: 'name', 'aria-label': 'Your name' });
+  const save = h('button', { type: 'button', class: 'btn ghost' }, 'Save');
+  const out = h('p', { class: 'muted small', role: 'status' });
+  api('/api/me').then((me) => { input.value = me.name; input.dataset.was = me.name; }).catch(() => {});
+  save.addEventListener('click', async () => {
+    const name = input.value.trim(); if (!name) { out.textContent = 'Type your name first.'; return; }
+    if (name === input.dataset.was) { out.textContent = 'That is already your name.'; return; }
+    try { const r = await api('/api/me', { method: 'POST', body: { name } }); input.value = input.dataset.was = r.name; out.textContent = 'Saved. Continuum and your Parthenon groups now use this name.'; }
+    catch { out.textContent = 'Could not save just now. Try again.'; }
+  });
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'Your name'),
+    h('p', { class: 'muted small' }, 'Continuum keeps only your name: it greets you with it, and your Parthenon groups see it. Correct the spelling or change it here.'),
+    h('div', { class: 'row' }, input, save), out);
+}
+
+// ── Keeping Continuum on the phone ──
+// Chrome offers to install a site like this as an app; the offer is kept so a button can make it. Once installed,
+// links to Continuum open the app itself (no browser page, so no browser menu), and its icon is in the app list.
+let installOffer = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installOffer = e; });
+addEventListener('appinstalled', () => { installOffer = null; notice('Continuum is on your phone. Look for its icon with your other apps.'); });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const myLink = () => `${location.origin}/?u=${encodeURIComponent(token())}`;
+function keepOnPhone() {
+  const out = h('p', { class: 'muted small', role: 'status' });
+  const btn = (label, fn, cls = 'btn ghost') => h('button', { type: 'button', class: cls, onclick: fn }, label);
+  const copy = btn('Copy my personal link', async () => {
+    try { await navigator.clipboard.writeText(myLink()); out.textContent = 'Copied. Paste it somewhere safe (a note, or an email to yourself).'; }
+    catch { out.textContent = myLink(); }
+  });
+  const share = navigator.share && btn('Send my link to myself', () => navigator.share({ title: 'Continuum', text: 'My Continuum link (it signs me in; keep it private)', url: myLink() }).catch(() => {}));
+  const install = !standalone() && installOffer && btn('Add Continuum to my home screen', async () => {
+    const offer = installOffer; installOffer = null; offer.prompt();
+    const r = await offer.userChoice.catch(() => null);
+    if (r?.outcome !== 'accepted') out.textContent = 'Not added. You can add it later from the browser menu.';
+  }, 'btn');
+  const how = standalone()
+    ? 'You are in the Continuum app. Its icon is in your phone\'s list of apps (swipe up from the home screen). To put it on the home screen: press and hold the icon there, then drag it where you like.'
+    : install ? 'One tap adds Continuum to your home screen, signed in.'
+      : /iPhone|iPad/.test(navigator.userAgent) ? 'In Safari: tap Share (the square with an arrow), then Add to Home Screen.'
+        : 'In the browser menu (⋮), choose Add to Home screen or Install app. If links to Continuum open the app straight away, it is already installed: look for its icon in your list of apps.';
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'Keep Continuum on your phone'), h('p', { class: 'small' }, how),
+    h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' }, install, copy, share), out,
+    h('p', { class: 'muted small' }, 'Your personal link signs you in. Keep it private.'));
+}
+
+// ── The psychology room: surveys (where are you now?), the schools of psychology, and working through a problem ──
+function showMind() {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const [mine, sch] = await Promise.all([api('/api/surveys').catch(() => ({ results: [] })), api(`/api/schools?date=${today()}`).catch(() => null)]);
+    const latest = new Map(); for (const r of mine.results) if (!latest.has(r.survey)) latest.set(r.survey, r);
+    const card = (sv) => {
+      const last = latest.get(sv.id);
+      return h('button', { type: 'button', class: 'think-door', onclick: () => showSurvey(sv.id) },
+        h('span', { class: 't' }, sv.name), h('span', { class: 'muted small' }, `${sv.short} · ${sv.time}`),
+        h('span', { class: 'small' }, sv.about),
+        last && h('span', { class: 'muted small' }, `Last: ${last.date} · ${last.summary}`));
+    };
+    const schools = sch?.schools?.length && h('section', { class: 'diary-block' },
+      h('h2', {}, 'The schools of psychology'),
+      h('p', { class: 'muted small' }, 'Each school sees a problem in its own way and has its own methods. Tap one to see how it would look at yours.'),
+      h('div', { class: 'think-doors' }, sch.schools.map((x) => h('button', { type: 'button', class: 'think-door', onclick: () => showSchool(x, sch.refs) },
+        h('span', { class: 't' }, x.name), h('span', { class: 'muted small' }, `${x.years} · ${x.founders}`), h('span', { class: 'small' }, x.sees)))));
+    render(
+      h('h1', {}, 'Psychology and the mind'),
+      h('p', {}, 'How minds work and how people change. Bring a problem and look at it through the schools of psychology, check where you are with a short survey, or explore the ideas and their methods.'),
+      h('div', { class: 'think-doors' },
+        h('button', { type: 'button', class: 'think-door pick-up', onclick: () => showWorkThrough() }, h('span', { class: 't' }, 'Work through a problem'), h('span', { class: 'muted small' }, 'A few questions, then your problem seen through several schools, a route, and check-ins.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showFindHelp() }, h('span', { class: 't' }, 'Find a therapist'), h('span', { class: 'muted small' }, 'Licensed therapists near you or online, and trusted directories.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showTherapies() }, h('span', { class: 't' }, 'The psychotherapies'), h('span', { class: 'muted small' }, 'CBT to ACT, interpersonal to family therapy: what each is good for, and how it works.')),
+        h('button', { type: 'button', class: 'think-door', onclick: () => showGallery('rooms', { focus: 'room-mind' }) }, h('span', { class: 't' }, 'The ideas in this room'), h('span', { class: 'muted small' }, 'Every thinker and finding, from Freud and Pavlov to the present.'))),
+      h('section', { class: 'diary-block' }, h('h2', {}, 'Where are you now?'),
+        h('p', { class: 'muted small' }, 'Short surveys. The first ones are questionnaires doctors and researchers use; the last are Continuum\'s own reflections. Your answers stay with you and help Continuum meet you where you are.'),
+        h('div', { class: 'think-doors' }, SURVEYS.filter((x) => x.kind === 'screen').map(card)),
+        h('h3', { class: 'eyebrow', style: 'margin-top:14px' }, 'Reflections'),
+        h('div', { class: 'think-doors' }, SURVEYS.filter((x) => x.kind === 'reflect').map(card))),
+      schools,
+      h('p', { class: 'muted small' }, 'These surveys are screenings and reflections, not diagnoses, and Continuum is not a therapist. If you are struggling, a doctor or counsellor can help. ', HELP_LINE));
+  });
+}
+// The programme on a problem's page: the therapy chosen for it and why, a professional's note when needed, and its
+// sessions, tailored; the next one with what to do and a place to say how it went.
+function programSection(c, refs) {
+  const p = c.program; if (!p || c.status !== 'open') return null;
+  const SH = { yes: 'can be done on your own with a guide', partly: 'partly done on your own; the full therapy is with a therapist', professional: 'done with a trained therapist; this program prepares and supports you' };
+  const cur = p.sessions[p.current];
+  const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'What did you do, and what did you notice?', 'aria-label': 'How the session went' });
+  const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Done: how it went');
+  const status = h('p', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = 'Reading what you wrote…';
+    try { const r = await api(`/api/cases/${c.id}/session`, { method: 'POST', body: { reflection: ta.value, date: today() } }); renderCase(r.case); requestAnimationFrame(() => document.querySelector('.program')?.scrollIntoView({ block: 'start' })); }
+    catch (e) { send.disabled = false; status.textContent = e.message === 'tomorrow' ? 'One session a day: the next opens tomorrow.' : e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again.'; }
+  });
+  const item = (x, i) => h('li', { class: i === p.current ? 'now' : i < p.current ? 'past' : '' },
+    h('div', { class: 'eyebrow' }, `Session ${i + 1}${i < p.current ? ' · done' : i === p.current && !p.finished ? ' · next' : ''}`),
+    h('p', {}, h('strong', {}, x.title), ` — ${x.aim}`),
+    ...x.done.map((d) => h('div', { class: 'talk-turn from-map' }, d.reply)));
+  const change = h('div', { class: 'program-change' },
+    p.alternatives.length > 0 && h('p', { class: 'muted small' }, 'Would another way suit you better?'),
+    ...p.alternatives.map((a) => h('button', { type: 'button', class: 'think-door', onclick: async (e) => {
+      e.currentTarget.disabled = true; status.textContent = `Tailoring ${a.name} to your situation… about half a minute.`;
+      try { renderCase((await api(`/api/cases/${c.id}/approach`, { method: 'POST', body: { therapy: a.therapy, date: today() } })).case); } catch { status.textContent = 'Could not change the approach just now.'; }
+    } }, h('span', { class: 't' }, a.name), h('span', { class: 'small' }, a.why))),
+    h('button', { type: 'button', class: 'link small', onclick: () => showTherapies({ forCase: c.id }) }, 'See all the psychotherapies'));
+  return h('section', { class: 'wt-part program' },
+    h('h2', {}, `Your program: ${p.name}${p.short ? ` (${p.short})` : ''}`),
+    h('p', {}, p.why), p.tailored && h('p', { class: 'muted small' }, p.tailored),
+    p.professional && h('p', { class: 'help-line' }, p.professional_note),
+    h('p', { class: 'muted small' }, `This approach ${SH[p.self_help] ?? ''}. One session a day at most; most people take a few days between them.`),
+    !p.finished && cur && h('div', { class: 'program-now' },
+      h('div', { class: 'eyebrow' }, `Session ${p.current + 1} of ${p.sessions.length}`), h('h3', {}, cur.title), h('p', { class: 'muted' }, cur.aim),
+      h('p', {}, cur.exercise), cur.practice && refs[cur.practice] && h('p', { class: 'muted small' }, 'The practice for it: ', ideaLink(cur.practice, refs)),
+      p.opens ? h('p', { class: 'muted small' }, `Done for today. The next session opens ${p.opens === today() ? 'today' : 'tomorrow'}.`)
+        : h('div', {}, ta, h('div', { class: 'row' }, dictation(ta)?.button, send), status)),
+    p.finished && h('p', {}, 'You have finished the program. Keep the practices that helped; check in below, or choose another approach to go further.'),
+    h('ol', { class: 'program-list' }, p.sessions.map(item)),
+    change);
+}
+// Professional help, on a problem's page: find a therapist (near a ZIP code, or online) and a summary to send them.
+function helpSection(c, advised) {
+  return h('section', { class: `wt-part help-block${advised ? ' advised' : ''}` },
+    h('h2', {}, advised ? 'Getting professional help' : 'Talking to a professional'),
+    h('p', { class: 'small' }, advised ? 'For this, a trained therapist is the right next step. Continuum can look for therapists near you or online who offer the approach that fits, and prepare a summary of the work you have done here to send them, so your first appointment starts further along.'
+      : 'If you would like a professional\'s help with this, Continuum can look for therapists near you or online, and prepare a summary of your work here to send them.'),
+    h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' },
+      h('button', { type: 'button', class: advised ? 'btn' : 'btn ghost', onclick: () => showFindHelp(c.id) }, 'Find a therapist'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showHandover(c.id) }, 'A summary for a therapist')));
+}
+// Find a therapist: ZIP code, in person / online, low cost; a live web search, plus trusted directories.
+function showFindHelp(caseId = null) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const zip = h('input', { type: 'text', inputmode: 'numeric', maxlength: '10', placeholder: 'ZIP code', class: 'search', 'aria-label': 'ZIP or postal code', autocomplete: 'postal-code' });
+  let how = 'either';
+  const hows = h('div', { class: 'size-chips' }, [['either', 'In person or online'], ['in_person', 'In person'], ['online', 'Online']].map(([k, label]) =>
+    h('button', { type: 'button', class: `chip ${k === how ? 'on' : ''}`, onclick: (e) => { how = k; hows.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === e.currentTarget)); } }, label)));
+  const low = h('input', { type: 'checkbox', id: 'lowcost' });
+  const go = h('button', { type: 'button', class: 'btn' }, 'Search');
+  const out = h('div', { 'aria-live': 'polite' });
+  const directories = (z) => h('section', { class: 'wt-part' }, h('h2', {}, 'Trusted places to look'),
+    h('ul', { class: 'path' },
+      h('li', {}, h('a', { href: `https://www.psychologytoday.com/us/therapists/${encodeURIComponent(z)}`, target: '_blank', rel: 'noopener' }, 'Psychology Today: therapists near you'), h('p', { class: 'muted small' }, 'The largest directory; filter by the approach, insurance and cost.')),
+      h('li', {}, h('a', { href: `https://findtreatment.gov/locator?sAddr=${encodeURIComponent(z)}`, target: '_blank', rel: 'noopener' }, 'FindTreatment.gov'), h('p', { class: 'muted small' }, 'The U.S. government\'s locator for mental health and addiction services.')),
+      h('li', {}, h('a', { href: 'https://openpathcollective.org/', target: '_blank', rel: 'noopener' }, 'Open Path Collective'), h('p', { class: 'muted small' }, 'Lower-cost therapy for people who need it.')),
+      h('li', {}, h('a', { href: 'https://www.nami.org/help', target: '_blank', rel: 'noopener' }, 'NAMI HelpLine'), h('p', { class: 'muted small' }, 'Call 1-800-950-6264 for help finding support.')),
+      h('li', {}, h('p', {}, h('strong', {}, 'In a crisis: '), 'call or text 988 (the Suicide & Crisis Lifeline), any time.'))));
+  go.addEventListener('click', async () => {
+    const z = zip.value.trim(); if (!/^[A-Za-z0-9 -]{3,10}$/.test(z)) { out.replaceChildren(h('p', { class: 'muted small' }, 'Enter a ZIP code.')); return; }
+    go.disabled = true; out.replaceChildren(h('p', { class: 'muted' }, 'Searching for therapists… this takes about a minute.'), directories(z));
+    try {
+      const r = await api('/api/help/find', { method: 'POST', body: { place: z, how, low_cost: low.checked, case: caseId, date: today() } });
+      out.replaceChildren(
+        r.places.length ? h('section', { class: 'wt-part' }, h('h2', {}, 'What the search found'),
+          h('ul', { class: 'pitfalls' }, r.places.map((x) => h('li', {},
+            h('div', { class: 'eyebrow' }, x.kind || 'therapist'), h('p', {}, h('strong', {}, x.name), x.offer ? ` — ${x.offer}` : ''),
+            x.area && h('p', { class: 'muted small' }, x.area),
+            h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' },
+              x.phone && h('a', { class: 'btn ghost', href: `tel:${x.phone.replace(/[^\d+]/g, '')}` }, `Call ${x.phone}`),
+              x.url && h('a', { class: 'btn ghost', href: x.url, target: '_blank', rel: 'noopener' }, 'Website'))))))
+          : h('p', {}, 'The search did not find specific listings this time. The directories below are the surest way.'),
+        r.note && h('p', { class: 'muted small' }, r.note),
+        h('p', { class: 'muted small' }, 'Found by a web search just now: check that a therapist is licensed, and ask about the approach, cost and insurance when you call. Continuum does not vouch for any of them.'),
+        directories(z),
+        caseId && h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn', onclick: () => showHandover(caseId) }, 'Prepare a summary to send them')));
+    } catch (e) { out.replaceChildren(h('p', {}, e.message === 'daily_limit' ? 'That is enough searching for today. The directories below still work:' : 'The search did not work just now. The directories below still work:'), directories(z)); }
+    go.disabled = false;
+  });
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => (caseId ? showWorkThrough(caseId) : showMind()) }, caseId ? '← Your problem' : '← Psychology and the mind'),
+    h('h1', {}, 'Find a therapist'),
+    h('p', {}, 'Continuum searches the web now for licensed therapists, clinics and online services near you that offer the approach that fits. Your ZIP code is used for this search only and is not kept.'),
+    h('div', { class: 'row' }, zip, go), hows, h('label', { class: 'small', for: 'lowcost', style: 'display:flex;gap:8px;align-items:center;margin:8px 0' }, low, 'Low-cost or sliding-scale options'),
+    out);
+  zip.focus();
+}
+// A summary for a therapist: the user's own entries gathered into a letter, to read, edit and then send or save.
+function showHandover(caseId) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const d = await api(`/api/cases/${caseId}/handover?date=${today()}`);
+    const ta = h('textarea', { rows: '22', class: 'handover', 'aria-label': 'Your summary' }); ta.value = d.text;
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const file = () => new File([ta.value], 'Summary for my therapist.txt', { type: 'text/plain' });
+    const shareFile = navigator.canShare?.({ files: [file()] });
+    const email = h('a', { class: 'btn', href: '#', onclick: (e) => {
+      e.preventDefault();
+      const body = ta.value.length > 7000 ? `${ta.value.slice(0, 7000)}\n\n(Continued in the attached file.)` : ta.value;
+      location.href = `mailto:?subject=${encodeURIComponent(`A summary before our first appointment: ${d.title}`)}&body=${encodeURIComponent(body)}`;
+    } }, 'Email it');
+    const share = h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+      try { if (shareFile) await navigator.share({ files: [file()], title: 'Summary for my therapist' }); else await navigator.share({ title: 'Summary for my therapist', text: ta.value }); } catch { /* closed */ }
+    } }, shareFile ? 'Share as a file' : 'Share');
+    const save = h('button', { type: 'button', class: 'btn ghost', onclick: () => {
+      const a = h('a', { href: URL.createObjectURL(file()), download: 'Summary for my therapist.txt' }); document.body.append(a); a.click(); a.remove();
+      status.textContent = 'Saved to your downloads.';
+    } }, 'Save as a file');
+    const copy = h('button', { type: 'button', class: 'btn ghost', onclick: async () => { try { await navigator.clipboard.writeText(ta.value); status.textContent = 'Copied.'; } catch { status.textContent = 'Could not copy; select the text instead.'; } } }, 'Copy');
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => showWorkThrough(caseId) }, '← Your problem'),
+      h('h1', {}, 'A summary for a therapist'),
+      h('p', {}, 'Your own words and work from Continuum, gathered for a therapist, so your first appointment can start further along. Read it first: change anything, and delete anything you would rather say in person. Nothing is sent until you send it.'),
+      h('p', { class: 'muted small' }, 'Add what you hope for from therapy at the end. Email it to the therapist, or bring it with you.'),
+      ta, h('div', { class: 'row', style: 'justify-content:flex-start;flex-wrap:wrap' }, email, navigator.share && share, save, copy), status);
+  });
+}
+
+// The psychotherapies: what each is good for and how strong the evidence is, which can be done alone, its sessions.
+// From a problem's page (forCase), any one can be chosen as that problem's approach.
+function showTherapies({ forCase = null, problem = null } = {}) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    const d = await api(`/api/therapies?date=${today()}`);
+    const tags = [...new Set(d.therapies.flatMap((t) => t.for))];
+    const list = problem ? d.therapies.filter((t) => t.for.includes(problem)) : d.therapies;
+    const SH = { yes: 'on your own, with a guide', partly: 'partly on your own', professional: 'with a therapist' };
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => (forCase ? showWorkThrough(forCase) : showMind()) }, forCase ? '← Your problem' : '← Psychology and the mind'),
+      h('h1', {}, 'The psychotherapies'),
+      h('p', {}, 'The main talking therapies, what each is best for, and how strong the evidence is. Continuum uses this guide to choose and tailor an approach when you work through a problem.'),
+      h('div', { class: 'size-chips' }, h('button', { type: 'button', class: `chip ${problem ? '' : 'on'}`, onclick: () => showTherapies({ forCase }) }, 'All'),
+        tags.map((x) => h('button', { type: 'button', class: `chip ${problem === x ? 'on' : ''}`, onclick: () => showTherapies({ forCase, problem: x }) }, d.problems[x] ?? x))),
+      h('div', { class: 'think-doors' }, list.map((t) => h('button', { type: 'button', class: 'think-door', onclick: () => showTherapy(t, d, forCase) },
+        h('span', { class: 't' }, `${t.name}${t.short ? ` (${t.short})` : ''}`),
+        h('span', { class: 'muted small' }, `${t.for.slice(0, 4).map((x) => d.problems[x] ?? x).join(' · ')} · ${SH[t.self_help] ?? ''}`), h('span', { class: 'small' }, t.how)))),
+      h('p', { class: 'muted small' }, 'A guide, not a treatment. For anything serious, these are therapies to ask a doctor or therapist about. ', HELP_LINE));
+  });
+}
+function showTherapy(t, d, forCase = null) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const links = (ids) => ids.map((id) => ideaLink(id, d.refs)).filter(Boolean);
+  const SH = { yes: 'Its core can be done on your own with a good guide.', partly: 'Parts of it can be done on your own; the full therapy is with a therapist.', professional: 'It is done with a trained therapist; on your own, only preparation and support.' };
+  const use = h('button', { type: 'button', class: 'btn', onclick: async (e) => {
+    if (!forCase) { store.set('continuum.prefer', t.id); return showWorkThrough(); }
+    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Tailoring it to your problem…';
+    try { renderCase((await api(`/api/cases/${forCase}/approach`, { method: 'POST', body: { therapy: t.id, date: today() } })).case); } catch { e.currentTarget.textContent = 'Could not change it just now'; }
+  } }, forCase ? 'Use this approach for my problem' : 'Work on a problem with this approach');
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => showTherapies({ forCase }) }, '← The psychotherapies'),
+    h('div', { class: 'eyebrow' }, `${t.years} · ${t.founders}`), h('h1', {}, `${t.name}${t.short ? ` (${t.short})` : ''}`),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'How it works'), h('p', {}, t.how)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Good for'), h('p', {}, t.for.map((x) => d.problems[x] ?? x).join(' · ')), h('p', { class: 'muted small' }, t.evidence)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'It suits'), h('p', {}, t.suits)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'On your own?'), h('p', {}, SH[t.self_help] ?? ''), h('p', { class: t.self_help === 'professional' ? 'help-line' : 'muted small' }, `See a professional: ${t.needs_professional}`)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Its sessions'), h('ol', { class: 'program-list' }, t.sessions.map((x) => h('li', {}, h('p', {}, h('strong', {}, x.title), ` — ${x.aim}`))))),
+    links(t.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices'), h('ul', { class: 'path' }, links(t.practices).map((l) => h('li', {}, l)))),
+    links(t.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'The ideas behind it'), h('ul', { class: 'path' }, links(t.ideas).map((l) => h('li', {}, l)))),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, use));
+}
+
+// A school by its id (from a plan's lens).
+async function openSchool(id) {
+  const sch = await api(`/api/schools?date=${today()}`).catch(() => null);
+  const x = sch?.schools.find((y) => y.id === id); if (x) showSchool(x, sch.refs);
+}
+// One school: how it sees a problem, what it does, the question it would ask you, its ideas and practices.
+function showSchool(x, refs) {
+  setNav('');
+  pageBg = PAGE_BG.problem;
+  const links = (ids) => ids.map((id) => ideaLink(id, refs)).filter(Boolean);
+  render(
+    h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
+    h('div', { class: 'eyebrow' }, `${x.years} · ${x.founders}`), h('h1', {}, x.name),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'How it sees a problem'), h('p', {}, x.sees)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What it does'), h('p', {}, x.helps), x.methods?.length && h('p', { class: 'muted small' }, `Methods: ${x.methods.join(' · ')}`)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'The question it would ask you'), h('p', { class: 'ask-q' }, x.asks),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `${x.asks} `, draft: true }) }, 'Answer it in Talk')),
+    links(x.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices'), h('ul', { class: 'path' }, links(x.practices).map((l) => h('li', {}, l)))),
+    links(x.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Its ideas'), h('ul', { class: 'path' }, links(x.ideas).map((l) => h('li', {}, l)))),
+    x.evidence && h('p', { class: 'muted small' }, `How well supported: ${x.evidence}`));
+}
+// A survey, one question at a time: tap an answer and the next one comes.
+function showSurvey(id, { back = null } = {}) {
+  const sv = surveyById(id); if (!sv) return showMind();
+  setNav(''); pageBg = PAGE_BG.problem;
+  const answers = {}; let k = 0;
+  const step = () => {
+    const item = sv.items[k];
+    const opts = optionsFor(sv, item);
+    const choose = (v) => { answers[item[0]] = v; if (++k < sv.items.length) step(); else finish(); };
+    render(
+      h('button', { type: 'button', class: 'chip', onclick: () => (k ? (k--, step()) : showMind()) }, k ? '← Back' : '← Psychology and the mind'),
+      h('div', { class: 'eyebrow' }, `${sv.name} · ${k + 1} of ${sv.items.length}`),
+      h('div', { class: 'survey-bar' }, h('i', { style: `width:${(k / sv.items.length) * 100}%` })),
+      h('p', { class: 'muted' }, sv.lead), h('h2', { class: 'survey-q' }, item[1]),
+      h('div', { class: `survey-options${opts.length > 7 ? ' numbers' : ''}` }, opts.map(([label, v]) => h('button', {
+        type: 'button', class: `btn ghost${answers[item[0]] === v ? ' on' : ''}`, onclick: () => choose(v),
+      }, label))));
+  };
+  async function finish() {
+    render(h('p', { class: 'muted' }, 'Scoring…'));
+    try {
+      const r = await api(`/api/surveys/${sv.id}`, { method: 'POST', body: { answers, date: today() } });
+      showSurveyResult(sv, r.result, r.refs, back);
+    } catch { render(h('p', {}, 'Could not save your answers. Check the connection and try again.'), h('button', { type: 'button', class: 'btn', onclick: () => showSurvey(id) }, 'Try again')); }
+  }
+  step();
+}
+async function showSurveyResult(sv, r, refs = {}, back = null) {
+  setNav(''); pageBg = PAGE_BG.problem;
+  const mine = await api('/api/surveys').catch(() => ({ results: [] }));
+  const before = mine.results.filter((x) => x.survey === sv.id && x.id !== r.id).slice(0, 6);
+  const sch = await api(`/api/schools?date=${today()}`).catch(() => null);
+  const named = (r.schools ?? []).map((id) => sch?.schools?.find((x) => x.id === id)).filter(Boolean);
+  const links = (ids) => (ids ?? []).map((id) => ideaLink(id, refs)).filter(Boolean);
+  render(
+    back ? h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough(back) }, '← Back to your problem') : h('button', { type: 'button', class: 'chip', onclick: () => showMind() }, '← Psychology and the mind'),
+    h('div', { class: 'eyebrow' }, `${sv.name} · ${r.date}`), h('h1', {}, r.summary),
+    r.crisis && h('p', { class: 'help-line' }, 'You said you have had thoughts of being better off dead or of hurting yourself. Please talk to someone today: a friend, your doctor, or a crisis line. ', HELP_LINE),
+    ...(r.details ?? []).map((d) => h('p', {}, d)),
+    named.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Schools that see this most clearly'),
+      h('div', { class: 'think-doors' }, named.map((x) => h('button', { type: 'button', class: 'think-door', onclick: () => showSchool(x, sch.refs) }, h('span', { class: 't' }, x.name), h('span', { class: 'small' }, x.helps))))),
+    links(r.practices).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Practices to try'), h('ul', { class: 'path' }, links(r.practices).map((l) => h('li', {}, l)))),
+    links(r.ideas).length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Ideas behind this'), h('ul', { class: 'path' }, links(r.ideas).map((l) => h('li', {}, l)))),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn', onclick: () => showWorkThrough(back ?? undefined) }, back ? 'Back to your problem' : 'Work through a problem'),
+      !back && h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id) }, 'Take it again')),
+    before.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'Before'), h('ul', { class: 'path' }, before.map((x) => h('li', {}, h('div', { class: 'eyebrow diary-date' }, x.date), h('p', {}, x.summary))))),
+    h('p', { class: 'muted small' }, sv.kind === 'screen' ? `${sv.source} A screening, not a diagnosis.` : sv.source));
+}
+
+// ── Think: everything for thinking something through, in one place ──
+function showThink() {
+  setNav('think');
+  return guarded(async () => {
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const open = cs?.cases.filter((c) => c.status === 'open') ?? [];
+    const big = (title, line, go) => h('button', { type: 'button', class: 'think-door', onclick: go }, h('span', { class: 't' }, title), h('span', { class: 'muted small' }, line));
+    render(
+      h('h1', {}, 'Think'),
+      h('p', {}, 'Bring what is on your mind. Continuum answers from the ideas on the map and from what you have written, and pushes back when you are very sure.'),
+      h('div', { class: 'think-doors' },
+        big('Work through a problem', 'A few questions, then a route through it, and check-ins as you go.', () => showWorkThrough()),
+        big('The psychology room', 'Surveys on where you are now, the schools of psychology and their methods.', () => showMind()),
+        big('Talk', 'Argue a point, test a belief, ask for a practice or a reading path.', () => showTalk()),
+        big('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
+        big('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
+        big('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
+        big('A path to practice', 'Commit to two weeks, a month, or the long course: the seven practices people everywhere found for living well, a few minutes a day.', () => showPaths()),
+        big('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
+        big('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
+        big('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'),
+        h('ul', { class: 'path' }, open.map((c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)))))));
+  });
+}
+
+// The road so far, in the diary: the looks back, and the last stretch of the line.
+async function roadSection() {
+  const r = await api(`/api/road?date=${today()}`).catch(() => null);
+  if (!r || !r.stops.some((s) => s.outcome)) return null;
+  return h('section', { class: 'diary-block' }, h('h2', {}, 'The road so far'),
+    ...r.syntheses.slice(0, 3).map((s) => h('div', { class: 'road-look' }, h('div', { class: 'eyebrow' }, s.date), h('p', { class: 'synthesis' }, s.text))),
+    roadPath(r.stops.filter((s) => s.outcome).slice(0, 10)));
+}
+// Notes now and then, in the diary: on or off, whenever they like.
+function nudgeSetting() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  const box = h('section', { class: 'diary-block' }, h('h2', {}, 'A line now and then'));
+  const draw = (on) => box.replaceChildren(h('h2', {}, 'A line now and then'),
+    h('p', { class: 'muted small' }, on ? 'Continuum drops you a line a couple of times a week at most, about something you wrote, and less if you are busy.' : 'Off. Continuum can drop you a line a couple of times a week at most, about something you wrote, and less if you are busy.'),
+    h('button', { type: 'button', class: 'btn ghost', onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      const now = on ? (await turnNudgesOff().catch(() => {}), false) : await turnNudgesOn().catch(() => false);
+      store.set(NUDGE_ASKED_KEY, now ? 'yes' : 'no'); draw(now);
+    } }, on ? 'Turn off' : 'Turn on'));
+  api('/api/push/key').then((k) => (k.key ? draw(k.on) : box.remove())).catch(() => box.remove());
+  return box;
+}
+
+// ── Arriving: one line in the water ──
+// Each time the app opens: never the whole map, one thing. A line from a friend, one question about one idea (with what
+// it is and where to read it), and room to say anything back. What the app says back is short, and often
+// nothing at all. "Something else on my mind" sends today's line wherever they point. Now and then, first, a look back
+// over the road so far. Everything else is in the menu below.
+const GREETED_KEY = 'continuum.greeted'; const NUDGE_ASKED_KEY = 'continuum.nudges.asked';
+// A shortcut from the home-screen icon (press and hold it) goes straight to its place.
+const SHORTCUTS = { trainer: () => showTrainer(), campus: () => showCampus(), wander: () => showToday(), think: () => showThink(), problem: () => showWorkThrough(), you: () => showJournal(), path: () => showPaths() };
+function arrive() {
+  const go = SHORTCUTS[params.get('go')];
+  if (go) { store.set(GREETED_KEY, today()); go(); return; }
+  if (params.get('day')) { showToday(); offerTour(); return; } // test dates go straight to the card
+  if (params.get('story')) { setNav('trainer'); trainerNext({ id: String(params.get('story')).replace(/[^a-z0-9_]/g, '') }); return; } // a link to one story
+  // Back from another app (the phone had closed this one): straight back to where you were, words and all.
+  const pin = takePin();
+  if (pin) { resume(pin.place); refill(pin); return; }
+  setNav('');
+  return guarded(async () => {
+    return showTrainer();
+  });
+}
+
+// ── The Trainer ──
+// A welcome back over a painting, with its own small life (a bird, a candle, leaves); then one true story at a time from
+// the map, each over a different painting, and after it a few choices that change with the story. Look at the picture
+// whenever you like: Look mode, with its living parts.
+function showTrainer() {
+  setNav('trainer');
+  return guarded(async () => {
+    // The greeting and the day's message together, straight away; the questions come after a little while.
+    const [o, next] = await Promise.all([api(`/api/lure?date=${today()}&peek=1`), api(`/api/trainer/next?date=${today()}`)]);
+    store.set(GREETED_KEY, today());
+    if (!next.story) return trainerWelcome(o);
+    trainerStoryView(next.story, { greet: o });
+  });
+}
+function trainerWelcome(o) {
+  const first = (o.name ?? '').split(' ')[0];
+  if (o.welcome) setWallpaper(o.welcome, 1, { plain: true });
+  pageBg = o.welcome ?? pageBg;
+  const rv = o.revisit;
+  const line = rv ? h('p', { class: 'opener revisit' }, `Coming back to something from ${rv.date}: `, h('em', {}, rv.name), `. ${rv.ask} `,
+    h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(rv.talk)); showTalk({ seed: `Coming back to ${rv.name}. ${rv.ask} `, draft: true }); } }, 'Pick it up →'))
+    : o.opener && o.state === 'write' && (o.visits ?? 1) > 1 ? h('p', { class: 'opener' }, o.opener) : null;
+  render(
+    h('div', { class: 'trainer-welcome' },
+      h('h1', {}, (o.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}` : 'Welcome') : (first ? `Welcome back, ${first}` : 'Welcome back')),
+      line,
+      h('p', { class: 'muted small' }, (o.visits ?? 1) <= 1
+        ? 'I am your trainer. I will bring you true stories from the world of thought, one at a time. After each, you choose: another, say what you think, or go deeper. Every choice teaches me where to take you.'
+        : 'Take a moment with the picture if you like. Then we begin.'),
+      h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px' },
+        h('button', { type: 'button', class: 'btn', onclick: () => trainerNext({}) }, 'Begin'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => gaze(o.welcome ?? wallpaper.querySelector('img').getAttribute('src')) }, 'Just look')),
+      o.dare && dareFollowUp(o.dare),
+      o.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(o) }, 'Looking back over your road →'),
+      quietLinks(o, { onTopic: async (topic, status) => {
+        if (o.state !== 'write') return showTalk({ seed: topic });
+        const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+        if (r.found) return trainerNext({});
+        status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+      } })));
+}
+// The dare taken last time: how did it go? Did it or not, and a word if they like.
+function dareFollowUp(d) {
+  const box = h('div', { class: 'trainer-push dare' }, h('p', {}, `Last time you took on a dare: "${d.text}"`), h('p', { class: 'trainer-q' }, 'How did it go?'));
+  const ta = h('textarea', { rows: '2', maxlength: '2000', placeholder: 'A word, if you like.', 'aria-label': 'How it went' });
+  const send = (did) => async () => {
+    try { const r = await api(`/api/trainer/dare/${d.id}`, { method: 'POST', body: { did, answer: ta.value, date: today() } }); box.replaceChildren(h('p', { class: 'ack' }, r.ack)); }
+    catch { notice('Could not save that. Try again.'); }
+  };
+  box.append(ta, h('div', { class: 'trainer-words' },
+    h('button', { type: 'button', class: 'trainer-word', onclick: send(true) }, 'I did it'),
+    h('button', { type: 'button', class: 'trainer-word', onclick: send(false) }, 'I did not')));
+  return box;
+}
+// The reply to an answer: what was noticed, the ideas it connects to (each line opens that passage), and one next step.
+// In voice mode it is read aloud, traced like everything else.
+function answerReplyView(r, { speak = false } = {}) {
+  if (!r?.text) return null;
+  const said = h('span', { hidden: true });
+  const spans = sentences(r.text).map((t) => h('span', { class: 'say' }, t, ' '));
+  const voice = { spans, spoken: spans.map((x) => x.textContent.trim()), btn: said, clips: new Map() }; registerSay(voice);
+  const help = r.safety && h('p', { class: 'answer-help' }, 'If you are struggling, or afraid of what you might do, you do not have to carry it alone: in the US, call or text 988 any time, or 911 if anyone is in danger now; elsewhere, your local emergency number. ',
+    h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showPrivacy('help') }, 'More help →'));
+  const box = h('div', { class: 'answer-reply' }, help, h('p', { class: 'ack' }, ...spans), said,
+    ...r.links.map((l) => h('p', { class: 'reply-link' }, h('button', { type: 'button', class: 'link', onclick: () => trainerNext({ id: l.id }) }, l.line))),
+    r.next && h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: () => (r.next.kind === 'practice' ? showPractice({ practice: r.next.id }) : trainerNext({ id: r.next.id })) }, r.next.label)));
+  if (speak) setTimeout(() => playFrom(voice, 0), 300);
+  return box;
+}
+async function trainerNext(params, opts = {}) {
+  const qs = new URLSearchParams({ date: today(), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null)) });
+  try {
+    const { story } = await api(`/api/trainer/next?${qs}`);
+    if (!story) return render(h('p', {}, 'You have heard every story there is, for now. The Campus is open.'), h('button', { type: 'button', class: 'btn', onclick: () => showCampus() }, 'To the Campus'));
+    trainerStoryView(story, opts);
+  } catch { notice('Could not reach the trainer. Try again.'); }
+}
+const trainerLog = (s, action) => api('/api/trainer/log', { method: 'POST', body: { node: s.id, action, date: today() } }).catch(() => {});
+// How long to leave a story alone before the questions come: the time to read it, and a few seconds to let it settle.
+// Stories read aloud: on request (Listen), or always, if the user prefers it.
+const TRAINER_ALOUD_KEY = 'continuum.trainer.aloud';
+// 'on': read aloud; 'contemplate': the words alone over the painting, as they are spoken; else as text.
+const trainerAloud = () => store.get(TRAINER_ALOUD_KEY) === 'on';
+const trainerContemplate = () => store.get(TRAINER_ALOUD_KEY) === 'contemplate';
+const absorbMs = (text, first) => Math.min(18000, Math.max(6000, (text.split(/\s+/).length / 4.2) * 1000 + (first ? 3500 : 2500)));
+// Where each passage's moving painting is, for the line shown when a link opens one.
+const PASSAGE_WHERE = { singer_drowning_child: 'the water: a fish rising', heraclitus_same_river: 'the river: a small leaf carried across',
+  plato_cave: 'the wall at the side: firelight and shadows', seneca_evening_review: 'the lamp: the room slowly dims',
+  zhuangzi_butterfly_dream: 'the top corners: a small butterfly', nagarjuna_emptiness: 'the table, lower left: a cord ties itself in a knot',
+  epictetus_up_to_us: 'the reeds at the bottom: a gust, and leaves blowing across', camus_myth_of_sisyphus: 'the hillside: a small stone pushed up, rolling back' };
+let storyHinted = false;
+function trainerStoryView(s, { greet = null, img = null, task = null } = {}) {
+  setNav('trainer');
+  if (img) s.img = img; // coming back to it: the same painting as before
+  // Met before (the day's idea comes back each time the app opens, until you answer it): no need to sit through it
+  // again. It is not read out by itself, the choices are there at once, and a line offers it again or moves on.
+  const again = (s.seen ?? 0) > 0 || Boolean(task);
+  let quietCard = false; // coming back to a half-written thought: not read out again
+  // A passage with a visitor of its own (the pond's rises, the river's current, the cave's firelight…) is shown on a
+  // painting where that visitor belongs, if its painting is not one.
+  const fits = passagePaintings(s.id);
+  if (fits.length && !fits.includes(s.img)) s.img = fits[Math.floor(Math.random() * fits.length)];
+  setWallpaper(s.img, 1, { plain: true }); pageBg = s.img;
+  const act = (c) => async () => {
+    if (c.go === 'more' || c.go === 'near' || c.go === 'far') return trainerNext({ from: s.id, how: c.go, img: s.img });
+    if (c.go === 'respond') return respondTo(c.label, c === s.push ? s.push.text : null);
+    trainerLog(s, 'deeper');
+    if (c.go === 'node') return trainerNext({ id: c.id, from: s.id, img: s.img });
+    if (c.go === 'source') return walkTo(s.id, []);
+    if (c.go === 'practice') return showPractice({ practice: c.id });
+    if (c.go === 'talk') return showTalk({ about: { title: s.title } });
+    if (c.go === 'room') return showGallery('rooms', { focus: s.id });
+  };
+  // Three words, not buttons: your thoughts, a conversation, or more.
+  const word = (label, fn) => h('button', { type: 'button', class: 'trainer-word', onclick: fn }, label);
+  const choiceRow = h('div', { class: 'trainer-words' },
+    word('Thoughts', () => reflectOn()),
+    word('Talk', act({ go: 'talk' })),
+    word('More, please', act({ go: 'more' })));
+  const pushBox = s.push && (s.push.kind === 'invite' ? inviteBox(s.push) : s.push.kind === 'dare' ? dareBox(s.push)
+    : h('div', { class: 'trainer-push' }, h('p', { class: 'push-text' }, s.push.text), h('div', { class: 'trainer-words' }, h('button', { type: 'button', class: 'trainer-word', onclick: act(s.push) }, s.push.label))));
+  // The honest question, written for this passage, replaces the plain one as soon as it arrives.
+  if (s.push?.kind === 'honest') {
+    api(`/api/trainer/push?node=${encodeURIComponent(s.id)}&date=${today()}`).then((r) => {
+      if (r?.text && pushBox?.isConnected !== false) { s.push.text = r.text; const p = pushBox.querySelector('.push-text'); if (p) p.textContent = r.text; }
+    }).catch(() => {});
+  }
+  // The invitation: their own pattern, then a question. Whatever they pick, the path starts where they chose.
+  function inviteBox(pu) {
+    const box = h('div', { class: 'trainer-push invite' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.ask));
+    const pickIt = (o) => () => {
+      const start = (path) => async () => {
+        try { const r = await api('/api/paths/start', { method: 'POST', body: { path, first: o.id, date: today() } }); notice(`Your ${path === 'light' ? 'two weeks' : 'month'} starts now, with "${o.title}".`); pathDayView(r.current); }
+        catch { notice('Could not start it. Try again.'); }
+      };
+      box.replaceChildren(h('p', {}, `"${o.title}". Your call, and a good one. Want to give it two weeks, a minute or two a day, starting there? Or a month, if you want it to stick.`),
+        h('div', { class: 'trainer-words' },
+          h('button', { type: 'button', class: 'trainer-word', onclick: start('light') }, 'Two weeks, starting there'),
+          h('button', { type: 'button', class: 'trainer-word', onclick: start('month') }, 'A month'),
+          h('button', { type: 'button', class: 'trainer-word', onclick: () => box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It will keep. You know where the paths are: Campus, the practice yard.')) }, 'Not now')));
+    };
+    box.append(h('div', { class: 'trainer-words' }, ...pu.options.map((o) => h('button', { type: 'button', class: 'trainer-word', onclick: pickIt(o) }, o.title)),
+      h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not yet')));
+    return box;
+  }
+  // A dare: one small thing today. It is asked about next time.
+  function dareBox(pu) {
+    const box = h('div', { class: 'trainer-push dare' }, h('p', {}, pu.text), h('p', { class: 'trainer-q' }, pu.dare));
+    box.append(h('div', { class: 'trainer-words' },
+      h('button', { type: 'button', class: 'trainer-word', onclick: async () => {
+        await api('/api/trainer/dare', { method: 'POST', body: { practice: pu.practice, date: today() } }).catch(() => {});
+        box.replaceChildren(h('p', {}, 'Good. I will ask you how it went.'));
+      } }, pu.label),
+      h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => box.remove() }, 'Not today')));
+    return box;
+  }
+  // Thoughts: one thing to react to, tied to this passage, as a card: a question, something to try, or a parallel
+  // story, labelled. Answer it, or skip it and just share thoughts on the passage. In voice mode the card is read aloud
+  // and the answer (or a spoken "skip") is heard.
+  const voiceMode = () => trainerAloud() || trainerContemplate();
+  async function reflectOn() {
+    pinTask('thoughts');
+    const card = h('div', { class: 'reflect-card', 'aria-live': 'polite' }, h('p', { class: 'muted small' }, 'A moment…'));
+    choiceRow.replaceWith(card); pushBox?.remove();
+    const r = await getReflection();
+    if (!r && reflectBlocked) { card.replaceChildren(h('p', { class: 'muted small' }, allowanceText(reflectBlocked), ' ', plansLink()), h('button', { type: 'button', class: 'link', onclick: () => { card.replaceWith(choiceRow); } }, 'Back')); return; }
+    if (!r) { card.replaceChildren(h('p', { class: 'muted small' }, 'Could not reach the trainer. ', h('button', { type: 'button', class: 'link', onclick: () => { card.replaceWith(choiceRow); } }, 'Back'))); return; }
+    drawCard(card, r, false);
+  }
+  function drawCard(card, r, skipped, said = null) {
+    stopTalkVoice();
+    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: skipped ? 'What do you make of it?' : r.kind === 'try' ? 'Afterwards, or now: how it went.' : 'Your answer.', 'aria-label': skipped ? 'Your thoughts' : r.question });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    let byVoice = false;
+    // A spoken answer that starts with "skip" (or "pass") skips the prompt; anything said after it is their thoughts.
+    const SKIP = /^\s*(skip|pass)(\s+(it|that|this))?\b[\s.,!]*/i;
+    const dict = dictation(ta, { label: 'Say it', onStart: () => stopTalkVoice(), onDone: (said) => {
+      if (!said) return;
+      if (!skipped && SKIP.test(said)) {
+        const rest = said.replace(SKIP, '').trim();
+        drawCard(card, r, true, rest || null); return;
+      }
+      byVoice = true; if (voiceMode()) submit();
+    } });
+    // What is read aloud in voice mode: the label, the parallel story, the activity, the question.
+    const parts = skipped ? [`Your thoughts on ${s.title}, then. What do you make of it?`]
+      : [r.label, ...(r.parallel ? [`${r.parallel.title}${r.parallel.thinker ? ` · ${r.parallel.thinker}` : ''}`, r.parallel.story] : []), r.text, r.question].filter(Boolean);
+    const P = parts.map((t) => sentences(t).map((x) => h('span', { class: 'say' }, x, ' '))); const spans = P.flat();
+    const readBtn = h('button', { type: 'button', class: 'link small' }, '🔊 Read it to me');
+    // Spoken with a pause after a label or title (a full stop for the voice, not on the screen).
+    const view = { spans, spoken: spans.map((x) => { const t = x.textContent.trim().replace(/\s*·\s*/g, ', '); return /[.!?…"”]$/.test(t) ? t : `${t}.`; }), btn: readBtn, clips: new Map() }; registerSay(view);
+    const readAndListen = async () => { const done = await playFrom(view, 0); readBtn.textContent = '🔊 Read it to me'; if (done && dict && document.body.contains(ta)) dict.start(); };
+    readBtn.addEventListener('click', () => (talkPlayer.view === view ? togglePlay(view) : readAndListen()));
+    async function submit() {
+      const text = ta.value.trim(); if (!text) return;
+      send.disabled = true;
+      try {
+        if (s.today && !s.answered) { await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: text, date: today() } }).catch(() => null); s.answered = true; trainerLog(s, 'respond'); }
+        const reading = h('p', { class: 'muted small reading-answer' }, 'Reading what you wrote…'); send.after(reading);
+        const out = await api(`/api/trainer/reflect/${r.id}`, { method: 'POST', body: { text, skipped, via: byVoice ? 'voice' : 'typed', date: today() } }).finally(() => reading.remove());
+        pinTask(null);
+        card.replaceWith(h('div', { class: 'trainer-after' },
+          h('div', { class: 'eyebrow' }, skipped ? 'Your thoughts' : r.label), !skipped && h('p', { class: 'muted small' }, r.question),
+          h('blockquote', { class: 'kept' }, text),
+          answerReplyView(out.reply, { speak: voiceMode() }) ?? (out.ack ? h('p', { class: 'ack' }, out.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' })),
+          h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
+      } catch { send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
+    }
+    send.addEventListener('click', submit);
+    let i = 0; const part = () => P[i++] ?? [];
+    const body = skipped
+      ? [h('div', { class: 'eyebrow' }, 'Your thoughts'), h('p', { class: 'trainer-q' }, ...part())]
+      : [h('div', { class: 'eyebrow reflect-label' }, ...part()),
+        ...(r.parallel ? [h('p', { class: 'reflect-parallel-title' }, ...part(), h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => walkTo(r.parallel.id, []) }, ' (open it)')),
+          h('p', { class: 'plain reflect-parallel' }, ...part())] : []),
+        r.text && h('p', { class: 'reflect-text' }, ...part()),
+        h('p', { class: 'trainer-q' }, ...part())];
+    card.replaceChildren(...body.filter(Boolean), ta,
+      h('div', { class: 'row', style: 'gap:8px' }, dict?.button ?? h('span'), send),
+      h('div', { class: 'row reflect-ways' }, readBtn,
+        !skipped && h('button', { type: 'button', class: 'link', onclick: () => drawCard(card, r, true) }, 'Skip — just share my thoughts')));
+    // Said "skip" and went straight on: those words are their thoughts, sent as they are.
+    if (said) { ta.value = said; byVoice = true; submit(); return; }
+    if (voiceMode() && !quietCard) readAndListen(); else ta.focus({ preventScroll: true });
+    quietCard = false;
+  }
+  // Responding: the question it asked, a box, and a short answer back (or just a nod). Then onward.
+  function respondTo(label, pushed) {
+    pinTask({ respond: label, pushed: pushed ?? null });
+    const question = pushed ?? s.prompt ?? 'What do you think?';
+    const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A line or two, or more.', 'aria-label': question });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Send');
+    const box = h('div', { class: 'trainer-respond' }, h('p', { class: 'trainer-q' }, question), ta,
+      h('div', { class: 'row', style: 'gap:8px' }, dictation(ta, { label: 'Say it' })?.button ?? h('span'), send));
+    send.addEventListener('click', async () => {
+      if (!ta.value.trim()) return;
+      send.disabled = true;
+      const reading = h('p', { class: 'muted small reading-answer' }, 'Reading what you wrote…'); box.append(reading);
+      try {
+        let r = s.today
+          ? await api('/api/respond', { method: 'POST', body: { node_id: s.id, body: ta.value, date: today() } })
+          : await api('/api/trainer/respond', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } });
+        if (s.today) {
+          trainerLog(s, 'respond');
+          // The day's idea is kept through its own route; the reply to it comes from the trainer.
+          r = await api('/api/trainer/reply', { method: 'POST', body: { node: s.id, text: ta.value, question, date: today() } }).catch(() => r);
+        }
+        pinTask(null);
+        box.replaceWith(h('div', { class: 'trainer-after' }, h('blockquote', { class: 'kept' }, ta.value.trim()),
+          answerReplyView(r.reply, { speak: trainerAloud() || trainerContemplate() }) ?? (r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' })),
+          h('div', { class: 'trainer-words' }, word('Talk', act({ go: 'talk' })), word('More, please', act({ go: 'more' })))));
+      } catch { reading.remove(); send.disabled = false; notice('Could not send. Your words are kept; try again.'); }
+    });
+    choiceRow.replaceWith(box); pushBox?.remove(); ta.focus();
+  }
+  // The story as sentences, so it can be read aloud with the sentence being read lit and followed.
+  const listenBtn = h('button', { type: 'button', class: 'trainer-listen', 'aria-pressed': 'false' }, '🔊 Listen');
+  const spokenParts = []; const spans = [];
+  const storyParas = s.story.split('\n\n').map((para) => h('p', { class: 'plain' }, ...sentences(para).map((t) => {
+    const sp = h('span', { class: 'say' }, t, ' '); spans.push(sp); spokenParts.push(t); return sp;
+  })));
+  const voice = { spans, spoken: spokenParts, btn: listenBtn, clips: new Map() }; registerSay(voice);
+  spans.forEach((sp, k) => sp.addEventListener('click', () => { if (talkPlayer.view === voice) playFrom(voice, k); }));
+  // Contemplate: the words alone over the painting, a line at a time as they are spoken. Leaving it brings the questions.
+  const contemplateIt = () => { stopTalkVoice(); contemplate({ paras: [s.title.replace(/[^.!?]$/, '$&.'), ...s.story.split('\n\n')], src: s.img, onLeave: () => setTimeout(reveal, 600) }); };
+  const czBtn = h('button', { type: 'button', class: 'trainer-listen' }, '☾ Contemplate');
+  czBtn.addEventListener('click', contemplateIt);
+  // How every story arrives: as words on the page, read aloud, or contemplated. Tap to change.
+  const always = h('button', { type: 'button', class: 'link small trainer-always' });
+  const MODES = [['off', 'Every story: as text'], ['on', 'Every story: read aloud'], ['contemplate', 'Every story: contemplated']];
+  const drawAlways = () => { const m = store.get(TRAINER_ALOUD_KEY) ?? 'off'; always.textContent = (MODES.find((x) => x[0] === m) ?? MODES[0])[1]; always.setAttribute('aria-pressed', String(m !== 'off')); };
+  drawAlways();
+  always.addEventListener('click', () => {
+    const m = store.get(TRAINER_ALOUD_KEY) ?? 'off'; const next = MODES[(MODES.findIndex((x) => x[0] === m) + 1) % MODES.length][0];
+    store.set(TRAINER_ALOUD_KEY, next); drawAlways();
+    if (next === 'on' && talkPlayer.view !== voice) listen(); else if (next === 'contemplate') contemplateIt(); else if (next === 'off') stopTalkVoice();
+  });
+  // Read aloud, the questions come when it has finished (or straight away if it is stopped).
+  async function listen() {
+    const done = await playFrom(voice, 0);
+    // The phone wants a tap before it will play: leave the "Tap to hear it" prompt, and let the questions come in their own time.
+    if (listenBtn.classList.contains('wants-tap')) { setTimeout(reveal, absorbMs(s.story, Boolean(greet))); return; }
+    listenBtn.textContent = '🔊 Listen';
+    if (done || talkPlayer.view !== voice) setTimeout(reveal, 1500);
+  }
+  listenBtn.addEventListener('click', () => (talkPlayer.view === voice ? togglePlay(voice) : listen()));
+  // The questions, and anything waiting from last time, arrive together once the story has had time to land.
+  const first = (greet?.name ?? '').split(' ')[0];
+  const later = h('div', { class: 'trainer-later' });
+  const waiting = greet && [
+    greet.dare && dareFollowUp(greet.dare),
+    greet.revisit && h('p', { class: 'opener revisit' }, `Coming back to something from ${greet.revisit.date}: `, h('em', {}, greet.revisit.name), `. ${greet.revisit.ask} `,
+      h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(greet.revisit.talk)); showTalk({ seed: `Coming back to ${greet.revisit.name}. ${greet.revisit.ask} `, draft: true }); } }, 'Pick it up →')),
+    greet.synthesis && h('button', { type: 'button', class: 'link', style: 'padding:0;margin-top:10px', onclick: () => lookBack(greet) }, 'Looking back over your road →'),
+  ].filter(Boolean);
+  // The prompt for Thoughts is fetched once the questions appear, so it is ready (or nearly) when Thoughts is tapped.
+  let reflection = null;
+  let reflectBlocked = null; // past the month's allowance: said on the card when Thoughts is tapped
+  const getReflection = () => (reflection ??= api(`/api/trainer/reflect?node=${encodeURIComponent(s.id)}&date=${today()}`).catch((e) => { reflection = null; reflectBlocked = e.allowance ?? null; return null; }));
+  const reveal = () => { if (later.classList.contains('in')) return; later.classList.add('in'); getReflection(); };
+  if (again) setTimeout(reveal, 0); // met before: the choices at once
+  else if (!trainerAloud() && !trainerContemplate()) setTimeout(reveal, absorbMs(s.story, Boolean(greet)));
+  else setTimeout(reveal, 90000);
+  // Met before: say so, and offer it again (read out, if that is how they take stories), their thoughts, or something new.
+  const times = (s.seen ?? 0) <= 1 ? 'once before' : (s.seen ?? 0) === 2 ? 'twice before' : `${s.seen} times before`;
+  const againLine = again && h('div', { class: 'trainer-again' },
+    h('p', { class: 'muted small' }, task ? 'Back where you were.' : `You have been here ${times}.`),
+    h('div', { class: 'trainer-words' },
+      (trainerAloud() || trainerContemplate()) && word(trainerContemplate() ? 'Contemplate it again' : 'Hear it again', () => { againLine.remove(); if (trainerContemplate()) contemplateIt(); else listen(); }),
+      !task && word('Straight to my thoughts', () => { againLine.remove(); reveal(); reflectOn(); }),
+      !task && word('Something new', act({ go: 'more' })))); // a long story read aloud: the questions come anyway in the end
+  render(h('article', { class: 'trainer-story' },
+    backArrow(),
+    greet && h('p', { class: 'trainer-greet' }, (greet.visits ?? 1) <= 1 ? (first ? `Welcome, ${first}.` : 'Welcome.') : (first ? `Welcome back, ${first}.` : 'Welcome back.')),
+    h('div', { class: 'eyebrow' }, [TYPE_LABEL[s.type], s.thinker, year(s.year), s.room_name].filter(Boolean).join(' · ')),
+    h('h1', {}, s.title),
+    h('div', { class: 'trainer-voice' }, listenBtn, czBtn, always),
+    againLine,
+    ...storyParas,
+    (s.citation || s.url) && h('p', { class: 'small muted line-src' }, s.citation ? `Source: ${s.citation.replace(/\s*Summary, not (a )?quotation\.?$/, '')} ` : '', sourceLink(s.url, s.citation, 'Read it ↗', 'fulltext', s.id)),
+    actionRow({ quote: { title: s.title, text: s.story, thinker: s.thinker, year: s.year, citation: s.citation, url: s.url, id: s.id },
+      onAgain: () => (trainerContemplate() ? contemplateIt() : playFrom(voice, 0)), node: s.id, saved: s.saved, vote: s.vote ?? 0, onSaved: (on) => { s.saved = on; } }),
+    later));
+  // A tap on the story says "ready": the questions come at once.
+  view.querySelector('.trainer-story')?.addEventListener('click', (e) => { if (!e.target.closest('a, button, textarea')) reveal(); });
+  later.append(...[pushBox, choiceRow, ...(waiting ?? []), h('div', { class: 'row trainer-quiet' },
+      h('button', { type: 'button', class: 'link small', onclick: () => { trainerLog(s, 'look'); gaze(s.img); } }, 'Look at the painting')),
+    greet && quietLinks(greet, { onTopic: async (topic, status) => {
+      if (greet.state !== 'write') return showTalk({ seed: topic });
+      const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+      if (r.found) return trainerNext({});
+      status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+    } })].filter(Boolean));
+  if (again) { /* met before: nothing starts by itself */ }
+  else if (trainerAloud()) listen(); // the reader's preference: straight into the voice (a phone may ask for one tap first)
+  else if (trainerContemplate()) contemplateIt();
+  // Coming back mid-way (the phone had closed the app): back into what they were doing.
+  if (task === 'thoughts') { quietCard = true; reflectOn(); }
+  else if (task?.respond) respondTo(task.respond, task.pushed);
+  startPassage(s.id);
+  // Opened from a link to this passage (to see its moving painting): say where to look, or why nothing moves.
+  if (params.get('story') === s.id && !storyHinted) {
+    storyHinted = true; const st = passageStatus(s.id);
+    if (st === 'still') notice('This phone is set to remove animations (Settings › Accessibility), so the paintings stay still. Turn that off to see them move.');
+    else if (st === 'ok') notice(`In a few seconds, watch ${PASSAGE_WHERE[s.id] ?? 'the painting'}.`);
+  }
+  // Remembered last, so "pick up where you left off" above still means the place before this story.
+  remember({ kind: 'idea', id: s.id, title: s.title, thinker: s.thinker ?? null });
+  pinNext = null; pinPlace = { kind: 'story', id: s.id, img: s.img, title: s.title, task: task ?? null }; // what to come back to
+}
+
+// ── The Campus: every room, every door unlocked ──
+function showCampus() {
+  setNav('campus');
+  return guarded(async () => {
+    const cs = await api(`/api/cases?date=${today()}`).catch(() => null);
+    const open = cs?.cases.filter((c) => c.status === 'open') ?? [];
+    pageBg = TAB_BG.gallery;
+    const door = (title, line, go) => h('button', { type: 'button', class: 'think-door', onclick: go }, h('span', { class: 't' }, title), h('span', { class: 'muted small' }, line));
+    const wing = (name, ...doors) => h('section', { class: 'campus-wing' }, h('h2', {}, name), h('div', { class: 'think-doors' }, ...doors));
+    render(
+      h('h1', {}, 'Campus'),
+      h('p', {}, 'Every door is open. Wander in anywhere; nothing here is locked or in order.'),
+      wing('The galleries',
+        door('The rooms', 'Every idea, by part of the world and age.', () => showGallery('rooms')),
+        door('The map', 'How the ideas connect: who taught, answered and extended whom.', () => showMap()),
+        door('Through time', 'Five thousand years, left to right.', () => showGallery('timeline')),
+        door('Themes', 'The questions people keep asking.', () => showGallery('themes'))),
+      wing('The daily idea',
+        door('Today\'s idea', 'One question about one idea, then the idea itself.', () => showToday()),
+        door('Your week', 'What you met, wrote and kept.', () => showReview(7))),
+      wing('Rooms for thinking',
+        door('Talk', 'Argue a point, test a belief, ask for a practice or a reading path.', () => showTalk()),
+        door('Work through a problem', 'A few questions, then a route through it, and check-ins as you go.', () => showWorkThrough()),
+        door('The psychology room', 'Surveys on where you are now, the schools of psychology and their methods.', () => showMind()),
+        door('A debate with a friend', 'Both sides at their best, and where it could be settled.', () => showTalk({ mode: 'settle' })),
+        door('Something in the news', 'What happened, what the ideas say about it, what is still unknown.', () => showTalk({ mode: 'news' })),
+        door('Weigh an opinion', 'Its strongest form, its weak points, what would change the picture.', () => showTalk({ mode: 'weigh' })),
+        door('A goal I have', 'Make it clear and your own, with a first step for this week.', () => showTalk({ mode: 'goal' })),
+        door('The great debates', 'Seven questions people have argued over for centuries. Where do you stand?', () => showStance()),
+        door('The Parthenon', 'Your group, talking one question over together, live.', () => showParthenon())),
+      wing('The practice yard',
+        door('A path to practice', 'Two weeks, a month, or the long course: the seven practices, a few minutes a day.', () => showPaths()),
+        door('Today\'s practice', 'Ideas into habits, from ten seconds a day.', () => showPractice())),
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'),
+        h('ul', { class: 'path' }, open.map((c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) }, h('span', { class: 't' }, c.title)))))));
+  });
+}
+
+// The road behind: where the line went, how each one landed, and the thread (or the honest dead end).
+const OUTCOME_LABEL = { bite: 'caught you', nibble: 'a nibble', miss: 'did not land' };
+function roadPath(stops) {
+  return h('ol', { class: 'road-path' }, stops.map((s) => h('li', { class: `road-stop ${s.outcome ?? 'open'}` },
+    h('button', { type: 'button', class: 'link', onclick: () => walkTo(s.id, []) }, s.title),
+    h('span', { class: 'muted small' }, [s.thinker, OUTCOME_LABEL[s.outcome]].filter(Boolean).join(' · ')))));
+}
+function lookBack(o) {
+  const s = o.synthesis;
+  render(
+    h('div', { class: 'eyebrow' }, 'Looking back'),
+    roadPath(s.stops),
+    h('p', { class: 'synthesis' }, s.text),
+    s.thread && h('p', { class: 'muted small' }, `The thread: ${s.thread}`),
+    h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn', onclick: () => {
+      api('/api/lure/seen', { method: 'POST', body: { synthesis: s.id } }).catch(() => {});
+      lineView({ ...o, synthesis: null });
+    } }, 'Onward')));
+}
+
+// Quiet ways out, under the one thing: wherever they left off, a session that is waiting, and the escape hatch.
+function quietLinks(o, { onTopic }) {
+  const last = lastPlace();
+  const fresh = last && Date.now() - (last.at ?? 0) < 30 * 86400000;
+  const lastLine = fresh && (last.kind === 'idea' ? `"${last.title}"` : last.title);
+  const box = h('div', { class: 'line-else' });
+  const hatch = h('button', { type: 'button', class: 'link' }, 'Something else on my mind');
+  hatch.addEventListener('click', () => {
+    const input = h('input', { type: 'text', class: 'search', maxlength: '300', placeholder: 'What is it? A word or a sentence.', 'aria-label': 'What is on your mind' });
+    const goBtn = h('button', { type: 'button', class: 'btn' }, 'Go');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const send = async () => { const v = input.value.trim(); if (!v) return; goBtn.disabled = true; status.textContent = 'Looking…'; await onTopic(v, status).catch(() => { status.textContent = 'Could not reach Continuum. Try again.'; }); goBtn.disabled = false; };
+    goBtn.addEventListener('click', send); input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    hatch.replaceWith(h('div', { class: 'hatch' }, h('div', { class: 'row' }, input, goBtn), status));
+    input.focus();
+  });
+  box.append(hatch);
+  const waiting = o.session ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.session.id) }, `Waiting: session ${o.session.n} of ${o.session.of}, ${o.session.name}`)
+    : o.checkin ? h('button', { type: 'button', class: 'link', onclick: () => showWorkThrough(o.checkin.id) }, `Check in: ${o.checkin.title}`) : null;
+  if (waiting) box.append(waiting);
+  // A path under way: the part of today still to do.
+  const pth = o.path;
+  if (pth && !(pth.morning && pth.evening)) box.append(h('button', { type: 'button', class: 'link', onclick: () => showPaths() },
+    `${pth.name}, day ${pth.day} of ${pth.days}: ${!pth.morning ? 'the morning questions' : 'the evening review'}`));
+  if (lastLine) box.append(h('button', { type: 'button', class: 'link', onclick: () => resume(last) }, `Pick up where you left off: ${lastLine}`));
+  return box;
+}
+
+function lineView(o) {
+  const n = o.node;
+  // Something else on their mind: before answering, today's line goes there; after, it becomes a conversation.
+  const onTopic = async (topic, status) => {
+    if (o.state !== 'write') return showTalk({ seed: topic });
+    const r = await api('/api/lure/topic', { method: 'POST', body: { topic, date: today() } });
+    if (r.found) return lineView(r);
+    status.replaceChildren('Nothing on the map fits that well yet. ', h('button', { type: 'button', class: 'link', onclick: () => showTalk({ seed: topic }) }, 'Talk it through instead'));
+  };
+  if (o.state === 'complete' || !n) {
+    return render(h('p', { class: 'opener' }, 'You have met every idea on the map so far. New ones arrive often.'),
+      h('div', { class: 'think-doors' }, h('button', { type: 'button', class: 'think-door', onclick: () => showThink() }, h('span', { class: 't' }, 'Think something through'))),
+      quietLinks(o, { onTopic }));
+  }
+  if (o.state === 'done_today') {
+    return render(
+      h('p', { class: 'opener' }, 'Today\'s line:'),
+      h('h1', { class: 'line-title' }, n.title),
+      o.reaction && h('blockquote', { class: 'kept' }, o.reaction.text),
+      o.reaction?.ack && h('p', { class: 'ack' }, o.reaction.ack),
+      h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showToday() }, 'Read where it comes from')),
+      quietLinks(o, { onTopic }));
+  }
+  const ta = h('textarea', { rows: '3', maxlength: '5000', placeholder: 'A line or two, or more.', 'aria-label': 'Your answer' });
+  const draftKey = `continuum.draft.${n.id}`; ta.value = store.get(draftKey) ?? '';
+  const send = h('button', { type: 'button', class: 'btn', disabled: !ta.value.trim() }, 'Send');
+  const status = h('span', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); store.set(draftKey, ta.value); });
+  const form = h('div', { class: 'line-form' }, ta, h('div', { class: 'row' }, dictation(ta, { label: 'Say it instead' })?.button ?? h('span'), send), status);
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = '';
+    try {
+      const r = await api('/api/respond', { method: 'POST', body: { node_id: n.id, body: ta.value, date: today() } });
+      store.del(draftKey);
+      // Front of house: a few words back, or just the nod.
+      const said = h('blockquote', { class: 'kept' }, ta.value.trim());
+      const back = r.ack ? h('p', { class: 'ack' }, r.ack) : h('div', { class: 'nod', role: 'status', 'aria-label': 'Noted' });
+      form.replaceWith(h('div', { class: 'line-after' }, said, back,
+        h('div', { class: 'row', style: 'justify-content:flex-start' }, h('button', { type: 'button', class: 'btn ghost', onclick: () => showToday() }, 'Read where it comes from')),
+        nudgeOffer(o)));
+      offerTour();
+    } catch (err) {
+      const stale = err.message === 'already_answered_today' || err.message === 'not_todays_node';
+      status.textContent = stale ? 'Today has changed. Reloading…' : 'Could not send. Your words are kept; try again.';
+      send.disabled = false;
+      if (stale) setTimeout(arrive, 1200);
+    }
+  });
+  // Coming back to a thread from an earlier conversation, in place of the friend's opener.
+  const rv = o.revisit;
+  const back = rv && h('div', { class: 'opener revisit' },
+    h('div', {}, `Coming back to something from ${rv.date}: `, h('em', {}, rv.name), rv.when ? ` (${rv.when}).` : '.', ` ${rv.ask}`),
+    h('button', { type: 'button', class: 'link', style: 'padding:0', onclick: () => { store.set(TALK_KEY, String(rv.talk)); showTalk({ seed: `Coming back to ${rv.name}. ${rv.ask} `, draft: true }); } }, 'Pick it up in Talk →'));
+  render(
+    back || (o.opener && h('p', { class: 'opener' }, o.opener)),
+    h('h1', { class: 'line-prompt' }, n.prompt),
+    // What it is about and where to read it, at once; the summary itself just under the answer box.
+    h('p', { class: 'muted small line-src' }, [n.title, n.thinker].filter(Boolean).join(' · '), ' ', sourceLink(n.source_url, n.source_citation, 'Read it ↗', 'fulltext', n.id)),
+    form,
+    n.plain_face && h('div', { class: 'line-about' }, h('div', { class: 'eyebrow' }, 'What it is about'), sourceFirst(n)),
+    quietLinks(o, { onTopic }));
+}
+
+// Asked once, after a few answers: may Continuum drop them a line now and then? Only where the phone can take one.
+function nudgeOffer(o) {
+  if (store.get(NUDGE_ASKED_KEY) || o.nudges?.offered === 'on' || (o.nudges?.answered ?? 0) < 3) return null;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return null;
+  const box = h('div', { class: 'nudge-offer' },
+    h('p', {}, 'Can I drop you a line now and then? A couple of times a week at most, and less if you are busy.'));
+  const no = h('button', { type: 'button', class: 'btn ghost' }, 'No thanks');
+  const yes = h('button', { type: 'button', class: 'btn' }, 'Yes, now and then');
+  no.addEventListener('click', () => { store.set(NUDGE_ASKED_KEY, 'no'); box.replaceChildren(h('p', { class: 'muted small' }, 'Fair enough. It is in the menu under You if you change your mind.')); });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    const ok = await turnNudgesOn().catch(() => false);
+    store.set(NUDGE_ASKED_KEY, ok ? 'yes' : 'no');
+    box.replaceChildren(h('p', { class: 'muted small' }, ok ? 'Good. I will be in touch, not often.' : 'Your phone did not allow it. You can turn it on later under You.'));
+  });
+  box.append(h('div', { class: 'row', style: 'justify-content:flex-start' }, yes, no));
+  return box;
+}
+async function turnNudgesOn() {
+  const { key } = await api('/api/push/key');
+  if (!key || (await Notification.requestPermission()) !== 'granted') return false;
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.ready;
+  const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(key.length / 4) * 4, '=')), (c) => c.charCodeAt(0));
+  const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+  await api('/api/push', { method: 'POST', body: { subscription: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+  return true;
+}
+async function turnNudgesOff() {
+  const reg = await navigator.serviceWorker?.getRegistration('/sw.js');
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) { await api('/api/push', { method: 'DELETE', body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); }
+}
+
+// ── Working through a problem ──────────────────────────────────────────────────────────────────────────────
+// The user brings a problem; Continuum asks a few questions, one at a time (as a good counsellor opens a first
+// session), then draws on the whole map for what may be going on, the pitfalls that may keep them stuck, and a route of
+// ideas. Set as their course, the route leads the daily ideas; every few days it checks in and adjusts.
+const PITFALL_KIND = { assumption: 'An assumption', logic: 'A slip of logic', habit: 'A habit', feeling: 'A feeling steering', values: 'A clash of values' };
+const PROGRESS = { better: 'Better', same: 'About the same', worse: 'Harder', unclear: '' };
+const HELP_LINE = 'If you are in danger or thinking of harming yourself, please reach someone now: in the US, call or text 988; elsewhere, your local emergency number.';
+function showWorkThrough(id = null) {
+  setNav('');
+  return guarded(async () => {
+    pageBg = PAGE_BG.problem;
+    if (id) return renderCase((await api(`/api/cases/${id}?date=${today()}`)).case);
+    const d = await api(`/api/cases?date=${today()}`);
+    pageBg = PAGE_BG.problem;
+    if (!d.enabled) return render(h('h1', {}, 'Work through a problem'), h('p', { class: 'muted' }, 'This needs Claude, which is not switched on yet (ANTHROPIC_API_KEY on the server).'));
+    const ta = h('textarea', { rows: '4', maxlength: '4000', placeholder: 'What is weighing on you? Say it plainly, the way you would to a friend.', 'aria-label': 'The problem' });
+    const go = h('button', { type: 'button', class: 'btn', disabled: true }, 'Begin');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    ta.addEventListener('input', () => { go.disabled = ta.value.trim().length < 3; });
+    go.addEventListener('click', async () => {
+      go.disabled = true; status.textContent = 'Listening…';
+      try {
+        const prefer = store.get('continuum.prefer'); store.del('continuum.prefer');
+        const r = await api('/api/cases', { method: 'POST', body: { problem: ta.value, date: today(), ...(prefer ? { prefer } : {}) } });
+        renderCase(r.case);
+      } catch (e) { go.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again in a moment.'; }
+    });
+    const row = (c) => h('li', {}, h('button', { type: 'button', class: 'link', style: 'padding:0;text-align:left', onclick: () => showWorkThrough(c.id) },
+      h('span', { class: 't' }, c.title ?? clipText(c.problem, 60))),
+    h('div', { class: 'muted small' }, c.status === 'interview' ? `Started ${c.date}, still talking it through` : c.status === 'closed' ? `Set aside · ${c.touched}` : `Since ${c.date}${c.started ? ' · your course' : ''} · last ${c.touched}`));
+    const open = d.cases.filter((c) => c.status !== 'closed'); const closed = d.cases.filter((c) => c.status === 'closed');
+    render(
+      h('h1', {}, 'Work through a problem'),
+      h('p', {}, 'Bring something you are stuck on: a habit, a decision, a feeling, a relationship, a worry. Continuum will ask a few questions to understand it, then draw on philosophy, psychology, the great traditions and the sciences to point to a route, and help you watch for the traps that keep people stuck.'),
+      h('p', { class: 'muted small' }, 'A voice of reason, not a therapist. ', HELP_LINE),
+      ta, h('div', { class: 'row' }, dictation(ta)?.button, go), status,
+      open.length > 0 && h('section', { class: 'diary-block' }, h('h2', {}, 'What you are working through'), h('ul', { class: 'path' }, open.map(row))),
+      closed.length > 0 && h('details', { class: 'diary-block' }, h('summary', {}, `Set aside (${closed.length})`), h('ul', { class: 'path' }, closed.map(row))));
+  });
+}
+const clipText = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+function ideaLink(id, refs) {
+  const r = refs[id]; if (!r) return null;
+  return h('a', { href: '#', class: `talk-ref field-${r.field}`, onclick: (e) => { e.preventDefault(); (r.type === 'practice' ? showPractice({ practice: id }) : walkTo(id, [])); } }, r.title);
+}
+function renderCase(c) {
+  remember({ kind: 'problem', id: c.id, title: c.title ?? 'A problem you are working through' });
+  pageBg = PAGE_BG.problem;
+  const refresh = (x) => renderCase(x);
+  const concern = [...c.turns].reverse().find((t) => t.concern) || c.plan?.concern || c.checkins.at(-1)?.concern;
+  const help = concern && h('p', { class: 'help-line' }, HELP_LINE);
+  const back = h('button', { type: 'button', class: 'chip', onclick: () => showWorkThrough() }, '← Your problems');
+  // The interview: what was asked and said; the waiting question with an answer box.
+  const said = c.turns.filter((t) => t.a || t.q).map((t) => h('div', {},
+    t.reflect && h('div', { class: 'talk-turn from-map' }, t.reflect),
+    t.q && h('div', { class: 'talk-turn from-map wt-q' }, t.q),
+    t.a && h('div', { class: 'talk-turn from-you' }, t.a)));
+  const log = h('div', { class: 'talk-log' }, h('div', { class: 'talk-turn from-you' }, c.problem), said);
+  if (c.status === 'interview') {
+    const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'Your answer', 'aria-label': 'Your answer' });
+    const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Answer');
+    const enough = h('button', { type: 'button', class: 'btn ghost' }, 'Show me a route now');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+    const post = async (body, wait) => {
+      send.disabled = enough.disabled = true; status.textContent = wait;
+      try { refresh((await api(`/api/cases/${c.id}/answer`, { method: 'POST', body: { ...body, date: today() } })).case); }
+      catch (e) { send.disabled = !ta.value.trim(); enough.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow; this will wait.' : 'Something went wrong. Your answer is still here; try again.'; }
+    };
+    send.addEventListener('click', () => post({ answer: ta.value }, 'Thinking about what you said… (the route, when it comes, takes about half a minute)'));
+    enough.addEventListener('click', () => post({ answer: ta.value, enough: true }, 'Drawing a route from the map… about half a minute.'));
+    // What the interview offers with this question: a survey to take, or an idea to consider.
+    const offer = c.turns.at(-1)?.a == null ? c.turns.at(-1)?.offer : null;
+    let offered = null;
+    if (offer?.kind === 'survey' && surveyById(offer.id)) {
+      const sv = surveyById(offer.id);
+      offered = h('div', { class: 'offer' }, h('div', { class: 'eyebrow' }, 'A short survey would help'), offer.why && h('p', { class: 'small' }, offer.why),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(sv.id, { back: c.id }) }, `Take "${sv.name}" (${sv.time})`),
+        h('p', { class: 'muted small' }, 'Afterwards you come back here; answer the question too if you like.'));
+    } else if (offer?.kind === 'idea' && c.refs[offer.id]) {
+      const plain = h('p', { class: 'small' });
+      offered = h('div', { class: 'offer' }, h('div', { class: 'eyebrow' }, 'An idea that may speak to this'), h('h3', {}, c.refs[offer.id].title),
+        c.refs[offer.id].thinker && h('p', { class: 'muted small' }, c.refs[offer.id].thinker), plain, offer.why && h('p', { class: 'muted small' }, offer.why),
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => walkTo(offer.id, []) }, 'Open the whole idea →'));
+      api(`/api/node/${encodeURIComponent(offer.id)}?date=${today()}`).then((r) => { plain.textContent = r.node?.plain_face ?? ''; }).catch(() => {});
+    }
+    render(back, h('h1', {}, 'Let\'s understand it'), help, log, offered, ta, h('div', { class: 'row' }, dictation(ta)?.button, enough, send), status);
+    requestAnimationFrame(() => ta.scrollIntoView({ block: 'center' }));
+    return;
+  }
+  const p = c.plan; const refs = c.refs;
+  const pit = (x) => h('li', {}, h('div', { class: 'eyebrow' }, PITFALL_KIND[x.kind] ?? x.kind), h('p', {}, h('strong', {}, x.name), `: ${x.how}`),
+    x.idea && refs[x.idea] && h('p', { class: 'muted small' }, 'What answers it: ', ideaLink(x.idea, refs)));
+  const start = h('button', { type: 'button', class: 'btn' }, c.started ? 'This is your course' : 'Make this my course');
+  start.disabled = c.started;
+  start.addEventListener('click', async () => {
+    start.disabled = true;
+    await api(`/api/cases/${c.id}/start`, { method: 'POST', body: { date: today() } }).then(() => { start.textContent = 'This is your course'; notice('Set. Your next daily ideas follow this route, one a day.'); }).catch(() => { start.disabled = false; });
+  });
+  // Checking in: how it is going, answered by a reply that may change the course.
+  const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'How is it going? What happened, what you tried, what you told yourself…', 'aria-label': 'How it is going' });
+  const send = h('button', { type: 'button', class: 'btn', disabled: true }, 'Check in');
+  const status = h('p', { class: 'muted small', role: 'status' });
+  ta.addEventListener('input', () => { send.disabled = !ta.value.trim(); });
+  send.addEventListener('click', async () => {
+    send.disabled = true; status.textContent = 'Looking at how it has gone, and at what you have written lately… about half a minute.';
+    try { refresh((await api(`/api/cases/${c.id}/checkin`, { method: 'POST', body: { answer: ta.value, date: today() } })).case); }
+    catch (e) { send.disabled = false; status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Come back tomorrow.' : 'Something went wrong. Try again.'; }
+  });
+  const checkins = c.checkins.map((x) => h('li', {},
+    h('div', { class: 'eyebrow diary-date' }, [x.date, PROGRESS[x.progress]].filter(Boolean).join(' · ')),
+    x.question && h('p', { class: 'muted small' }, x.question),
+    h('p', {}, x.answer), h('div', { class: 'talk-turn from-map' }, x.reply),
+    x.noticed?.length > 0 && h('ul', { class: 'pitfalls' }, x.noticed.map(pit)),
+    x.next_step && h('p', {}, h('strong', {}, 'Next: '), x.next_step),
+    x.rerouted && h('p', { class: 'muted small' }, 'The course was changed: see the route above.')));
+  const status2 = h('div', { class: 'row', style: 'justify-content:flex-start' },
+    c.status === 'open'
+      ? h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'closed' } }); notice('Set aside. It is kept, and you can open it again.'); showWorkThrough(); } }, 'It is resolved, or set it aside')
+      : h('button', { type: 'button', class: 'link small', onclick: async () => { await api(`/api/cases/${c.id}/status`, { method: 'POST', body: { status: 'open' } }); showWorkThrough(c.id); } }, 'Open it again'));
+  // The sections, then put in the order that suits this person: what helps most comes first ("Where to start").
+  const S = {
+    professional: (c.program?.professional || p.lead?.kind === 'professional') && helpSection(c, true),
+    therapy: programSection(c, refs),
+    lenses: p.lenses?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Seen through the schools of psychology'),
+      h('p', { class: 'muted small' }, 'Each school sees a problem in its own way. Try the one that rings truest, or more than one.'),
+      h('ul', { class: 'pitfalls lenses' }, p.lenses.map((l) => h('li', {},
+        h('button', { type: 'button', class: 'link eyebrow', style: 'padding:0', onclick: () => openSchool(l.school) }, l.name),
+        h('p', {}, l.sees), h('p', {}, h('strong', {}, 'Try: '), l.method),
+        l.practice && refs[l.practice] && h('p', { class: 'muted small' }, 'A practice for it: ', ideaLink(l.practice, refs)))))),
+    // Long before psychology: what the wisdom traditions would counsel, and the question each would ask.
+    wisdom: p.wisdom?.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'What the wisdom traditions would say'),
+      h('p', { class: 'muted small' }, 'Philosophers, prophets and poets counselled people through problems like this long before psychology.'),
+      h('ul', { class: 'pitfalls lenses' }, p.wisdom.map((w) => h('li', {},
+        h('div', { class: 'eyebrow' }, w.tradition), h('p', {}, w.counsel),
+        w.idea && refs[w.idea] && h('p', { class: 'muted small' }, 'From: ', ideaLink(w.idea, refs)),
+        h('p', { class: 'ask-q' }, w.question),
+        h('button', { type: 'button', class: 'link small', style: 'padding:0', onclick: () => showTalk({ mode: 'workout', seed: `${w.tradition} asks me: "${w.question}" My answer: `, draft: true }) }, 'Answer it in Talk →'))))),
+    route: c.route.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, p.lead?.kind === 'philosophy' ? 'A journey through the ideas' : 'A route through it'),
+      h('ol', { class: 'wt-route' }, c.route.map((r) => h('li', {}, ideaLink(r.id, refs), h('p', { class: 'muted small' }, r.why)))),
+      c.status === 'open' && h('div', { class: 'row', style: 'justify-content:flex-start' }, start),
+      h('p', { class: 'muted small' }, 'As your course, these become your daily ideas, one a day, before anything else.')),
+    practice: p.practice && refs[p.practice] && h('section', { class: 'wt-part' }, h('h2', {}, 'A practice for it'), h('p', {}, ideaLink(p.practice, refs))),
+    survey: p.survey && surveyById(p.survey) && h('section', { class: 'wt-part' }, h('h2', {}, 'A survey that may help'),
+      h('p', { class: 'small' }, surveyById(p.survey).about),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showSurvey(p.survey, { back: c.id }) }, `Take "${surveyById(p.survey).name}" (${surveyById(p.survey).time})`)),
+  };
+  const ORDER = {
+    professional: ['professional', 'therapy', 'wisdom', 'practice', 'lenses', 'route', 'survey'],
+    philosophy: ['wisdom', 'route', 'practice', 'lenses', 'therapy', 'survey', 'professional'],
+    practice: ['practice', 'lenses', 'wisdom', 'route', 'therapy', 'survey', 'professional'],
+    therapy: ['professional', 'therapy', 'lenses', 'wisdom', 'route', 'practice', 'survey'],
+  }[p.lead?.kind] ?? ['professional', 'therapy', 'lenses', 'wisdom', 'survey', 'route', 'practice'];
+  const LEAD = { therapy: 'A therapy program', philosophy: 'The wisdom of the ages', practice: 'A daily practice', professional: 'A professional\'s help' };
+  render(back,
+    h('div', { class: 'eyebrow' }, `Since ${c.date}`), h('h1', {}, c.title), help,
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What I heard'), h('p', {}, p.heard)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'What may be going on'), h('p', {}, p.going_on)),
+    p.lead && h('section', { class: 'wt-part lead-box' }, h('div', { class: 'eyebrow' }, 'Where to start'), h('h2', {}, LEAD[p.lead.kind]), h('p', {}, p.lead.why)),
+    ...ORDER.map((k) => S[k]),
+    p.pitfalls.length > 0 && h('section', { class: 'wt-part' }, h('h2', {}, 'Traps to watch for'), h('ul', { class: 'pitfalls' }, p.pitfalls.map(pit))),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'A first step this week'), h('p', {}, p.first_step)),
+    h('section', { class: 'wt-part' }, h('h2', {}, 'Checking in'),
+      checkins.length > 0 && h('ul', { class: 'path' }, checkins),
+      c.status === 'open' && h('div', {}, h('p', { class: 'ask-q' }, c.question), ta, h('div', { class: 'row' }, dictation(ta)?.button, send), status),
+      h('p', { class: 'muted small' }, 'Every few days Continuum will ask on Wander. It looks at what you write and say in between, and names a trap if it shows up again.')),
+    h('div', { class: 'row', style: 'justify-content:flex-start' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showTalk({ mode: 'workout', seed: `About "${c.title}": `, draft: true }) }, 'Talk it over')),
+    !S.professional && helpSection(c, false),
+    h('details', { class: 'wt-part' }, h('summary', {}, 'How we got here'), log),
+    status2);
+}
+// On Wander: a check-in, every few days, on a problem being worked through.
+function checkinCard(data) {
+  const k = data.checkin; if (!k) return null;
+  return h('div', { class: 'bearings' },
+    h('div', { class: 'eyebrow' }, `Checking in · ${k.title}`),
+    h('p', {}, k.question),
+    h('button', { type: 'button', class: 'btn ghost', onclick: () => showWorkThrough(k.id) }, 'Answer'));
+}
+
+function showParthenon({ idea = null } = {}) {
+  setNav('talk');
+  return guarded(async () => {
+    pageBg = PAGE_BG.parthenon;
+    const d = await api('/api/groups');
+    const newGroup = h('form', { class: 'pt-new', onsubmit: async (e) => {
+      e.preventDefault(); const name = e.target.elements.gname.value.trim(); if (!name) return;
+      const r = await api('/api/groups', { method: 'POST', body: { name } }); showParthenon({ idea });
+      notice('Your group is ready. Share its invite link to bring people in.'); void r;
+    } },
+      h('label', { for: 'gname', class: 'muted small' }, 'Start a group: a book club, friends, family, a class'),
+      h('div', { class: 'row' }, h('input', { id: 'gname', name: 'gname', type: 'text', maxlength: '60', placeholder: 'A name for the group', class: 'search' }), h('button', { type: 'submit', class: 'btn' }, 'Start')));
+    const groups = d.groups.map((g) => {
+      const q = h('input', { type: 'text', maxlength: '300', class: 'search', placeholder: 'A question for the group…', value: idea ? (idea.prompt ?? `What do you make of "${idea.title}"?`) : '' });
+      const start = h('form', { class: 'pt-topic-new', onsubmit: async (e) => {
+        e.preventDefault(); if (!q.value.trim()) return;
+        const r = await api(`/api/groups/${g.id}/topics`, { method: 'POST', body: { question: q.value.trim(), node_id: idea?.id ?? null } });
+        showTopic(r.id);
+      } }, h('div', { class: 'row' }, q, h('button', { type: 'submit', class: 'btn' }, idea ? 'Discuss' : 'Ask')));
+      return h('section', { class: 'pt-group' },
+        h('h2', {}, g.name),
+        h('div', { class: 'row', style: 'justify-content:flex-start' },
+          h('span', { class: 'muted small' }, `${g.members} ${g.members === 1 ? 'member' : 'members'}`),
+          h('button', { type: 'button', class: 'chip', onclick: () => shareInvite(g) }, 'Invite someone')),
+        start,
+        g.topics.length ? h('ul', { class: 'pt-topics' }, g.topics.map((t) => h('li', {},
+          h('button', { type: 'button', class: 'link pt-topic', onclick: () => showTopic(t.id) }, t.question),
+          h('div', { class: 'muted small' }, `${t.by} · ${t.posts} ${t.posts === 1 ? 'post' : 'posts'}${t.last_at ? ` · last ${t.last_at.slice(0, 16).replace('T', ' ')}` : ''}`))))
+          : h('p', { class: 'muted small' }, 'No questions yet. Ask the first one.'));
+    });
+    render(h('h1', {}, 'The Parthenon'),
+      h('p', {}, idea ? `Choose a group to discuss "${idea.title}".` : 'Small groups talking over one question at a time, together and live. Everyone can speak or write; Continuum, when asked to moderate, says where the group stands and what no one has said yet.'),
+      ...groups, newGroup,
+      h('p', { class: 'muted small bare' }, 'What you post is seen by the members of that group, and by the moderator when someone asks for it.'));
+  });
+}
+function showTopic(id) {
+  setNav('talk');
+  stopTopic();
+  return guarded(async () => {
+    pageBg = PAGE_BG.parthenon;
+    const t = await api(`/api/topics/${id}`);
+    const log = h('div', { class: 'pt-log', 'aria-live': 'polite' });
+    const writing = h('p', { class: 'muted small pt-writing', 'aria-live': 'polite' });
+    const seen = new Set();
+    const empty = h('p', { class: 'muted', hidden: t.posts.length > 0 }, 'No one has spoken yet. Say what you think first, then invite the others.');
+    const who = h('p', {}, `${t.group.name} · ${t.members.join(', ')}`);
+    const add = (p) => {
+      if (seen.has(p.id)) return; seen.add(p.id);
+      empty.hidden = true;
+      if (p.by && !t.members.includes(p.by)) { t.members.push(p.by); who.textContent = `${t.group.name} · ${t.members.join(', ')}`; }
+      const mine = p.user_id === t.me;
+      const el = h('div', { class: `pt-post ${p.moderator ? 'from-mod' : mine ? 'from-me' : 'from-them'}` },
+        h('div', { class: 'eyebrow' }, p.moderator ? 'Continuum · moderator' : mine ? 'You' : p.by),
+        p.moderator ? h('div', { class: 'pt-body' }, ...replyNodes(p.body, p.refs ?? {}, true)) : h('div', { class: 'pt-body' }, p.body));
+      log.append(el);
+      return el;
+    };
+    t.posts.forEach(add);
+    const ta = h('textarea', { rows: '3', maxlength: '4000', placeholder: 'Say what you think, and why…', 'aria-label': 'Your post' });
+    const send = h('button', { type: 'button', class: 'btn' }, 'Post');
+    const status = h('p', { class: 'muted small', role: 'status' });
+    let lastPing = 0;
+    ta.addEventListener('input', () => { if (Date.now() - lastPing > 4000) { lastPing = Date.now(); api(`/api/topics/${id}/typing`, { method: 'POST', body: {} }).catch(() => {}); } });
+    async function post() {
+      const body = ta.value.trim(); if (!body || send.disabled) return;
+      send.disabled = true; dict?.stop();
+      try { const r = await api(`/api/topics/${id}/posts`, { method: 'POST', body: { body, date: today() } }); ta.value = ''; seeTo(add(r.post) ?? log.lastElementChild); }
+      catch { status.textContent = 'Could not post. Try again.'; } finally { send.disabled = false; }
+    }
+    send.addEventListener('click', post);
+    const dict = dictation(ta, { onDone: () => {} });
+    const ask = t.moderator && h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+      ask.disabled = true; status.textContent = 'Continuum is reading the discussion…';
+      try { const r = await api(`/api/topics/${id}/moderator`, { method: 'POST', body: { date: today() } }); seeTo(add(r.post) ?? log.lastElementChild); status.textContent = ''; }
+      catch (e) { status.textContent = e.message === 'daily_limit' ? 'That is enough for today. Continuum will moderate again tomorrow.' : e.message === 'busy' ? 'Continuum is already answering.' : 'Continuum could not answer just now.'; }
+      finally { ask.disabled = false; }
+    } }, 'Ask Continuum to moderate');
+    render(h('h1', {}, t.question),
+      who,
+      t.idea && h('p', { class: 'bare' }, h('a', { href: '#', class: 'thread-link', onclick: (e) => { e.preventDefault(); walkTo(t.idea.id, []); } }, `It starts from: ${t.idea.title}`)),
+      h('section', { class: 'pt-thread' }, empty, log, writing),
+      h('section', { class: 'pt-compose' }, ta, h('div', { class: 'row' }, dict?.button ?? h('span'), send), status,
+        h('div', { class: 'row', style: 'justify-content:flex-start' }, ask, h('button', { type: 'button', class: 'chip', onclick: () => shareInvite(t.group) }, 'Invite someone'),
+          h('button', { type: 'button', class: 'chip', onclick: () => showParthenon() }, '← All groups'))));
+    if (log.lastElementChild) seeTo(log.lastElementChild);
+    // Live: new posts and "… is writing" from everyone in the group, as they happen. Reconnects if the line drops.
+    const run = { stop: false, ctl: null }; topicRun = run;
+    const timers = new Map();
+    const showWriting = () => { writing.textContent = timers.size ? `${[...timers.keys()].join(', ')} ${timers.size === 1 ? 'is' : 'are'} writing…` : ''; };
+    (async function listen() {
+      while (!run.stop && document.body.contains(log)) {
+        try {
+          run.ctl = new AbortController();
+          const res = await fetch(`/api/topics/${id}/live`, { headers: { 'x-continuum-token': token() }, signal: run.ctl.signal });
+          const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+          for (;;) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+              const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (!line) continue;
+              const m = JSON.parse(line);
+              if (m.t === 'post') {
+                const who = m.post.moderator ? 'Continuum' : m.post.by; clearTimeout(timers.get(who)); timers.delete(who); showWriting();
+                const el = add(m.post); if (el && m.post.user_id !== t.me) seeTo(el);
+              } else if (m.t === 'typing' && m.user_id !== t.me) {
+                clearTimeout(timers.get(m.name)); timers.set(m.name, setTimeout(() => { timers.delete(m.name); showWriting(); }, 7000)); showWriting();
+              }
+            }
+          }
+        } catch { /* dropped or stopped */ }
+        if (!run.stop) await new Promise((r) => setTimeout(r, 2000));
+      }
+    })();
+  });
+}
+let topicRun = null;
+function stopTopic() { if (topicRun) { topicRun.stop = true; topicRun.ctl?.abort(); topicRun = null; } }
+// Arriving from an invite link: someone new gives a first name and is in; someone already here is simply added.
+async function joinFromLink(code) {
+  const done = () => store.del('continuum.join');
+  if (token()) {
+    try { await api('/api/groups/join', { method: 'POST', body: { code } }); done(); notice('You have joined the group.'); return showParthenon(); }
+    catch (e) { if (e.status !== 401) { done(); notice(e.message === 'group_full' ? 'That group is full.' : 'That invite link did not work.'); return showToday(); } }
+  }
+  const info = await fetch(`/api/join/${encodeURIComponent(code)}`).then((r) => r.json()).catch(() => ({}));
+  pageBg = PAGE_BG.parthenon; setNav('');
+  if (!info.group) { done(); return render(h('h1', {}, 'The Parthenon'), h('p', {}, 'That invite link did not work. Ask for a new one.')); }
+  const name = h('input', { type: 'text', maxlength: '40', class: 'search', placeholder: 'Your first name', autocomplete: 'given-name' });
+  const go = h('button', { type: 'submit', class: 'btn' }, 'Join');
+  render(h('h1', {}, 'You are invited'),
+    h('p', {}, `to "${info.group}" in the Parthenon, a small group that talks over one question at a time. ${info.members} ${info.members === 1 ? 'person is' : 'people are'} in it.`),
+    h('form', { onsubmit: async (e) => {
+      e.preventDefault(); if (!name.value.trim()) return; go.disabled = true;
+      const r = await fetch('/api/join', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name: name.value.trim() }) }).then((x) => x.json()).catch(() => ({}));
+      if (!r.token) { go.disabled = false; return notice(r.error === 'group_full' ? 'That group is full.' : 'Could not join just now. Try again.'); }
+      store.set(TOKEN_KEY, r.token); done(); showParthenon();
+    } }, h('div', { class: 'row' }, name, go)),
+    h('p', { class: 'muted small' }, 'Continuum is a daily practice of human wisdom. Joining gives you your own copy, kept on this phone: keep this page as a bookmark to come back.'));
+}
+
+// The first time: a small invitation (a tap is needed before a page may speak), then the tour.
+function offerTour() {
+  if (store.get(TOUR_KEY) || params.get('day')) return;
+  const box = h('div', { class: 'tour', role: 'dialog', 'aria-label': 'Welcome' },
+    h('div', { class: 'tour-card' },
+      h('h2', { style: 'margin:0 0 .4em' }, 'Welcome to Continuum'),
+      h('p', { class: 'tour-text' }, 'A two-minute spoken tour shows you around. Turn your sound on.'),
+      h('div', { class: 'row tour-buttons' },
+        h('button', { type: 'button', class: 'link', onclick: () => { box.remove(); store.set(TOUR_KEY, 'done'); } }, 'Not now'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { box.remove(); tour(); } }, 'Start the tour'))));
+  document.body.append(box);
+}
+
+intro();
+startCreatures();
+startLiving();
+window.continuumVisit = summon; // for trying a visitor on a phone: continuumVisit('sailboat'), or ?visit=sailboat (names in creatures.js)
+// A link with ?visit=fish (or sailboat, bees…): opens a painting where that visitor belongs, full screen, and brings it.
+// Forgiving: stray marks pasted with the link (a "**", a full stop) and plurals ("bees" for "bee") are ignored.
+const visitName = (() => {
+  const raw = (params.get('visit') ?? '').toLowerCase().replace(/[^a-z]/g, '');
+  return raw && (sceneFor(raw) ? raw : sceneFor(raw.replace(/e?s$/, '')) ? raw.replace(/e?s$/, '') : raw);
+})();
+if (visitName) {
+  setTimeout(() => {
+    const src = sceneFor(visitName);
+    if (src) { setWallpaper(src, 1, { plain: true }); gaze(src); }
+    setTimeout(() => summon(visitName), 1600);
+  }, 1500);
+}
+
+// Calm: while an idea is being read, the buttons (corner, menu, the card's links, the rail) fade away after a few
+// seconds untouched, leaving the words on the picture. Any touch, key or mouse movement brings them back.
+let calmTimer = 0;
+function wake() {
+  const d = document.documentElement; d.classList.remove('calm'); clearTimeout(calmTimer);
+  calmTimer = setTimeout(() => {
+    if (d.classList.contains('staged') && !d.classList.contains('map-full') && !document.querySelector('.tour, .voices, .gaze, .keep-bar.on')
+      && !document.activeElement?.closest?.('textarea, input, select')) d.classList.add('calm');
+  }, 3500);
+}
+for (const ev of ['pointerdown', 'keydown', 'mousemove']) addEventListener(ev, wake, { passive: true });
+document.addEventListener('scroll', () => { if (scrollY < 40) wake(); }, { passive: true }); // back at the top: show them again
+wake();
+// Every screen function, wrapped so that drawing it is a step the back button can return to.
+showPractice = navigable('practice', showPractice); showPlans = navigable('plans', showPlans); showReview = navigable('review', showReview);
+showGallery = navigable('gallery', showGallery); showMap = navigable('map', showMap); showToday = navigable('today', showToday);
+showJournal = navigable('you', showJournal); showTalk = navigable('talk', showTalk); showPrivacy = navigable('privacy', showPrivacy); showLearned = navigable('learned', showLearned);
+showPaths = navigable('paths', showPaths); showPathOutcome = navigable('path-outcome', showPathOutcome); showTalkHistory = navigable('talks', showTalkHistory);
+showHomework = navigable('homework', showHomework); showStance = navigable('stance', showStance); walkTo = navigable('idea', walkTo);
+showMind = navigable('mind', showMind); showFindHelp = navigable('find-help', showFindHelp); showHandover = navigable('handover', showHandover);
+showTherapies = navigable('therapies', showTherapies); showTherapy = navigable('therapy', showTherapy); showSchool = navigable('school', showSchool);
+showSurvey = navigable('survey', showSurvey); showSurveyResult = navigable('survey-result', showSurveyResult); showThink = navigable('think', showThink);
+showTrainer = navigable('trainer', showTrainer); showCampus = navigable('campus', showCampus); showWorkThrough = navigable('work', showWorkThrough);
+showParthenon = navigable('parthenon', showParthenon); showTopic = navigable('topic', showTopic); renderCase = navigable('case', renderCase);
+// A passage comes back exactly as it was: the same story on the same painting, without the greeting or a half-done task.
+trainerStoryView = navigable('story', trainerStoryView, ([st]) => [st]);
+if (store.get('continuum.join')) joinFromLink(store.get('continuum.join'));
+else arrive();
